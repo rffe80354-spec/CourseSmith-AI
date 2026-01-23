@@ -12,7 +12,7 @@ from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, Menu
 
-from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, handle_custom_paste, bind_paste_shortcut
+from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, get_underlying_tk_widget
 from license_guard import load_license, save_license, validate_license
 from session_manager import set_session, set_token, is_active, get_tier, is_extended, clear_session
 from project_manager import CourseProject
@@ -30,7 +30,8 @@ UPGRADE_URL = "https://www.codester.com"
 
 def bind_clipboard_menu(widget):
     """
-    Bind a clipboard context menu and explicit paste shortcut to a widget.
+    Bind a clipboard context menu and click-to-focus to a widget.
+    Keyboard shortcuts (Ctrl+A/C/V/X) are handled globally at the root window level.
     
     Args:
         widget: The CTkEntry or CTkTextbox widget to bind to.
@@ -38,9 +39,13 @@ def bind_clipboard_menu(widget):
     Returns:
         RightClickMenu: The created context menu instance.
     """
-    # Add explicit Ctrl+V binding for reliable paste support
-    bind_paste_shortcut(widget)
-    # Add right-click context menu
+    # Get the underlying tkinter widget for focus binding
+    tk_widget = get_underlying_tk_widget(widget)
+    
+    # Bind Button-1 to ensure immediate keyboard focus on click
+    tk_widget.bind("<Button-1>", lambda e: tk_widget.focus_set(), add="+")
+    
+    # Add right-click context menu (keyboard shortcuts are global)
     return add_context_menu(widget)
 
 
@@ -1196,6 +1201,27 @@ class App(ctk.CTk):
         
         return "break"
 
+    def _get_selected_text(self, tk_widget):
+        """
+        Get selected text from a widget.
+        
+        Args:
+            tk_widget: The underlying tkinter widget (Entry or Text).
+            
+        Returns:
+            tuple: (selected_text, is_text_widget) or (None, None) if no selection.
+        """
+        if hasattr(tk_widget, 'tag_ranges'):
+            # Text-based widget (CTkTextbox or tk.Text)
+            sel_ranges = tk_widget.tag_ranges("sel")
+            if sel_ranges:
+                return tk_widget.get("sel.first", "sel.last"), True
+            return None, None
+        elif hasattr(tk_widget, 'selection_present') and tk_widget.selection_present():
+            # Entry-based widget (CTkEntry or tk.Entry)
+            return tk_widget.selection_get(), False
+        return None, None
+
     def _on_copy(self, event=None):
         """Handle Ctrl+C (Copy) globally."""
         focused, tk_widget = self._get_focused_tk_widget()
@@ -1203,7 +1229,13 @@ class App(ctk.CTk):
             return "break"
         
         try:
-            tk_widget.event_generate("<<Copy>>")
+            selected_text, _ = self._get_selected_text(tk_widget)
+            if selected_text is None:
+                return "break"  # No selection
+            
+            # Copy to clipboard
+            self.clipboard_clear()
+            self.clipboard_append(selected_text)
         except Exception:
             pass
         
@@ -1256,7 +1288,20 @@ class App(ctk.CTk):
             if widget_state == "disabled" or widget_state == "readonly":
                 return "break"
             
-            tk_widget.event_generate("<<Cut>>")
+            selected_text, is_text_widget = self._get_selected_text(tk_widget)
+            if selected_text is None:
+                return "break"  # No selection
+            
+            # Copy to clipboard
+            self.clipboard_clear()
+            self.clipboard_append(selected_text)
+            
+            # Delete selected text (different methods for text vs entry widgets)
+            if is_text_widget:
+                tk_widget.delete("sel.first", "sel.last")
+            else:
+                # Entry widget: delete using selection indices
+                tk_widget.delete("sel.first", "sel.last")
         except Exception:
             pass
         
