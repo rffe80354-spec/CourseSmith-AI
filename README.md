@@ -37,6 +37,12 @@ Enter the buyer's email address when prompted, then select the tier:
 
 The tool will output a license key to send to the customer.
 
+#### Admin Note (God Mode)
+The keygen tool supports a special "God Mode" for administrators. Enter the **Master Password** instead of an email to access tier selection. Contact the developer for the master password.
+
+- **Normal Mode**: Enter any buyer email → Instantly generates **Standard** license
+- **God Mode**: Enter master password → Unlocks tier selection (Standard/Extended)
+
 ## ⚙️ OpenAI API Key Setup
 
 Faleovad AI Enterprise requires an OpenAI API key to generate content.

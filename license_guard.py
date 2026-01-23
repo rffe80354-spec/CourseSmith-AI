@@ -18,7 +18,7 @@ from utils import get_data_dir
 
 
 # Secret salt for license key generation - DO NOT SHARE
-SECRET_SALT = "FALEOVAD_AI_2026_GOLD"
+SECRET_SALT = "FALEOVAD_2009_SECURE_A5432"
 
 # License file name (hidden file)
 LICENSE_FILE = ".license"
