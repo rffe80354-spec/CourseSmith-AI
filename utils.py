@@ -219,8 +219,8 @@ class RightClickMenu:
             if widget_state == "disabled" or widget_state == "readonly":
                 return
             
-            # Get clipboard content
-            text = self.widget.clipboard_get()
+            # Get clipboard content from focused widget for consistency
+            text = focused_widget.clipboard_get()
         except tk.TclError:
             # Clipboard is empty or unavailable
             return
@@ -244,6 +244,24 @@ class RightClickMenu:
         clipboard_select_all(self.widget)
 
 
+def get_underlying_tk_widget(widget):
+    """
+    Get the underlying tkinter widget from a CustomTkinter widget.
+    CTkEntry uses _entry, CTkTextbox uses _textbox.
+    
+    Args:
+        widget: The CTkEntry, CTkTextbox, or tkinter widget.
+        
+    Returns:
+        The underlying tkinter widget.
+    """
+    if hasattr(widget, '_entry'):
+        return widget._entry
+    elif hasattr(widget, '_textbox'):
+        return widget._textbox
+    return widget
+
+
 def add_context_menu(widget):
     """
     Add a right-click context menu to a widget.
@@ -255,14 +273,7 @@ def add_context_menu(widget):
     Returns:
         RightClickMenu: The created context menu instance.
     """
-    # Get the underlying tkinter widget for customtkinter widgets
-    if hasattr(widget, '_entry'):
-        tk_widget = widget._entry
-    elif hasattr(widget, '_textbox'):
-        tk_widget = widget._textbox
-    else:
-        tk_widget = widget
-    
+    tk_widget = get_underlying_tk_widget(widget)
     return RightClickMenu(tk_widget)
 
 
@@ -279,13 +290,7 @@ def handle_custom_paste(event, widget):
     Returns:
         str: "break" to stop event propagation.
     """
-    # Get the underlying tkinter widget for customtkinter widgets
-    if hasattr(widget, '_entry'):
-        tk_widget = widget._entry
-    elif hasattr(widget, '_textbox'):
-        tk_widget = widget._textbox
-    else:
-        tk_widget = widget
+    tk_widget = get_underlying_tk_widget(widget)
     
     try:
         # Check if widget is in normal state (can accept input)
@@ -324,13 +329,7 @@ def bind_paste_shortcut(widget):
     Args:
         widget: The CTkEntry, CTkTextbox, or tkinter widget to bind to.
     """
-    # Get the underlying tkinter widget for customtkinter widgets
-    if hasattr(widget, '_entry'):
-        tk_widget = widget._entry
-    elif hasattr(widget, '_textbox'):
-        tk_widget = widget._textbox
-    else:
-        tk_widget = widget
+    tk_widget = get_underlying_tk_widget(widget)
     
     # Bind both uppercase and lowercase for Ctrl+V
     tk_widget.bind("<Control-v>", lambda e: handle_custom_paste(e, widget))
