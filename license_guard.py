@@ -1,18 +1,20 @@
 """
 License Guard Module - DRM Security for CourseSmith ENTERPRISE.
 Provides license key generation and validation using SHA256 hashing.
+Returns session tokens on successful validation for anti-tamper protection.
 """
 
 import hashlib
 import base64
 import os
 import json
+import time
 
 from utils import get_data_dir
 
 
 # Secret salt for license key generation - DO NOT SHARE
-SECRET_SALT = "CourseSmith_2026_ULTIMATE_SECURE_SALT"
+SECRET_SALT = "CS_2026_SECURE_SALT"
 
 # License file name (hidden file)
 LICENSE_FILE = ".license"
@@ -45,6 +47,22 @@ def generate_key(email):
     return formatted_key
 
 
+def _generate_session_token(email):
+    """
+    Generate a session token for a validated license.
+    
+    Args:
+        email: The validated user's email address.
+        
+    Returns:
+        str: A unique session token.
+    """
+    timestamp = str(time.time())
+    token_input = f"{email}{timestamp}{SECRET_SALT}"
+    token_bytes = hashlib.sha256(token_input.encode('utf-8')).digest()
+    return base64.b64encode(token_bytes).decode('utf-8')[:48]
+
+
 def validate_license(email, key):
     """
     Validate a license key against an email address.
@@ -54,16 +72,20 @@ def validate_license(email, key):
         key: The license key to validate.
         
     Returns:
-        bool: True if the key is valid for the email, False otherwise.
+        str or None: A session token if valid, None if invalid.
     """
     if not email or not key:
-        return False
+        return None
     
     # Generate expected key for this email
     expected_key = generate_key(email)
     
     # Compare keys (case-insensitive)
-    return key.strip().upper() == expected_key.upper()
+    if key.strip().upper() == expected_key.upper():
+        # Valid! Return a session token
+        return _generate_session_token(email)
+    
+    return None
 
 
 def get_license_path():
@@ -94,7 +116,7 @@ def save_license(email, key):
         license_data = {
             "email": email.strip().lower(),
             "key": key.strip(),
-            "version": "1.0"
+            "version": "2.0"
         }
         
         with open(license_path, 'w', encoding='utf-8') as f:
@@ -111,14 +133,14 @@ def load_license():
     Load and validate the stored license.
     
     Returns:
-        tuple: (is_valid, email) - is_valid is True if license is valid,
+        tuple: (session_token, email) - session_token is the token if valid (or None),
                email is the registered email or None.
     """
     try:
         license_path = get_license_path()
         
         if not os.path.exists(license_path):
-            return False, None
+            return None, None
         
         with open(license_path, 'r', encoding='utf-8') as f:
             license_data = json.load(f)
@@ -126,14 +148,17 @@ def load_license():
         email = license_data.get("email", "")
         key = license_data.get("key", "")
         
-        if validate_license(email, key):
-            return True, email
+        # Validate and get session token
+        session_token = validate_license(email, key)
+        
+        if session_token:
+            return session_token, email
         else:
-            return False, None
+            return None, None
             
     except (IOError, OSError, json.JSONDecodeError) as e:
         print(f"Failed to load license: {e}")
-        return False, None
+        return None, None
 
 
 def remove_license():

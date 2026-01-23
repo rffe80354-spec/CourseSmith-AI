@@ -1,6 +1,7 @@
 """
 AI Worker Module - Threaded AI Operations for CourseSmith ENTERPRISE.
 Provides background workers for outline, chapter, and cover generation.
+SECURITY: Requires valid session token to function (anti-tamper protection).
 """
 
 import os
@@ -11,12 +12,25 @@ import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from session_manager import is_active, SecurityError
+
 
 class AIWorkerBase:
     """Base class for AI workers with common functionality."""
     
     _client = None
     _client_lock = threading.Lock()
+    
+    @classmethod
+    def _check_session(cls):
+        """
+        Verify that a valid session is active.
+        
+        Raises:
+            SecurityError: If no valid session token exists.
+        """
+        if not is_active():
+            raise SecurityError("Unauthorized: No valid session. Please activate your license.")
     
     @classmethod
     def get_client(cls):
@@ -28,7 +42,11 @@ class AIWorkerBase:
             
         Raises:
             ValueError: If API key is not configured.
+            SecurityError: If no valid session exists.
         """
+        # SECURITY CHECK: Require valid session
+        cls._check_session()
+        
         with cls._client_lock:
             if cls._client is None:
                 load_dotenv()
@@ -36,10 +54,16 @@ class AIWorkerBase:
                 if not api_key:
                     raise ValueError(
                         "OPENAI_API_KEY not found in environment variables. "
-                        "Please create a .env file with your API key."
+                        "Please configure your API key in Settings."
                     )
                 cls._client = OpenAI(api_key=api_key)
             return cls._client
+    
+    @classmethod
+    def reset_client(cls):
+        """Reset the OpenAI client (for API key changes)."""
+        with cls._client_lock:
+            cls._client = None
 
 
 class OutlineGenerator(AIWorkerBase):

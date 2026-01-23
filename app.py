@@ -1,6 +1,7 @@
 """
 CourseSmith ENTERPRISE - Main Application GUI.
 A commercial desktop tool to generate educational PDF books using AI with DRM protection.
+Uses session token system for anti-tamper protection.
 """
 
 import os
@@ -11,8 +12,9 @@ from tkinter import messagebox, filedialog
 
 from utils import resource_path, get_data_dir
 from license_guard import load_license, save_license, validate_license
+from session_manager import set_token, is_active, clear_session
 from project_manager import CourseProject
-from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator
+from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator, AIWorkerBase
 from pdf_engine import PDFBuilder
 
 
@@ -52,14 +54,17 @@ class App(ctk.CTk):
 
     def _check_license(self):
         """Check license status and show appropriate UI."""
-        is_valid, email = load_license()
+        session_token, email = load_license()
         
-        if is_valid:
+        if session_token:
+            # Set the session token for anti-tamper protection
+            set_token(session_token, email)
             self.is_licensed = True
             self.licensed_email = email
             self._create_main_ui()
         else:
             self.is_licensed = False
+            clear_session()
             self._create_activation_ui()
 
     def _create_activation_ui(self):
@@ -149,10 +154,14 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Please enter your license key.")
             return
 
-        # Validate the license
-        if validate_license(email, key):
+        # Validate the license and get session token
+        session_token = validate_license(email, key)
+        
+        if session_token:
             # Save the license
             if save_license(email, key):
+                # Set the session token for anti-tamper protection
+                set_token(session_token, email)
                 self.is_licensed = True
                 self.licensed_email = email
                 messagebox.showinfo(
@@ -199,7 +208,7 @@ class App(ctk.CTk):
         self._create_export_tab()
 
     def _create_header(self):
-        """Create the header bar with title and user info."""
+        """Create the header bar with title, user info, and settings."""
         header_frame = ctk.CTkFrame(self, height=60, corner_radius=0)
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
         header_frame.grid_columnconfigure(1, weight=1)
@@ -212,6 +221,19 @@ class App(ctk.CTk):
         )
         title_label.grid(row=0, column=0, padx=20, pady=15, sticky="w")
 
+        # Settings button
+        settings_btn = ctk.CTkButton(
+            header_frame,
+            text="⚙️ Settings",
+            font=ctk.CTkFont(size=12),
+            width=100,
+            height=32,
+            fg_color="#555555",
+            hover_color="#666666",
+            command=self._show_settings,
+        )
+        settings_btn.grid(row=0, column=1, padx=10, pady=15, sticky="e")
+
         # User info
         if self.licensed_email:
             user_label = ctk.CTkLabel(
@@ -221,6 +243,106 @@ class App(ctk.CTk):
                 text_color="#28a745",
             )
             user_label.grid(row=0, column=2, padx=20, pady=15, sticky="e")
+
+    def _show_settings(self):
+        """Show the settings dialog for API key configuration."""
+        # Create modal dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Settings")
+        dialog.geometry("500x300")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        # Center on parent
+        dialog.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() - 500) // 2
+        y = self.winfo_y() + (self.winfo_height() - 300) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        # Title
+        ctk.CTkLabel(
+            dialog,
+            text="⚙️ Settings",
+            font=ctk.CTkFont(size=20, weight="bold"),
+        ).pack(padx=20, pady=(20, 10))
+
+        # API Key section
+        ctk.CTkLabel(
+            dialog,
+            text="OpenAI API Key:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).pack(padx=20, pady=(20, 5), anchor="w")
+
+        # Load current API key from environment
+        current_key = os.getenv("OPENAI_API_KEY", "")
+        
+        api_key_entry = ctk.CTkEntry(
+            dialog,
+            placeholder_text="sk-...",
+            width=450,
+            height=40,
+            show="*",
+        )
+        api_key_entry.pack(padx=20, pady=(0, 5))
+        if current_key:
+            api_key_entry.insert(0, current_key)
+
+        # Help text
+        ctk.CTkLabel(
+            dialog,
+            text="Your API key is stored in the .env file in the application directory.",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+        ).pack(padx=20, pady=(0, 20))
+
+        def save_api_key():
+            api_key = api_key_entry.get().strip()
+            if not api_key:
+                messagebox.showerror("Error", "Please enter an API key.", parent=dialog)
+                return
+            
+            # Save to .env file
+            env_path = os.path.join(os.getcwd(), ".env")
+            try:
+                # Read existing content
+                existing_lines = []
+                if os.path.exists(env_path):
+                    with open(env_path, 'r') as f:
+                        for line in f:
+                            stripped = line.strip()
+                            if stripped and not stripped.startswith("OPENAI_API_KEY"):
+                                existing_lines.append(line.rstrip())
+                
+                # Write with new API key
+                with open(env_path, 'w') as f:
+                    for line in existing_lines:
+                        f.write(line + "\n")
+                    f.write(f"OPENAI_API_KEY={api_key}\n")
+                
+                # Update environment variable
+                os.environ["OPENAI_API_KEY"] = api_key
+                
+                # Reset the AI client to use new key
+                AIWorkerBase.reset_client()
+                
+                messagebox.showinfo("Success", "API key saved successfully!", parent=dialog)
+                dialog.destroy()
+                
+            except IOError as e:
+                messagebox.showerror("Error", f"Failed to save API key: {e}", parent=dialog)
+
+        # Save button
+        ctk.CTkButton(
+            dialog,
+            text="💾 Save API Key",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=40,
+            width=200,
+            fg_color="#28a745",
+            hover_color="#218838",
+            command=save_api_key,
+        ).pack(pady=20)
 
     # ==================== SETUP TAB ====================
     def _create_setup_tab(self):

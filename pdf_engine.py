@@ -1,6 +1,7 @@
 """
 PDF Engine Module - Professional PDF creation for CourseSmith ENTERPRISE.
 Uses ReportLab's Platypus engine for complex layout with headers/footers.
+SECURITY: Requires valid session token to function (anti-tamper protection).
 """
 
 import os
@@ -23,6 +24,7 @@ from reportlab.lib.colors import HexColor, Color
 from reportlab.pdfgen import canvas
 
 from utils import resource_path
+from session_manager import is_active, SecurityError
 
 
 class PDFBuilder:
@@ -364,8 +366,15 @@ class PDFBuilder:
             output_path: Optional output path (uses self.filename if not provided).
 
         Returns:
-            str: The path of the generated PDF.
+            str: The path of the generated PDF, or None if unauthorized.
+            
+        Raises:
+            SecurityError: If no valid session token exists.
         """
+        # SECURITY CHECK: Require valid session
+        if not is_active():
+            raise SecurityError("Unauthorized: No valid session. Please activate your license.")
+        
         if output_path:
             self.filename = output_path
         
