@@ -6,6 +6,7 @@ Features tiered licensing: Standard ($59) vs Extended ($249).
 """
 
 import os
+import re
 import threading
 import webbrowser
 from datetime import datetime
@@ -769,48 +770,50 @@ class App(ctk.CTk):
         self._update_stats_from_outline()
 
     def _delete_chapter(self):
-        """Delete the current/last chapter from the outline."""
+        """Delete the last chapter from the outline."""
         current_text = self.outline_textbox.get("1.0", "end").strip()
         lines = [line.strip() for line in current_text.split("\n") if line.strip()]
         
         if len(lines) > 0:
             lines.pop()  # Remove last line
-            # Renumber chapters
-            renumbered = [f"{i+1}. {self._strip_chapter_number(line)}" for i, line in enumerate(lines)]
-            self.outline_textbox.delete("1.0", "end")
-            self.outline_textbox.insert("1.0", "\n".join(renumbered))
+            self._update_outline_textbox(lines)
             self._update_stats_from_outline()
 
     def _strip_chapter_number(self, line):
         """Strip the chapter number prefix from a line."""
-        import re
         return re.sub(r'^\d+\.\s*', '', line)
 
-    def _move_chapter_up(self):
-        """Move the last chapter up in the outline."""
-        current_text = self.outline_textbox.get("1.0", "end").strip()
-        lines = [line.strip() for line in current_text.split("\n") if line.strip()]
+    def _update_outline_textbox(self, lines):
+        """
+        Update the outline textbox with renumbered chapter lines.
         
-        if len(lines) >= 2:
-            # Swap last two items
-            lines[-1], lines[-2] = lines[-2], lines[-1]
-            # Renumber chapters
-            renumbered = [f"{i+1}. {self._strip_chapter_number(line)}" for i, line in enumerate(lines)]
-            self.outline_textbox.delete("1.0", "end")
+        Args:
+            lines: List of chapter lines (may include old numbering).
+        """
+        renumbered = [f"{i+1}. {self._strip_chapter_number(line)}" for i, line in enumerate(lines)]
+        self.outline_textbox.delete("1.0", "end")
+        if renumbered:
             self.outline_textbox.insert("1.0", "\n".join(renumbered))
 
-    def _move_chapter_down(self):
-        """Move the first chapter down in the outline."""
+    def _move_chapter_up(self):
+        """Swap the last two chapters in the outline."""
         current_text = self.outline_textbox.get("1.0", "end").strip()
         lines = [line.strip() for line in current_text.split("\n") if line.strip()]
         
         if len(lines) >= 2:
-            # Swap first two items
+            lines[-1], lines[-2] = lines[-2], lines[-1]
+            self._update_outline_textbox(lines)
+            self._update_stats_from_outline()
+
+    def _move_chapter_down(self):
+        """Swap the first two chapters in the outline."""
+        current_text = self.outline_textbox.get("1.0", "end").strip()
+        lines = [line.strip() for line in current_text.split("\n") if line.strip()]
+        
+        if len(lines) >= 2:
             lines[0], lines[1] = lines[1], lines[0]
-            # Renumber chapters
-            renumbered = [f"{i+1}. {self._strip_chapter_number(line)}" for i, line in enumerate(lines)]
-            self.outline_textbox.delete("1.0", "end")
-            self.outline_textbox.insert("1.0", "\n".join(renumbered))
+            self._update_outline_textbox(lines)
+            self._update_stats_from_outline()
 
     def _add_quiz(self):
         """Add a quiz to the course. Extended feature only."""
