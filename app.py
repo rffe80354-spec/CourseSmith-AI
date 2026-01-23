@@ -1133,8 +1133,12 @@ class App(ctk.CTk):
     # ==================== GLOBAL KEYBOARD SHORTCUTS ====================
     def _bind_global_shortcuts(self):
         """Bind global keyboard shortcuts for clipboard operations to the root window."""
+        # NUCLEAR FIX: Unbind default class-level paste events to prevent double paste
+        # This prevents the OS/Tkinter from handling paste separately from our custom handler
+        self.unbind_class("Entry", "<<Paste>>")
+        self.unbind_class("Text", "<<Paste>>")
+        
         # Bind Ctrl+A for Select All (both uppercase and lowercase)
-        # Using bind_all to catch events before they reach individual widgets
         self.bind_all("<Control-a>", self._on_select_all)
         self.bind_all("<Control-A>", self._on_select_all)
         
