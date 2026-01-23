@@ -160,14 +160,15 @@ class RightClickMenu:
         widget.bind("<Button-3>", self._show_menu)
         
         # Explicitly bind keyboard shortcuts (both upper and lowercase)
+        # Return "break" to prevent event propagation (fixes double paste bug)
         shortcuts = [
-            ('c', self._copy), ('C', self._copy),
-            ('x', self._cut), ('X', self._cut),
-            ('v', self._paste), ('V', self._paste),
-            ('a', self._select_all), ('A', self._select_all),
+            ('c', self._copy_event), ('C', self._copy_event),
+            ('x', self._cut_event), ('X', self._cut_event),
+            ('v', self._paste_event), ('V', self._paste_event),
+            ('a', self._select_all_event), ('A', self._select_all_event),
         ]
         for key, action in shortcuts:
-            widget.bind(f"<Control-{key}>", lambda e, a=action: a())
+            widget.bind(f"<Control-{key}>", action)
     
     def _show_menu(self, event):
         """Show the context menu at cursor position."""
@@ -175,6 +176,27 @@ class RightClickMenu:
             self.menu.tk_popup(event.x_root, event.y_root)
         finally:
             self.menu.grab_release()
+        return "break"
+    
+    def _cut_event(self, event=None):
+        """Cut selected text to clipboard (event handler)."""
+        self._cut()
+        return "break"
+    
+    def _copy_event(self, event=None):
+        """Copy selected text to clipboard (event handler)."""
+        self._copy()
+        return "break"
+    
+    def _paste_event(self, event=None):
+        """Paste text from clipboard (event handler)."""
+        self._paste()
+        return "break"
+    
+    def _select_all_event(self, event=None):
+        """Select all text in widget (event handler)."""
+        self._select_all()
+        return "break"
     
     def _cut(self):
         """Cut selected text to clipboard."""
@@ -185,8 +207,20 @@ class RightClickMenu:
         clipboard_copy(self.widget)
     
     def _paste(self):
-        """Paste text from clipboard."""
-        clipboard_paste(self.widget)
+        """Paste text from clipboard directly (avoids double-paste bug)."""
+        try:
+            text = self.widget.clipboard_get()
+        except tk.TclError:
+            # Clipboard is empty or unavailable
+            return
+        # Delete selected text first (if any), then insert clipboard content
+        try:
+            self.widget.delete("sel.first", "sel.last")
+        except tk.TclError:
+            # No selection exists, which is fine
+            pass
+        # Insert text at current cursor position
+        self.widget.insert("insert", text)
     
     def _select_all(self):
         """Select all text in widget."""
