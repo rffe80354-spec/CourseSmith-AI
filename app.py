@@ -6,6 +6,7 @@ Features tiered licensing: Standard ($59) vs Extended ($249).
 """
 
 import os
+import re
 import threading
 import webbrowser
 from datetime import datetime
@@ -555,13 +556,15 @@ class App(ctk.CTk):
 
     # ==================== BLUEPRINT TAB ====================
     def _create_blueprint_tab(self):
-        """Create the Blueprint tab content."""
+        """Create the Blueprint tab content with professional curriculum designer UI."""
+        # Configure grid: column 0 for main content, column 1 for sidebar
         self.tab_blueprint.grid_columnconfigure(0, weight=1)
-        self.tab_blueprint.grid_rowconfigure(1, weight=1)
+        self.tab_blueprint.grid_columnconfigure(1, weight=0)
+        self.tab_blueprint.grid_rowconfigure(2, weight=1)
 
-        # Header
+        # === Header Row ===
         header_frame = ctk.CTkFrame(self.tab_blueprint, fg_color="transparent")
-        header_frame.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        header_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 10), sticky="ew")
 
         ctk.CTkLabel(
             header_frame,
@@ -579,24 +582,137 @@ class App(ctk.CTk):
             command=self._generate_outline,
         ).pack(side="right")
 
-        # Editable outline textbox
-        ctk.CTkLabel(
+        # === Stats Header Row (4 Info Cards) ===
+        stats_frame = ctk.CTkFrame(
             self.tab_blueprint,
+            fg_color=("gray90", "gray17"),
+            border_width=1,
+            border_color=("gray70", "gray30"),
+            corner_radius=8,
+        )
+        stats_frame.grid(row=1, column=0, columnspan=2, padx=20, pady=(5, 10), sticky="ew")
+        stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+
+        # Initialize stats labels with default values
+        self.stats_pages_label = self._create_stat_card(stats_frame, "📄 Pages", "45-60", 0)
+        self.stats_level_label = self._create_stat_card(stats_frame, "🎓 Level", "Expert", 1)
+        self.stats_modules_label = self._create_stat_card(stats_frame, "🧩 Modules", "8", 2)
+        self.stats_keywords_label = self._create_stat_card(stats_frame, "🔑 Keywords", "15+", 3)
+
+        # === Main Content Area (Textbox + Sidebar) ===
+        content_frame = ctk.CTkFrame(self.tab_blueprint, fg_color="transparent")
+        content_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="nsew")
+        content_frame.grid_columnconfigure(0, weight=1)
+        content_frame.grid_columnconfigure(1, weight=0)
+        content_frame.grid_rowconfigure(0, weight=1)
+
+        # Editable outline textbox (left side)
+        textbox_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+        textbox_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        textbox_frame.grid_columnconfigure(0, weight=1)
+        textbox_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            textbox_frame,
             text="Edit the chapter titles below (one per line):",
             font=ctk.CTkFont(size=13),
             text_color="gray",
-        ).grid(row=1, column=0, padx=20, pady=(10, 5), sticky="nw")
+        ).grid(row=0, column=0, pady=(0, 5), sticky="nw")
 
         self.outline_textbox = ctk.CTkTextbox(
-            self.tab_blueprint,
+            textbox_frame,
             font=ctk.CTkFont(family="Consolas", size=14),
             wrap="word",
         )
-        self.outline_textbox.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="nsew")
-        self.tab_blueprint.grid_rowconfigure(2, weight=1)
+        self.outline_textbox.grid(row=1, column=0, sticky="nsew")
         bind_clipboard_menu(self.outline_textbox)
 
-        # Confirm button
+        # === Sidebar (Right side - vertical button bar) ===
+        sidebar_frame = ctk.CTkFrame(
+            content_frame,
+            fg_color=("gray85", "gray20"),
+            corner_radius=8,
+            width=50,
+        )
+        sidebar_frame.grid(row=0, column=1, sticky="ns")
+        sidebar_frame.grid_propagate(False)
+
+        # Sidebar buttons
+        sidebar_btn_style = {
+            "width": 40,
+            "height": 40,
+            "corner_radius": 8,
+            "font": ctk.CTkFont(size=16),
+            "fg_color": ("gray75", "gray30"),
+            "hover_color": ("gray65", "gray40"),
+            "text_color": ("gray20", "gray90"),
+        }
+
+        # Add Chapter button
+        self.btn_add_chapter = ctk.CTkButton(
+            sidebar_frame,
+            text="➕",
+            command=self._add_chapter,
+            **sidebar_btn_style,
+        )
+        self.btn_add_chapter.pack(pady=(10, 5), padx=5)
+
+        # Delete button
+        self.btn_delete_chapter = ctk.CTkButton(
+            sidebar_frame,
+            text="❌",
+            command=self._delete_chapter,
+            **sidebar_btn_style,
+        )
+        self.btn_delete_chapter.pack(pady=5, padx=5)
+
+        # Move Up button
+        self.btn_move_up = ctk.CTkButton(
+            sidebar_frame,
+            text="⬆️",
+            command=self._move_chapter_up,
+            **sidebar_btn_style,
+        )
+        self.btn_move_up.pack(pady=5, padx=5)
+
+        # Move Down button
+        self.btn_move_down = ctk.CTkButton(
+            sidebar_frame,
+            text="⬇️",
+            command=self._move_chapter_down,
+            **sidebar_btn_style,
+        )
+        self.btn_move_down.pack(pady=5, padx=5)
+
+        # Separator
+        separator = ctk.CTkFrame(sidebar_frame, height=2, fg_color=("gray60", "gray50"))
+        separator.pack(fill="x", padx=8, pady=10)
+
+        # Add Quiz button (Gold highlight - Extended feature)
+        self.btn_add_quiz = ctk.CTkButton(
+            sidebar_frame,
+            text="❓",
+            command=self._add_quiz,
+            width=40,
+            height=40,
+            corner_radius=8,
+            font=ctk.CTkFont(size=16),
+            fg_color="#D4AF37",  # Gold color
+            hover_color="#B8962F",
+            text_color="black",
+        )
+        self.btn_add_quiz.pack(pady=5, padx=5)
+
+        # Quiz label
+        quiz_label = ctk.CTkLabel(
+            sidebar_frame,
+            text="Quiz",
+            font=ctk.CTkFont(size=10),
+            text_color="#D4AF37",
+        )
+        quiz_label.pack(pady=(0, 10))
+
+        # === Confirm Button Row ===
         ctk.CTkButton(
             self.tab_blueprint,
             text="✅ Confirm Outline & Continue to Drafting →",
@@ -605,7 +721,154 @@ class App(ctk.CTk):
             fg_color="#28a745",
             hover_color="#218838",
             command=self._confirm_outline,
-        ).grid(row=3, column=0, padx=20, pady=(10, 20))
+        ).grid(row=3, column=0, columnspan=2, padx=20, pady=(10, 20))
+
+    def _create_stat_card(self, parent, icon_label, value, column):
+        """
+        Create a single stat info card for the Stats Header.
+        
+        Args:
+            parent: The parent frame.
+            icon_label: The label text with icon (e.g., "📄 Pages").
+            value: The default value to display.
+            column: The column position in the grid.
+            
+        Returns:
+            CTkLabel: The value label for updating later.
+        """
+        card_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        card_frame.grid(row=0, column=column, padx=10, pady=10, sticky="ew")
+
+        ctk.CTkLabel(
+            card_frame,
+            text=icon_label,
+            font=ctk.CTkFont(size=12),
+            text_color="gray",
+        ).pack(anchor="center")
+
+        value_label = ctk.CTkLabel(
+            card_frame,
+            text=value,
+            font=ctk.CTkFont(size=16, weight="bold"),
+        )
+        value_label.pack(anchor="center")
+
+        return value_label
+
+    def _add_chapter(self):
+        """Add a new chapter to the outline."""
+        current_text = self.outline_textbox.get("1.0", "end").strip()
+        lines = [line.strip() for line in current_text.split("\n") if line.strip()]
+        new_chapter_num = len(lines) + 1
+        new_chapter = f"{new_chapter_num}. New Chapter Title"
+        
+        if current_text:
+            self.outline_textbox.insert("end", f"\n{new_chapter}")
+        else:
+            self.outline_textbox.insert("1.0", new_chapter)
+        
+        self._update_stats_from_outline()
+
+    def _delete_chapter(self):
+        """Delete the last chapter from the outline."""
+        current_text = self.outline_textbox.get("1.0", "end").strip()
+        lines = [line.strip() for line in current_text.split("\n") if line.strip()]
+        
+        if len(lines) > 0:
+            lines.pop()  # Remove last line
+            self._update_outline_textbox(lines)
+            self._update_stats_from_outline()
+
+    def _strip_chapter_number(self, line):
+        """Strip the chapter number prefix from a line."""
+        return re.sub(r'^\d+\.\s*', '', line)
+
+    def _update_outline_textbox(self, lines):
+        """
+        Update the outline textbox with renumbered chapter lines.
+        
+        Args:
+            lines: List of chapter lines (may include old numbering).
+        """
+        renumbered = [f"{i+1}. {self._strip_chapter_number(line)}" for i, line in enumerate(lines)]
+        self.outline_textbox.delete("1.0", "end")
+        if renumbered:
+            self.outline_textbox.insert("1.0", "\n".join(renumbered))
+
+    def _move_chapter_up(self):
+        """Swap the last two chapters in the outline."""
+        current_text = self.outline_textbox.get("1.0", "end").strip()
+        lines = [line.strip() for line in current_text.split("\n") if line.strip()]
+        
+        if len(lines) >= 2:
+            lines[-1], lines[-2] = lines[-2], lines[-1]
+            self._update_outline_textbox(lines)
+            self._update_stats_from_outline()
+
+    def _move_chapter_down(self):
+        """Swap the first two chapters in the outline."""
+        current_text = self.outline_textbox.get("1.0", "end").strip()
+        lines = [line.strip() for line in current_text.split("\n") if line.strip()]
+        
+        if len(lines) >= 2:
+            lines[0], lines[1] = lines[1], lines[0]
+            self._update_outline_textbox(lines)
+            self._update_stats_from_outline()
+
+    def _add_quiz(self):
+        """Add a quiz to the course. Extended feature only."""
+        if not is_extended():
+            # Show upgrade popup for Standard users
+            result = messagebox.askquestion(
+                "Extended Feature",
+                "🔒 Add Quiz is an Extended feature!\n\n"
+                "Upgrade to the Extended license to unlock:\n"
+                "• Quiz generation for each chapter\n"
+                "• Custom branding options\n"
+                "• Priority support\n\n"
+                "Would you like to upgrade now?",
+                icon="info"
+            )
+            if result == "yes":
+                webbrowser.open(UPGRADE_URL)
+            return
+        
+        # Extended user - add quiz placeholder
+        current_text = self.outline_textbox.get("1.0", "end").strip()
+        if current_text:
+            self.outline_textbox.insert("end", "\n\n[QUIZ] Chapter Review Questions")
+        else:
+            self.outline_textbox.insert("1.0", "[QUIZ] Chapter Review Questions")
+        
+        self._log_message("Quiz placeholder added. Quizzes will be generated with chapter content.")
+
+    def _update_stats_from_outline(self):
+        """Update stats header based on the current outline content."""
+        current_text = self.outline_textbox.get("1.0", "end").strip()
+        lines = [line.strip() for line in current_text.split("\n") if line.strip()]
+        num_chapters = len(lines)
+        
+        # Update Modules count
+        self.stats_modules_label.configure(text=str(num_chapters) if num_chapters > 0 else "0")
+        
+        # Estimate pages (8-12 pages per chapter)
+        min_pages = num_chapters * 8
+        max_pages = num_chapters * 12
+        pages_text = f"{min_pages}-{max_pages}" if num_chapters > 0 else "0"
+        self.stats_pages_label.configure(text=pages_text)
+        
+        # Update level based on chapters
+        if num_chapters <= 3:
+            level = "Beginner"
+        elif num_chapters <= 6:
+            level = "Intermediate"
+        else:
+            level = "Expert"
+        self.stats_level_label.configure(text=level)
+        
+        # Keywords estimate (3 per chapter minimum)
+        keywords = max(num_chapters * 3, 5) if num_chapters > 0 else "0"
+        self.stats_keywords_label.configure(text=f"{keywords}+")
 
     def _generate_outline(self):
         """Generate course outline using AI."""
@@ -645,6 +908,9 @@ class App(ctk.CTk):
         # Update textbox
         self.outline_textbox.delete("1.0", "end")
         self.outline_textbox.insert("1.0", outline_text)
+        
+        # Update stats header based on the generated outline
+        self._update_stats_from_outline()
         
         self._log_message(f"✓ Generated {len(chapters)} chapter titles. You can edit them now.")
 
