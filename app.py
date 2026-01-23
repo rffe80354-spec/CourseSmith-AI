@@ -59,16 +59,15 @@ class ClipboardContextMenu:
         # Bind right-click to show menu
         self.tk_widget.bind("<Button-3>", self._show_menu)
         
-        # Explicitly bind keyboard shortcuts
-        self.tk_widget.bind("<Control-c>", lambda e: self._copy())
-        self.tk_widget.bind("<Control-x>", lambda e: self._cut())
-        self.tk_widget.bind("<Control-v>", lambda e: self._paste())
-        self.tk_widget.bind("<Control-a>", lambda e: self._select_all())
-        # Handle uppercase as well (when Caps Lock is on)
-        self.tk_widget.bind("<Control-C>", lambda e: self._copy())
-        self.tk_widget.bind("<Control-X>", lambda e: self._cut())
-        self.tk_widget.bind("<Control-V>", lambda e: self._paste())
-        self.tk_widget.bind("<Control-A>", lambda e: self._select_all())
+        # Explicitly bind keyboard shortcuts (both lower and uppercase for Caps Lock)
+        shortcuts = [
+            ('c', self._copy), ('C', self._copy),
+            ('x', self._cut), ('X', self._cut),
+            ('v', self._paste), ('V', self._paste),
+            ('a', self._select_all), ('A', self._select_all),
+        ]
+        for key, action in shortcuts:
+            self.tk_widget.bind(f"<Control-{key}>", lambda e, a=action: a())
     
     def _show_menu(self, event):
         """Show the context menu at cursor position."""
@@ -813,8 +812,13 @@ class App(ctk.CTk):
         self.preview_content_label.configure(text=self._preview_accumulated_text)
         # Force update to show the change immediately
         self.preview_content_label.update_idletasks()
-        # Scroll to bottom of preview
-        self.preview_scroll._parent_canvas.yview_moveto(1.0)
+        # Scroll to bottom of preview using safe method
+        try:
+            # Try to scroll to bottom - CTkScrollableFrame may have internal canvas
+            if hasattr(self.preview_scroll, '_parent_canvas'):
+                self.preview_scroll._parent_canvas.yview_moveto(1.0)
+        except (AttributeError, Exception):
+            pass  # Scrolling is optional; content update is the priority
 
     def _clear_live_preview(self):
         """Clear the live preview content for a new chapter."""
@@ -885,7 +889,8 @@ class App(ctk.CTk):
 
         def on_stream(text_chunk):
             # Schedule UI update on main thread for streaming text
-            self.after(0, lambda: self.update_live_preview(text_chunk))
+            # Capture text_chunk by value to avoid race conditions
+            self.after(0, lambda chunk=text_chunk: self.update_live_preview(chunk))
 
         worker = ChapterWriter(
             self.project.topic,

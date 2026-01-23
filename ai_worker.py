@@ -223,9 +223,11 @@ Write the content directly."""
                 
                 # Collect full content while streaming chunks
                 full_content = []
+                chunk_count = 0
                 for chunk in response:
-                    # Security check during streaming
-                    if not is_active():
+                    chunk_count += 1
+                    # Security check every 20 chunks to reduce overhead
+                    if chunk_count % 20 == 0 and not is_active():
                         raise SecurityError("Session expired during generation.")
                     
                     if chunk.choices and chunk.choices[0].delta.content:
