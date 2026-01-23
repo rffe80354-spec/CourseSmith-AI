@@ -1184,7 +1184,8 @@ class App(ctk.CTk):
             # Check widget type and select all text accordingly
             if hasattr(tk_widget, 'tag_add'):
                 # Text-based widget (CTkTextbox or tk.Text)
-                tk_widget.tag_add("sel", "1.0", "end")
+                # Use 'end-1c' to exclude the trailing newline character
+                tk_widget.tag_add("sel", "1.0", "end-1c")
             elif hasattr(tk_widget, 'select_range'):
                 # Entry-based widget (CTkEntry or tk.Entry)
                 tk_widget.select_range(0, "end")
@@ -1223,9 +1224,11 @@ class App(ctk.CTk):
             # Get clipboard content
             text = tk_widget.clipboard_get()
         except Exception:
-            # Clipboard is empty or unavailable
+            # Failed to access clipboard content (empty, unavailable, or permission issues)
             return "break"
         
+        # Note: We manually delete selected text and insert instead of using
+        # event_generate("<<Paste>>") to avoid double-paste issues with CustomTkinter.
         # Delete selected text first (if any)
         try:
             tk_widget.delete("sel.first", "sel.last")
