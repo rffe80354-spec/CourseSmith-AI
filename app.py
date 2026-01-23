@@ -8,9 +8,9 @@ import os
 import threading
 from datetime import datetime
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, Menu
 
-from utils import resource_path, get_data_dir
+from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all
 from license_guard import load_license, save_license, validate_license
 from session_manager import set_token, is_active, clear_session
 from project_manager import CourseProject
@@ -21,6 +21,90 @@ from pdf_engine import PDFBuilder
 # Configure appearance
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
+
+
+class ClipboardContextMenu:
+    """
+    Right-click context menu for text input widgets.
+    Provides Cut, Copy, Paste, and Select All functionality.
+    Works with both CTkEntry and CTkTextbox widgets.
+    """
+    
+    def __init__(self, widget):
+        """
+        Initialize context menu for a widget.
+        
+        Args:
+            widget: The CTkEntry or CTkTextbox widget to attach the menu to.
+        """
+        self.widget = widget
+        
+        # Get the underlying tkinter widget
+        # CTkEntry and CTkTextbox have a _entry or _textbox attribute
+        if hasattr(widget, '_entry'):
+            self.tk_widget = widget._entry
+        elif hasattr(widget, '_textbox'):
+            self.tk_widget = widget._textbox
+        else:
+            self.tk_widget = widget
+        
+        # Create the context menu
+        self.menu = Menu(self.tk_widget, tearoff=0)
+        self.menu.add_command(label="Cut", accelerator="Ctrl+X", command=self._cut)
+        self.menu.add_command(label="Copy", accelerator="Ctrl+C", command=self._copy)
+        self.menu.add_command(label="Paste", accelerator="Ctrl+V", command=self._paste)
+        self.menu.add_separator()
+        self.menu.add_command(label="Select All", accelerator="Ctrl+A", command=self._select_all)
+        
+        # Bind right-click to show menu
+        self.tk_widget.bind("<Button-3>", self._show_menu)
+        
+        # Explicitly bind keyboard shortcuts
+        self.tk_widget.bind("<Control-c>", lambda e: self._copy())
+        self.tk_widget.bind("<Control-x>", lambda e: self._cut())
+        self.tk_widget.bind("<Control-v>", lambda e: self._paste())
+        self.tk_widget.bind("<Control-a>", lambda e: self._select_all())
+        # Handle uppercase as well (when Caps Lock is on)
+        self.tk_widget.bind("<Control-C>", lambda e: self._copy())
+        self.tk_widget.bind("<Control-X>", lambda e: self._cut())
+        self.tk_widget.bind("<Control-V>", lambda e: self._paste())
+        self.tk_widget.bind("<Control-A>", lambda e: self._select_all())
+    
+    def _show_menu(self, event):
+        """Show the context menu at cursor position."""
+        try:
+            self.menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.menu.grab_release()
+    
+    def _cut(self):
+        """Cut selected text to clipboard."""
+        clipboard_cut(self.tk_widget)
+    
+    def _copy(self):
+        """Copy selected text to clipboard."""
+        clipboard_copy(self.tk_widget)
+    
+    def _paste(self):
+        """Paste text from clipboard."""
+        clipboard_paste(self.tk_widget)
+    
+    def _select_all(self):
+        """Select all text in widget."""
+        clipboard_select_all(self.tk_widget)
+
+
+def bind_clipboard_menu(widget):
+    """
+    Bind a clipboard context menu to a widget.
+    
+    Args:
+        widget: The CTkEntry or CTkTextbox widget to bind to.
+        
+    Returns:
+        ClipboardContextMenu: The created context menu instance.
+    """
+    return ClipboardContextMenu(widget)
 
 
 class App(ctk.CTk):
@@ -110,6 +194,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=14),
         )
         self.email_entry.grid(row=3, column=0, padx=40, pady=(0, 15))
+        bind_clipboard_menu(self.email_entry)
 
         # License key entry
         key_label = ctk.CTkLabel(
@@ -127,6 +212,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=14),
         )
         self.key_entry.grid(row=5, column=0, padx=40, pady=(0, 30))
+        bind_clipboard_menu(self.key_entry)
 
         # Activate button
         self.activate_btn = ctk.CTkButton(
@@ -285,6 +371,7 @@ class App(ctk.CTk):
             show="*",
         )
         api_key_entry.pack(padx=20, pady=(0, 5))
+        bind_clipboard_menu(api_key_entry)
         if current_key:
             api_key_entry.insert(0, current_key)
 
@@ -368,6 +455,7 @@ class App(ctk.CTk):
             left_frame, placeholder_text="e.g., Bitcoin Trading Strategies", width=350, height=40
         )
         self.topic_entry.grid(row=2, column=0, padx=20, pady=(0, 15))
+        bind_clipboard_menu(self.topic_entry)
 
         # Audience
         ctk.CTkLabel(left_frame, text="Target Audience:", font=ctk.CTkFont(size=14, weight="bold")).grid(
@@ -377,6 +465,7 @@ class App(ctk.CTk):
             left_frame, placeholder_text="e.g., Beginners with no trading experience", width=350, height=40
         )
         self.audience_entry.grid(row=4, column=0, padx=20, pady=(0, 20))
+        bind_clipboard_menu(self.audience_entry)
 
         # Right column - Branding
         right_frame = ctk.CTkFrame(self.tab_setup)
@@ -398,6 +487,7 @@ class App(ctk.CTk):
         
         self.logo_entry = ctk.CTkEntry(logo_frame, placeholder_text="Path to logo image...", width=250, height=35)
         self.logo_entry.grid(row=0, column=0, padx=(0, 10))
+        bind_clipboard_menu(self.logo_entry)
         
         ctk.CTkButton(
             logo_frame, text="Browse", width=80, height=35, command=self._browse_logo
@@ -411,6 +501,7 @@ class App(ctk.CTk):
             right_frame, placeholder_text="e.g., www.yourcompany.com", width=350, height=40
         )
         self.website_entry.grid(row=4, column=0, padx=20, pady=(0, 20))
+        bind_clipboard_menu(self.website_entry)
 
         # Save button
         ctk.CTkButton(
@@ -499,6 +590,7 @@ class App(ctk.CTk):
         )
         self.outline_textbox.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="nsew")
         self.tab_blueprint.grid_rowconfigure(2, weight=1)
+        bind_clipboard_menu(self.outline_textbox)
 
         # Confirm button
         ctk.CTkButton(
@@ -575,13 +667,15 @@ class App(ctk.CTk):
 
     # ==================== DRAFTING TAB ====================
     def _create_drafting_tab(self):
-        """Create the Drafting tab content."""
-        self.tab_drafting.grid_columnconfigure(0, weight=1)
+        """Create the Drafting tab content with split view (console + live preview)."""
+        # Configure grid for split view
+        self.tab_drafting.grid_columnconfigure(0, weight=1)  # Left: Console
+        self.tab_drafting.grid_columnconfigure(1, weight=1)  # Right: Preview
         self.tab_drafting.grid_rowconfigure(1, weight=1)
 
-        # Header with button
+        # Header with button (spans both columns)
         header_frame = ctk.CTkFrame(self.tab_drafting, fg_color="transparent")
-        header_frame.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        header_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 10), sticky="ew")
 
         ctk.CTkLabel(
             header_frame,
@@ -600,18 +694,76 @@ class App(ctk.CTk):
         )
         self.draft_btn.pack(side="right")
 
+        # ========== LEFT SIDE: Progress Console ==========
+        left_frame = ctk.CTkFrame(self.tab_drafting)
+        left_frame.grid(row=1, column=0, padx=(20, 10), pady=(0, 10), sticky="nsew")
+        left_frame.grid_columnconfigure(0, weight=1)
+        left_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            left_frame,
+            text="📋 Progress Console",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+
         # Progress log
         self.drafting_log = ctk.CTkTextbox(
-            self.tab_drafting,
+            left_frame,
             font=ctk.CTkFont(family="Consolas", size=12),
             wrap="word",
             state="disabled",
         )
-        self.drafting_log.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="nsew")
+        self.drafting_log.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        bind_clipboard_menu(self.drafting_log)
 
-        # Progress bar
+        # ========== RIGHT SIDE: Live Page Preview ==========
+        right_frame = ctk.CTkFrame(self.tab_drafting)
+        right_frame.grid(row=1, column=1, padx=(10, 20), pady=(0, 10), sticky="nsew")
+        right_frame.grid_columnconfigure(0, weight=1)
+        right_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            right_frame,
+            text="📄 Live Page Preview",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+
+        # White "paper" frame for document preview (scrollable)
+        self.preview_scroll = ctk.CTkScrollableFrame(
+            right_frame,
+            fg_color="white",
+            corner_radius=5,
+        )
+        self.preview_scroll.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.preview_scroll.grid_columnconfigure(0, weight=1)
+
+        # Chapter title label (appears above content during generation)
+        self.preview_chapter_title = ctk.CTkLabel(
+            self.preview_scroll,
+            text="",
+            font=ctk.CTkFont(family="Times New Roman", size=18, weight="bold"),
+            text_color="black",
+            justify="left",
+            anchor="w",
+            wraplength=400,
+        )
+        self.preview_chapter_title.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="nw")
+
+        # Content label for live streaming text (like a typewriter)
+        self.preview_content_label = ctk.CTkLabel(
+            self.preview_scroll,
+            text="Content will appear here as it's being written...",
+            font=ctk.CTkFont(family="Times New Roman", size=16),
+            text_color="#333333",
+            justify="left",
+            anchor="nw",
+            wraplength=400,
+        )
+        self.preview_content_label.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nw")
+
+        # ========== BOTTOM: Progress Bar (spans both columns) ==========
         progress_frame = ctk.CTkFrame(self.tab_drafting)
-        progress_frame.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="ew")
+        progress_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
 
         self.drafting_progress_label = ctk.CTkLabel(
             progress_frame, text="Ready to draft", font=ctk.CTkFont(size=13)
@@ -623,7 +775,7 @@ class App(ctk.CTk):
         self.drafting_progress.set(0)
         progress_frame.grid_columnconfigure(0, weight=1)
 
-        # Continue button
+        # Continue button (spans both columns)
         self.continue_export_btn = ctk.CTkButton(
             self.tab_drafting,
             text="Continue to Export →",
@@ -634,7 +786,10 @@ class App(ctk.CTk):
             state="disabled",
             command=lambda: self.tabview.set("📤 Export"),
         )
-        self.continue_export_btn.grid(row=3, column=0, padx=20, pady=(10, 20))
+        self.continue_export_btn.grid(row=3, column=0, columnspan=2, padx=20, pady=(10, 20))
+
+        # Track current preview content for accumulation
+        self._preview_accumulated_text = ""
 
     def _log_drafting(self, message):
         """Add message to drafting log."""
@@ -645,6 +800,30 @@ class App(ctk.CTk):
         self.drafting_log.insert("end", formatted_msg)
         self.drafting_log.see("end")
         self.drafting_log.configure(state="disabled")
+
+    def update_live_preview(self, text_chunk):
+        """
+        Update the live preview with a new text chunk (typewriter effect).
+        Called from the AI worker streaming callback.
+        
+        Args:
+            text_chunk: The incremental text chunk to append.
+        """
+        self._preview_accumulated_text += text_chunk
+        self.preview_content_label.configure(text=self._preview_accumulated_text)
+        # Force update to show the change immediately
+        self.preview_content_label.update_idletasks()
+        # Scroll to bottom of preview
+        self.preview_scroll._parent_canvas.yview_moveto(1.0)
+
+    def _clear_live_preview(self):
+        """Clear the live preview content for a new chapter."""
+        self._preview_accumulated_text = ""
+        self.preview_content_label.configure(text="")
+
+    def _set_preview_chapter_title(self, title, chapter_num):
+        """Set the chapter title in the preview area."""
+        self.preview_chapter_title.configure(text=f"Chapter {chapter_num}: {title}")
 
     def _start_drafting(self):
         """Start the chapter drafting process."""
@@ -662,6 +841,10 @@ class App(ctk.CTk):
         self.project.chapters_content = {}  # Reset content
         self.current_chapter_index = 0
         self.total_chapters = len(self.project.outline)
+
+        # Clear preview for fresh start
+        self._clear_live_preview()
+        self.preview_chapter_title.configure(text="")
 
         self._log_drafting("Starting chapter generation...")
         self._write_next_chapter()
@@ -688,6 +871,10 @@ class App(ctk.CTk):
             text=f"Writing chapter {chapter_num}/{self.total_chapters}..."
         )
 
+        # Clear preview and set new chapter title
+        self._clear_live_preview()
+        self._set_preview_chapter_title(chapter_title, chapter_num)
+
         self._log_drafting(f"Writing Chapter {chapter_num}: {chapter_title}...")
 
         def on_success(title, content):
@@ -696,12 +883,17 @@ class App(ctk.CTk):
         def on_error(error):
             self.after(0, lambda: self._on_drafting_error(error))
 
+        def on_stream(text_chunk):
+            # Schedule UI update on main thread for streaming text
+            self.after(0, lambda: self.update_live_preview(text_chunk))
+
         worker = ChapterWriter(
             self.project.topic,
             chapter_title,
             chapter_num,
             callback=on_success,
             error_callback=on_error,
+            stream_callback=on_stream,
         )
         worker.start()
 
@@ -795,6 +987,7 @@ class App(ctk.CTk):
             height=200,
         )
         self.export_log.grid(row=1, column=0, columnspan=2, padx=20, pady=(0, 20), sticky="ew")
+        bind_clipboard_menu(self.export_log)
 
     def _log_export(self, message):
         """Add message to export log."""

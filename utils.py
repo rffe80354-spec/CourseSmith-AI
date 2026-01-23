@@ -1,10 +1,12 @@
 """
 Utils Module - Helper functions for PyInstaller EXE compilation.
 Provides resource path resolution for bundled applications.
+Also includes clipboard helper functions for cross-platform compatibility.
 """
 
 import os
 import sys
+import tkinter as tk
 
 
 def resource_path(relative_path):
@@ -62,3 +64,66 @@ def ensure_dir(path):
     """
     os.makedirs(path, exist_ok=True)
     return path
+
+
+# ==================== CLIPBOARD HELPERS ====================
+
+def clipboard_cut(widget):
+    """
+    Cut selected text from widget to clipboard.
+    
+    Args:
+        widget: The tkinter widget (Entry or Text) to cut from.
+    """
+    try:
+        widget.event_generate("<<Cut>>")
+    except tk.TclError:
+        pass
+
+
+def clipboard_copy(widget):
+    """
+    Copy selected text from widget to clipboard.
+    
+    Args:
+        widget: The tkinter widget (Entry or Text) to copy from.
+    """
+    try:
+        widget.event_generate("<<Copy>>")
+    except tk.TclError:
+        pass
+
+
+def clipboard_paste(widget):
+    """
+    Paste text from clipboard into widget.
+    
+    Args:
+        widget: The tkinter widget (Entry or Text) to paste into.
+    """
+    try:
+        widget.event_generate("<<Paste>>")
+    except tk.TclError:
+        pass
+
+
+def clipboard_select_all(widget):
+    """
+    Select all text in widget.
+    
+    Args:
+        widget: The tkinter widget (Entry or Text) to select all in.
+    """
+    try:
+        widget.event_generate("<<SelectAll>>")
+    except tk.TclError:
+        # Fallback for widgets that don't support <<SelectAll>>
+        try:
+            if hasattr(widget, 'select_range'):
+                # For Entry widgets
+                widget.select_range(0, 'end')
+            elif hasattr(widget, 'tag_add'):
+                # For Text widgets
+                widget.tag_add('sel', '1.0', 'end')
+        except Exception:
+            pass
