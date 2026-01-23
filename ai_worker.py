@@ -154,9 +154,10 @@ Make the titles descriptive and engaging. Only provide the chapter titles, nothi
 
 
 class ChapterWriter(AIWorkerBase):
-    """Worker for generating chapter content using GPT-4o."""
+    """Worker for generating chapter content using GPT-4o with streaming support."""
     
-    def __init__(self, topic, chapter_title, chapter_num, callback=None, error_callback=None):
+    def __init__(self, topic, chapter_title, chapter_num, callback=None, error_callback=None,
+                 stream_callback=None):
         """
         Initialize the chapter writer.
         
@@ -166,12 +167,14 @@ class ChapterWriter(AIWorkerBase):
             chapter_num: The chapter number.
             callback: Function to call with results (chapter_title, content).
             error_callback: Function to call on error (receives error message).
+            stream_callback: Function to call with incremental text chunks for live preview.
         """
         self.topic = topic
         self.chapter_title = chapter_title
         self.chapter_num = chapter_num
         self.callback = callback
         self.error_callback = error_callback
+        self.stream_callback = stream_callback
         self.thread = None
         self.result = None
         self.error = None
@@ -182,7 +185,7 @@ class ChapterWriter(AIWorkerBase):
         self.thread.start()
     
     def _run(self):
-        """Execute the chapter content generation."""
+        """Execute the chapter content generation with streaming support."""
         try:
             client = self.get_client()
             
@@ -200,21 +203,59 @@ Requirements:
 
 Write the content directly."""
 
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert educator who writes clear, engaging, "
-                        "and comprehensive educational content."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=1200
-            )
+            # Check if streaming is requested
+            if self.stream_callback:
+                # Use streaming API for live preview
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert educator who writes clear, engaging, "
+                            "and comprehensive educational content."
+                        },
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=1200,
+                    stream=True
+                )
+                
+                # Collect full content while streaming chunks
+                full_content = []
+                chunk_count = 0
+                for chunk in response:
+                    chunk_count += 1
+                    # Security check every 20 chunks to reduce overhead
+                    if chunk_count % 20 == 0 and not is_active():
+                        raise SecurityError("Session expired during generation.")
+                    
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        text_chunk = chunk.choices[0].delta.content
+                        full_content.append(text_chunk)
+                        # Send chunk to stream callback for live preview
+                        if self.stream_callback:
+                            self.stream_callback(text_chunk)
+                
+                content = "".join(full_content).strip()
+            else:
+                # Non-streaming mode (original behavior)
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert educator who writes clear, engaging, "
+                            "and comprehensive educational content."
+                        },
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=1200
+                )
+                
+                content = response.choices[0].message.content.strip()
             
-            content = response.choices[0].message.content.strip()
             self.result = (self.chapter_title, content)
             
             if self.callback:

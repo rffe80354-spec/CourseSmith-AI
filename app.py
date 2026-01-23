@@ -1,18 +1,20 @@
 """
-CourseSmith ENTERPRISE - Main Application GUI.
+Faleovad AI Enterprise - Main Application GUI.
 A commercial desktop tool to generate educational PDF books using AI with DRM protection.
 Uses session token system for anti-tamper protection.
+Features tiered licensing: Standard ($59) vs Extended ($249).
 """
 
 import os
 import threading
+import webbrowser
 from datetime import datetime
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, Menu
 
-from utils import resource_path, get_data_dir
+from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu
 from license_guard import load_license, save_license, validate_license
-from session_manager import set_token, is_active, clear_session
+from session_manager import set_session, set_token, is_active, get_tier, is_extended, clear_session
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator, AIWorkerBase
 from pdf_engine import PDFBuilder
@@ -22,16 +24,32 @@ from pdf_engine import PDFBuilder
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
+# Upgrade URL for upsell
+UPGRADE_URL = "https://www.codester.com"
+
+
+def bind_clipboard_menu(widget):
+    """
+    Bind a clipboard context menu to a widget.
+    
+    Args:
+        widget: The CTkEntry or CTkTextbox widget to bind to.
+        
+    Returns:
+        RightClickMenu: The created context menu instance.
+    """
+    return add_context_menu(widget)
+
 
 class App(ctk.CTk):
-    """Main application window for CourseSmith ENTERPRISE with DRM protection."""
+    """Main application window for Faleovad AI Enterprise with DRM protection."""
 
     def __init__(self):
         """Initialize the application window and widgets."""
         super().__init__()
 
         # Window configuration
-        self.title("CourseSmith ENTERPRISE - Educational PDF Generator")
+        self.title("Faleovad AI Enterprise - Educational PDF Generator")
         self.geometry("1000x700")
         self.minsize(900, 600)
 
@@ -41,6 +59,7 @@ class App(ctk.CTk):
         # Track state
         self.is_licensed = False
         self.licensed_email = None
+        self.license_tier = None  # 'standard' or 'extended'
         self.is_generating = False
         self.current_chapter_index = 0
         self.total_chapters = 0
@@ -54,16 +73,18 @@ class App(ctk.CTk):
 
     def _check_license(self):
         """Check license status and show appropriate UI."""
-        session_token, email = load_license()
+        session_token, email, tier = load_license()
         
         if session_token:
-            # Set the session token for anti-tamper protection
-            set_token(session_token, email)
+            # Set the session with token, email, and tier for anti-tamper protection
+            set_session(session_token, email, tier)
             self.is_licensed = True
             self.licensed_email = email
+            self.license_tier = tier
             self._create_main_ui()
         else:
             self.is_licensed = False
+            self.license_tier = None
             clear_session()
             self._create_activation_ui()
 
@@ -81,7 +102,7 @@ class App(ctk.CTk):
         # Logo/Title
         title_label = ctk.CTkLabel(
             self.activation_frame,
-            text="🔐 CourseSmith ENTERPRISE",
+            text="🔐 Faleovad AI Enterprise",
             font=ctk.CTkFont(size=32, weight="bold"),
         )
         title_label.grid(row=0, column=0, padx=40, pady=(40, 10))
@@ -110,6 +131,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=14),
         )
         self.email_entry.grid(row=3, column=0, padx=40, pady=(0, 15))
+        bind_clipboard_menu(self.email_entry)
 
         # License key entry
         key_label = ctk.CTkLabel(
@@ -127,6 +149,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=14),
         )
         self.key_entry.grid(row=5, column=0, padx=40, pady=(0, 30))
+        bind_clipboard_menu(self.key_entry)
 
         # Activate button
         self.activate_btn = ctk.CTkButton(
@@ -154,19 +177,25 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Please enter your license key.")
             return
 
-        # Validate the license and get session token
-        session_token = validate_license(email, key)
+        # Validate the license and get session info
+        result = validate_license(email, key)
         
-        if session_token:
+        if result and result.get('valid'):
             # Save the license
             if save_license(email, key):
-                # Set the session token for anti-tamper protection
-                set_token(session_token, email)
+                # Set the session with token, email, and tier for anti-tamper protection
+                tier = result.get('tier', 'standard')
+                set_session(result['token'], email, tier)
                 self.is_licensed = True
                 self.licensed_email = email
+                self.license_tier = tier
+                
+                tier_label = "Extended" if tier == 'extended' else "Standard"
                 messagebox.showinfo(
                     "Success",
-                    "License activated successfully!\n\nWelcome to CourseSmith ENTERPRISE.",
+                    f"License activated successfully!\n\n"
+                    f"Tier: {tier_label}\n\n"
+                    f"Welcome to Faleovad AI Enterprise.",
                 )
                 self._create_main_ui()
             else:
@@ -208,7 +237,7 @@ class App(ctk.CTk):
         self._create_export_tab()
 
     def _create_header(self):
-        """Create the header bar with title, user info, and settings."""
+        """Create the header bar with title, tier info, and settings."""
         header_frame = ctk.CTkFrame(self, height=60, corner_radius=0)
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
         header_frame.grid_columnconfigure(1, weight=1)
@@ -216,10 +245,27 @@ class App(ctk.CTk):
         # Title
         title_label = ctk.CTkLabel(
             header_frame,
-            text="CourseSmith ENTERPRISE",
+            text="Faleovad AI Enterprise",
             font=ctk.CTkFont(size=22, weight="bold"),
         )
         title_label.grid(row=0, column=0, padx=20, pady=15, sticky="w")
+
+        # Tier indicator
+        if self.license_tier == 'extended':
+            tier_label = ctk.CTkLabel(
+                header_frame,
+                text="✓ PRO Features Active",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color="#ffd700",  # Gold color for PRO
+            )
+        else:
+            tier_label = ctk.CTkLabel(
+                header_frame,
+                text="Standard License",
+                font=ctk.CTkFont(size=12),
+                text_color="#888888",
+            )
+        tier_label.grid(row=0, column=1, padx=10, pady=15, sticky="w")
 
         # Settings button
         settings_btn = ctk.CTkButton(
@@ -232,17 +278,17 @@ class App(ctk.CTk):
             hover_color="#666666",
             command=self._show_settings,
         )
-        settings_btn.grid(row=0, column=1, padx=10, pady=15, sticky="e")
+        settings_btn.grid(row=0, column=2, padx=10, pady=15, sticky="e")
 
         # User info
         if self.licensed_email:
             user_label = ctk.CTkLabel(
                 header_frame,
-                text=f"✓ Licensed to: {self.licensed_email}",
+                text=f"✓ {self.licensed_email}",
                 font=ctk.CTkFont(size=12),
                 text_color="#28a745",
             )
-            user_label.grid(row=0, column=2, padx=20, pady=15, sticky="e")
+            user_label.grid(row=0, column=3, padx=20, pady=15, sticky="e")
 
     def _show_settings(self):
         """Show the settings dialog for API key configuration."""
@@ -285,6 +331,7 @@ class App(ctk.CTk):
             show="*",
         )
         api_key_entry.pack(padx=20, pady=(0, 5))
+        bind_clipboard_menu(api_key_entry)
         if current_key:
             api_key_entry.insert(0, current_key)
 
@@ -346,7 +393,7 @@ class App(ctk.CTk):
 
     # ==================== SETUP TAB ====================
     def _create_setup_tab(self):
-        """Create the Setup tab content."""
+        """Create the Setup tab content with tier-based branding restrictions."""
         self.tab_setup.grid_columnconfigure(0, weight=1)
         self.tab_setup.grid_columnconfigure(1, weight=1)
 
@@ -368,6 +415,7 @@ class App(ctk.CTk):
             left_frame, placeholder_text="e.g., Bitcoin Trading Strategies", width=350, height=40
         )
         self.topic_entry.grid(row=2, column=0, padx=20, pady=(0, 15))
+        bind_clipboard_menu(self.topic_entry)
 
         # Audience
         ctk.CTkLabel(left_frame, text="Target Audience:", font=ctk.CTkFont(size=14, weight="bold")).grid(
@@ -377,14 +425,19 @@ class App(ctk.CTk):
             left_frame, placeholder_text="e.g., Beginners with no trading experience", width=350, height=40
         )
         self.audience_entry.grid(row=4, column=0, padx=20, pady=(0, 20))
+        bind_clipboard_menu(self.audience_entry)
 
         # Right column - Branding
         right_frame = ctk.CTkFrame(self.tab_setup)
         right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
+        # Check if Extended tier for branding access
+        is_extended_tier = is_extended()
+        
+        branding_title = "🎨 Branding (PRO)" if is_extended_tier else "🔒 Branding (Extended Only)"
         ctk.CTkLabel(
             right_frame,
-            text="🎨 Branding (Optional)",
+            text=branding_title,
             font=ctk.CTkFont(size=18, weight="bold"),
         ).grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 15), sticky="w")
 
@@ -396,21 +449,56 @@ class App(ctk.CTk):
         logo_frame = ctk.CTkFrame(right_frame, fg_color="transparent")
         logo_frame.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
         
-        self.logo_entry = ctk.CTkEntry(logo_frame, placeholder_text="Path to logo image...", width=250, height=35)
+        self.logo_entry = ctk.CTkEntry(
+            logo_frame, 
+            placeholder_text="Path to logo image..." if is_extended_tier else "🔒 Extended License Required",
+            width=250, 
+            height=35,
+            state="normal" if is_extended_tier else "disabled"
+        )
         self.logo_entry.grid(row=0, column=0, padx=(0, 10))
+        if is_extended_tier:
+            bind_clipboard_menu(self.logo_entry)
         
-        ctk.CTkButton(
-            logo_frame, text="Browse", width=80, height=35, command=self._browse_logo
-        ).grid(row=0, column=1)
+        self.browse_logo_btn = ctk.CTkButton(
+            logo_frame, 
+            text="Browse", 
+            width=80, 
+            height=35, 
+            command=self._browse_logo,
+            state="normal" if is_extended_tier else "disabled"
+        )
+        self.browse_logo_btn.grid(row=0, column=1)
 
         # Website URL
         ctk.CTkLabel(right_frame, text="Website URL:", font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=3, column=0, padx=20, pady=(10, 5), sticky="w"
         )
         self.website_entry = ctk.CTkEntry(
-            right_frame, placeholder_text="e.g., www.yourcompany.com", width=350, height=40
+            right_frame, 
+            placeholder_text="e.g., www.yourcompany.com" if is_extended_tier else "🔒 Extended License Required",
+            width=350, 
+            height=40,
+            state="normal" if is_extended_tier else "disabled"
         )
-        self.website_entry.grid(row=4, column=0, padx=20, pady=(0, 20))
+        self.website_entry.grid(row=4, column=0, padx=20, pady=(0, 10))
+        if is_extended_tier:
+            bind_clipboard_menu(self.website_entry)
+
+        # Upgrade button for Standard tier users
+        if not is_extended_tier:
+            upgrade_btn = ctk.CTkButton(
+                right_frame,
+                text="🔒 Unlock Branding (Get Extended)",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                height=40,
+                width=300,
+                fg_color="#ffd700",
+                hover_color="#e6c200",
+                text_color="black",
+                command=self._open_upgrade_url,
+            )
+            upgrade_btn.grid(row=5, column=0, padx=20, pady=(10, 20))
 
         # Save button
         ctk.CTkButton(
@@ -432,6 +520,10 @@ class App(ctk.CTk):
         if filepath:
             self.logo_entry.delete(0, "end")
             self.logo_entry.insert(0, filepath)
+
+    def _open_upgrade_url(self):
+        """Open the upgrade URL in the default browser."""
+        webbrowser.open(UPGRADE_URL)
 
     def _save_setup(self):
         """Save setup data and move to Blueprint tab."""
@@ -499,6 +591,7 @@ class App(ctk.CTk):
         )
         self.outline_textbox.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="nsew")
         self.tab_blueprint.grid_rowconfigure(2, weight=1)
+        bind_clipboard_menu(self.outline_textbox)
 
         # Confirm button
         ctk.CTkButton(
@@ -575,13 +668,15 @@ class App(ctk.CTk):
 
     # ==================== DRAFTING TAB ====================
     def _create_drafting_tab(self):
-        """Create the Drafting tab content."""
-        self.tab_drafting.grid_columnconfigure(0, weight=1)
+        """Create the Drafting tab content with split view (console + live preview)."""
+        # Configure grid for split view
+        self.tab_drafting.grid_columnconfigure(0, weight=1)  # Left: Console
+        self.tab_drafting.grid_columnconfigure(1, weight=1)  # Right: Preview
         self.tab_drafting.grid_rowconfigure(1, weight=1)
 
-        # Header with button
+        # Header with button (spans both columns)
         header_frame = ctk.CTkFrame(self.tab_drafting, fg_color="transparent")
-        header_frame.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        header_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 10), sticky="ew")
 
         ctk.CTkLabel(
             header_frame,
@@ -600,18 +695,76 @@ class App(ctk.CTk):
         )
         self.draft_btn.pack(side="right")
 
+        # ========== LEFT SIDE: Progress Console ==========
+        left_frame = ctk.CTkFrame(self.tab_drafting)
+        left_frame.grid(row=1, column=0, padx=(20, 10), pady=(0, 10), sticky="nsew")
+        left_frame.grid_columnconfigure(0, weight=1)
+        left_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            left_frame,
+            text="📋 Progress Console",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+
         # Progress log
         self.drafting_log = ctk.CTkTextbox(
-            self.tab_drafting,
+            left_frame,
             font=ctk.CTkFont(family="Consolas", size=12),
             wrap="word",
             state="disabled",
         )
-        self.drafting_log.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="nsew")
+        self.drafting_log.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        bind_clipboard_menu(self.drafting_log)
 
-        # Progress bar
+        # ========== RIGHT SIDE: Live Page Preview ==========
+        right_frame = ctk.CTkFrame(self.tab_drafting)
+        right_frame.grid(row=1, column=1, padx=(10, 20), pady=(0, 10), sticky="nsew")
+        right_frame.grid_columnconfigure(0, weight=1)
+        right_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            right_frame,
+            text="📄 Live Page Preview",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+
+        # White "paper" frame for document preview (scrollable)
+        self.preview_scroll = ctk.CTkScrollableFrame(
+            right_frame,
+            fg_color="white",
+            corner_radius=5,
+        )
+        self.preview_scroll.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.preview_scroll.grid_columnconfigure(0, weight=1)
+
+        # Chapter title label (appears above content during generation)
+        self.preview_chapter_title = ctk.CTkLabel(
+            self.preview_scroll,
+            text="",
+            font=ctk.CTkFont(family="Times New Roman", size=18, weight="bold"),
+            text_color="black",
+            justify="left",
+            anchor="w",
+            wraplength=400,
+        )
+        self.preview_chapter_title.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="nw")
+
+        # Content label for live streaming text (like a typewriter)
+        self.preview_content_label = ctk.CTkLabel(
+            self.preview_scroll,
+            text="Content will appear here as it's being written...",
+            font=ctk.CTkFont(family="Times New Roman", size=16),
+            text_color="#333333",
+            justify="left",
+            anchor="nw",
+            wraplength=400,
+        )
+        self.preview_content_label.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nw")
+
+        # ========== BOTTOM: Progress Bar (spans both columns) ==========
         progress_frame = ctk.CTkFrame(self.tab_drafting)
-        progress_frame.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="ew")
+        progress_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
 
         self.drafting_progress_label = ctk.CTkLabel(
             progress_frame, text="Ready to draft", font=ctk.CTkFont(size=13)
@@ -623,7 +776,7 @@ class App(ctk.CTk):
         self.drafting_progress.set(0)
         progress_frame.grid_columnconfigure(0, weight=1)
 
-        # Continue button
+        # Continue button (spans both columns)
         self.continue_export_btn = ctk.CTkButton(
             self.tab_drafting,
             text="Continue to Export →",
@@ -634,7 +787,10 @@ class App(ctk.CTk):
             state="disabled",
             command=lambda: self.tabview.set("📤 Export"),
         )
-        self.continue_export_btn.grid(row=3, column=0, padx=20, pady=(10, 20))
+        self.continue_export_btn.grid(row=3, column=0, columnspan=2, padx=20, pady=(10, 20))
+
+        # Track current preview content for accumulation
+        self._preview_accumulated_text = ""
 
     def _log_drafting(self, message):
         """Add message to drafting log."""
@@ -645,6 +801,35 @@ class App(ctk.CTk):
         self.drafting_log.insert("end", formatted_msg)
         self.drafting_log.see("end")
         self.drafting_log.configure(state="disabled")
+
+    def update_live_preview(self, text_chunk):
+        """
+        Update the live preview with a new text chunk (typewriter effect).
+        Called from the AI worker streaming callback.
+        
+        Args:
+            text_chunk: The incremental text chunk to append.
+        """
+        self._preview_accumulated_text += text_chunk
+        self.preview_content_label.configure(text=self._preview_accumulated_text)
+        # Force update to show the change immediately
+        self.preview_content_label.update_idletasks()
+        # Scroll to bottom of preview using safe method
+        try:
+            # Try to scroll to bottom - CTkScrollableFrame may have internal canvas
+            if hasattr(self.preview_scroll, '_parent_canvas'):
+                self.preview_scroll._parent_canvas.yview_moveto(1.0)
+        except (AttributeError, Exception):
+            pass  # Scrolling is optional; content update is the priority
+
+    def _clear_live_preview(self):
+        """Clear the live preview content for a new chapter."""
+        self._preview_accumulated_text = ""
+        self.preview_content_label.configure(text="")
+
+    def _set_preview_chapter_title(self, title, chapter_num):
+        """Set the chapter title in the preview area."""
+        self.preview_chapter_title.configure(text=f"Chapter {chapter_num}: {title}")
 
     def _start_drafting(self):
         """Start the chapter drafting process."""
@@ -662,6 +847,10 @@ class App(ctk.CTk):
         self.project.chapters_content = {}  # Reset content
         self.current_chapter_index = 0
         self.total_chapters = len(self.project.outline)
+
+        # Clear preview for fresh start
+        self._clear_live_preview()
+        self.preview_chapter_title.configure(text="")
 
         self._log_drafting("Starting chapter generation...")
         self._write_next_chapter()
@@ -688,6 +877,10 @@ class App(ctk.CTk):
             text=f"Writing chapter {chapter_num}/{self.total_chapters}..."
         )
 
+        # Clear preview and set new chapter title
+        self._clear_live_preview()
+        self._set_preview_chapter_title(chapter_title, chapter_num)
+
         self._log_drafting(f"Writing Chapter {chapter_num}: {chapter_title}...")
 
         def on_success(title, content):
@@ -696,12 +889,18 @@ class App(ctk.CTk):
         def on_error(error):
             self.after(0, lambda: self._on_drafting_error(error))
 
+        def on_stream(text_chunk):
+            # Schedule UI update on main thread for streaming text
+            # Capture text_chunk by value to avoid race conditions
+            self.after(0, lambda chunk=text_chunk: self.update_live_preview(chunk))
+
         worker = ChapterWriter(
             self.project.topic,
             chapter_title,
             chapter_num,
             callback=on_success,
             error_callback=on_error,
+            stream_callback=on_stream,
         )
         worker.start()
 
@@ -795,6 +994,7 @@ class App(ctk.CTk):
             height=200,
         )
         self.export_log.grid(row=1, column=0, columnspan=2, padx=20, pady=(0, 20), sticky="ew")
+        bind_clipboard_menu(self.export_log)
 
     def _log_export(self, message):
         """Add message to export log."""
