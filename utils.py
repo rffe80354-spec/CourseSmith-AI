@@ -213,6 +213,12 @@ class RightClickMenu:
         except tk.TclError:
             # Clipboard is empty or unavailable
             return
+        # Delete selected text first (if any), then insert clipboard content
+        try:
+            self.widget.delete("sel.first", "sel.last")
+        except tk.TclError:
+            # No selection exists, which is fine
+            pass
         # Insert text at current cursor position
         self.widget.insert("insert", text)
     
