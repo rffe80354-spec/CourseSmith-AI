@@ -13,7 +13,7 @@ import customtkinter as ctk
 from tkinter import messagebox, filedialog, Menu
 
 from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, get_underlying_tk_widget
-from license_guard import load_license, save_license, validate_license
+from license_guard import validate_license
 from session_manager import set_session, set_token, is_active, get_tier, is_extended, clear_session
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator, AIWorkerBase
@@ -83,21 +83,16 @@ class App(ctk.CTk):
         self._check_license()
 
     def _check_license(self):
-        """Check license status and show appropriate UI."""
-        session_token, email, tier = load_license()
+        """Initialize the application to require fresh authentication.
         
-        if session_token:
-            # Set the session with token, email, and tier for anti-tamper protection
-            set_session(session_token, email, tier)
-            self.is_licensed = True
-            self.licensed_email = email
-            self.license_tier = tier
-            self._create_main_ui()
-        else:
-            self.is_licensed = False
-            self.license_tier = None
-            clear_session()
-            self._create_activation_ui()
+        Security: Always requires fresh login. No persistent sessions.
+        The user must enter their email and license key every time the app starts.
+        """
+        # Security: Always start with no session - require fresh login every time
+        self.is_licensed = False
+        self.license_tier = None
+        clear_session()
+        self._create_activation_ui()
 
     def _create_activation_ui(self):
         """Create the license activation screen."""
@@ -192,25 +187,22 @@ class App(ctk.CTk):
         result = validate_license(email, key)
         
         if result and result.get('valid'):
-            # Save the license
-            if save_license(email, key):
-                # Set the session with token, email, and tier for anti-tamper protection
-                tier = result.get('tier', 'standard')
-                set_session(result['token'], email, tier)
-                self.is_licensed = True
-                self.licensed_email = email
-                self.license_tier = tier
-                
-                tier_label = "Extended" if tier == 'extended' else "Standard"
-                messagebox.showinfo(
-                    "Success",
-                    f"License activated successfully!\n\n"
-                    f"Tier: {tier_label}\n\n"
-                    f"Welcome to Faleovad AI Enterprise.",
-                )
-                self._create_main_ui()
-            else:
-                messagebox.showerror("Error", "Failed to save license. Please try again.")
+            # Set the session with token, email, and tier for anti-tamper protection
+            # Security: Session is volatile only - no persistence to disk
+            tier = result.get('tier', 'standard')
+            set_session(result['token'], email, tier)
+            self.is_licensed = True
+            self.licensed_email = email
+            self.license_tier = tier
+            
+            tier_label = "Extended" if tier == 'extended' else "Standard"
+            messagebox.showinfo(
+                "Success",
+                f"License activated successfully!\n\n"
+                f"Tier: {tier_label}\n\n"
+                f"Welcome to Faleovad AI Enterprise.",
+            )
+            self._create_main_ui()
         else:
             messagebox.showerror(
                 "Invalid License",

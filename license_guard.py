@@ -148,65 +148,42 @@ def save_license(email, key):
     """
     Save a valid license to the license file.
     
-    Args:
+    SECURITY NOTICE: This function has been intentionally disabled.
+    Persistent login has been removed for security - users must enter
+    their email and license key on every application start.
+    
+    Original parameters (kept for API compatibility):
         email: The user's email address.
         key: The validated license key.
         
     Returns:
-        bool: True if saved successfully, False otherwise.
+        bool: Always returns False - persistence is disabled for security.
     """
-    try:
-        license_path = get_license_path()
-        
-        # Extract tier from key
-        tier = _extract_tier_from_key(key)
-        
-        license_data = {
-            "email": email.strip().lower(),
-            "key": key.strip(),
-            "tier": tier or 'standard',
-            "version": "2.0"
-        }
-        
-        with open(license_path, 'w', encoding='utf-8') as f:
-            json.dump(license_data, f)
-        
-        return True
-    except (IOError, OSError) as e:
-        print(f"Failed to save license: {e}")
-        return False
+    # SECURITY: Persistent license storage disabled
+    # Users must authenticate on every application start
+    return False
 
 
 def load_license():
     """
     Load and validate the stored license.
     
+    SECURITY NOTICE: This function has been intentionally disabled.
+    Persistent login has been removed for security - users must enter
+    their email and license key on every application start.
+    
+    Original return format (kept for API compatibility):
+        tuple: (session_token, email, tier) where:
+            - session_token: str or None - the session authentication token
+            - email: str or None - the user's email address
+            - tier: str or None - 'standard' or 'extended' license tier
+    
     Returns:
-        tuple: (session_token, email, tier) - token/email/tier if valid (or None values).
+        tuple: Always returns (None, None, None) - no persistent sessions.
     """
-    try:
-        license_path = get_license_path()
-        
-        if not os.path.exists(license_path):
-            return None, None, None
-        
-        with open(license_path, 'r', encoding='utf-8') as f:
-            license_data = json.load(f)
-        
-        email = license_data.get("email", "")
-        key = license_data.get("key", "")
-        
-        # Validate and get session info
-        result = validate_license(email, key)
-        
-        if result and result.get('valid'):
-            return result['token'], email, result['tier']
-        else:
-            return None, None, None
-            
-    except (IOError, OSError, json.JSONDecodeError) as e:
-        print(f"Failed to load license: {e}")
-        return None, None, None
+    # SECURITY: Persistent license loading disabled
+    # Users must authenticate on every application start
+    return None, None, None
 
 
 def remove_license():
