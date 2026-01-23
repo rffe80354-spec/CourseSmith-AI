@@ -1134,20 +1134,21 @@ class App(ctk.CTk):
     def _bind_global_shortcuts(self):
         """Bind global keyboard shortcuts for clipboard operations to the root window."""
         # Bind Ctrl+A for Select All (both uppercase and lowercase)
-        self.bind("<Control-a>", self._on_select_all)
-        self.bind("<Control-A>", self._on_select_all)
+        # Using bind_all to catch events before they reach individual widgets
+        self.bind_all("<Control-a>", self._on_select_all)
+        self.bind_all("<Control-A>", self._on_select_all)
         
         # Bind Ctrl+C for Copy (both uppercase and lowercase)
-        self.bind("<Control-c>", self._on_copy)
-        self.bind("<Control-C>", self._on_copy)
+        self.bind_all("<Control-c>", self._on_copy)
+        self.bind_all("<Control-C>", self._on_copy)
         
         # Bind Ctrl+V for Paste (both uppercase and lowercase)
-        self.bind("<Control-v>", self._on_paste)
-        self.bind("<Control-V>", self._on_paste)
+        self.bind_all("<Control-v>", self._on_paste)
+        self.bind_all("<Control-V>", self._on_paste)
         
         # Bind Ctrl+X for Cut (both uppercase and lowercase)
-        self.bind("<Control-x>", self._on_cut)
-        self.bind("<Control-X>", self._on_cut)
+        self.bind_all("<Control-x>", self._on_cut)
+        self.bind_all("<Control-X>", self._on_cut)
 
     def _get_focused_tk_widget(self):
         """

@@ -176,10 +176,12 @@ class RightClickMenu:
     def _cut(self):
         """Cut selected text to clipboard."""
         clipboard_cut(self.widget)
+        return "break"
     
     def _copy(self):
         """Copy selected text to clipboard."""
         clipboard_copy(self.widget)
+        return "break"
     
     def _paste(self):
         """Paste text from clipboard directly using focus_get (avoids double-paste bug)."""
@@ -192,13 +194,13 @@ class RightClickMenu:
             # Check if widget is in normal state (can accept input)
             widget_state = str(focused_widget.cget("state")) if hasattr(focused_widget, "cget") else "normal"
             if widget_state == "disabled" or widget_state == "readonly":
-                return
+                return "break"
             
             # Get clipboard content from focused widget for consistency
             text = focused_widget.clipboard_get()
         except tk.TclError:
             # Clipboard is empty or unavailable
-            return
+            return "break"
         
         # Delete selected text first (if any), then insert clipboard content
         try:
@@ -213,10 +215,13 @@ class RightClickMenu:
         except tk.TclError:
             # Fallback: try inserting at the widget itself
             self.widget.insert("insert", text)
+        
+        return "break"
     
     def _select_all(self):
         """Select all text in widget."""
         clipboard_select_all(self.widget)
+        return "break"
 
 
 def get_underlying_tk_widget(widget):
