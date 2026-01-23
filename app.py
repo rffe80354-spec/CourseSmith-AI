@@ -71,6 +71,9 @@ class App(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
+        # Bind global keyboard shortcuts for clipboard operations
+        self._bind_global_shortcuts()
+
         # Check license status
         self._check_license()
 
@@ -1129,6 +1132,135 @@ class App(ctk.CTk):
         """Handle general generation errors."""
         self.is_generating = False
         messagebox.showerror("Error", f"An error occurred:\n\n{error}")
+
+    # ==================== GLOBAL KEYBOARD SHORTCUTS ====================
+    def _bind_global_shortcuts(self):
+        """Bind global keyboard shortcuts for clipboard operations to the root window."""
+        # Bind Ctrl+A for Select All (both uppercase and lowercase)
+        self.bind("<Control-a>", self._on_select_all)
+        self.bind("<Control-A>", self._on_select_all)
+        
+        # Bind Ctrl+C for Copy (both uppercase and lowercase)
+        self.bind("<Control-c>", self._on_copy)
+        self.bind("<Control-C>", self._on_copy)
+        
+        # Bind Ctrl+V for Paste (both uppercase and lowercase)
+        self.bind("<Control-v>", self._on_paste)
+        self.bind("<Control-V>", self._on_paste)
+        
+        # Bind Ctrl+X for Cut (both uppercase and lowercase)
+        self.bind("<Control-x>", self._on_cut)
+        self.bind("<Control-X>", self._on_cut)
+
+    def _get_focused_tk_widget(self):
+        """
+        Get the currently focused widget and its underlying tkinter widget.
+        
+        Returns:
+            tuple: (focused_widget, tk_widget) or (None, None) if no widget is focused.
+        """
+        focused = self.focus_get()
+        if focused is None:
+            return None, None
+        
+        # Get the underlying tkinter widget for CustomTkinter widgets
+        tk_widget = focused
+        if hasattr(focused, '_entry'):
+            # CTkEntry has underlying _entry widget
+            tk_widget = focused._entry
+        elif hasattr(focused, '_textbox'):
+            # CTkTextbox has underlying _textbox widget
+            tk_widget = focused._textbox
+        
+        return focused, tk_widget
+
+    def _on_select_all(self, event=None):
+        """Handle Ctrl+A (Select All) globally."""
+        focused, tk_widget = self._get_focused_tk_widget()
+        if tk_widget is None:
+            return "break"
+        
+        try:
+            # Check widget type and select all text accordingly
+            if hasattr(tk_widget, 'tag_add'):
+                # Text-based widget (CTkTextbox or tk.Text)
+                # Use 'end-1c' to exclude the trailing newline character
+                tk_widget.tag_add("sel", "1.0", "end-1c")
+            elif hasattr(tk_widget, 'select_range'):
+                # Entry-based widget (CTkEntry or tk.Entry)
+                tk_widget.select_range(0, "end")
+                # Move cursor to end after selection
+                tk_widget.icursor("end")
+        except Exception:
+            pass
+        
+        return "break"
+
+    def _on_copy(self, event=None):
+        """Handle Ctrl+C (Copy) globally."""
+        focused, tk_widget = self._get_focused_tk_widget()
+        if tk_widget is None:
+            return "break"
+        
+        try:
+            tk_widget.event_generate("<<Copy>>")
+        except Exception:
+            pass
+        
+        return "break"
+
+    def _on_paste(self, event=None):
+        """Handle Ctrl+V (Paste) globally."""
+        focused, tk_widget = self._get_focused_tk_widget()
+        if tk_widget is None:
+            return "break"
+        
+        try:
+            # Check if widget is in normal state (can accept input)
+            widget_state = str(tk_widget.cget("state")) if hasattr(tk_widget, "cget") else "normal"
+            if widget_state == "disabled" or widget_state == "readonly":
+                return "break"
+            
+            # Get clipboard content
+            text = tk_widget.clipboard_get()
+        except Exception:
+            # Failed to access clipboard content (empty, unavailable, or permission issues)
+            return "break"
+        
+        # Note: We manually delete selected text and insert instead of using
+        # event_generate("<<Paste>>") to avoid double-paste issues with CustomTkinter.
+        # Delete selected text first (if any)
+        try:
+            tk_widget.delete("sel.first", "sel.last")
+        except Exception:
+            # No selection exists, which is fine
+            pass
+        
+        # Insert text at current cursor position
+        try:
+            tk_widget.insert("insert", text)
+        except Exception:
+            pass
+        
+        return "break"
+
+    def _on_cut(self, event=None):
+        """Handle Ctrl+X (Cut) globally."""
+        focused, tk_widget = self._get_focused_tk_widget()
+        if tk_widget is None:
+            return "break"
+        
+        try:
+            # Check if widget is in normal state (can accept input)
+            widget_state = str(tk_widget.cget("state")) if hasattr(tk_widget, "cget") else "normal"
+            if widget_state == "disabled" or widget_state == "readonly":
+                return "break"
+            
+            tk_widget.event_generate("<<Cut>>")
+        except Exception:
+            pass
+        
+        return "break"
 
 
 if __name__ == "__main__":
