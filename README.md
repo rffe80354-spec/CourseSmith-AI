@@ -1,14 +1,27 @@
-# CourseSmith ENTERPRISE
+# Faleovad AI Enterprise
 
 A professional desktop application for generating educational PDF books using AI. Built with Python, customtkinter, OpenAI GPT-4o, and ReportLab.
 
+## 💰 License Tiers
+
+Faleovad AI Enterprise features a tiered licensing system:
+
+| Feature | Standard ($59) | Extended ($249) |
+|---------|----------------|-----------------|
+| Generate Courses | ✅ | ✅ |
+| AI Chapter Writing | ✅ | ✅ |
+| PDF Export | ✅ | ✅ |
+| DALL-E 3 Covers | ✅ | ✅ |
+| Custom Logo | ❌ | ✅ |
+| Custom Website URL | ❌ | ✅ |
+
 ## 🔐 License Activation
 
-CourseSmith ENTERPRISE requires a valid license to operate. On first launch, you'll see the activation screen.
+Faleovad AI Enterprise requires a valid license to operate. On first launch, you'll see the activation screen.
 
 ### For Users
 1. Enter your registered email address
-2. Enter your license key (format: `XXXX-XXXX-XXXX-XXXX`)
+2. Enter your license key (format: `STD-XXXX-XXXX-XXXX` or `EXT-XXXX-XXXX-XXXX`)
 3. Click "Activate License"
 
 ### For Administrators (Key Generation)
@@ -18,11 +31,15 @@ Use the admin keygen tool to generate license keys for buyers:
 python admin_keygen.py
 ```
 
-Enter the buyer's email address when prompted. The tool will output a license key to send to the customer.
+Enter the buyer's email address when prompted, then select the tier:
+- **1. Standard ($59)** - No custom branding
+- **2. Extended ($249)** - Full branding support
+
+The tool will output a license key to send to the customer.
 
 ## ⚙️ OpenAI API Key Setup
 
-CourseSmith ENTERPRISE requires an OpenAI API key to generate content.
+Faleovad AI Enterprise requires an OpenAI API key to generate content.
 
 ### Method 1: Settings Dialog (Recommended)
 1. After activation, click the **⚙️ Settings** button in the header
@@ -51,61 +68,80 @@ pip install -r requirements.txt
 python main.py
 ```
 
+### Compile to EXE (Windows)
+```bash
+# Install PyInstaller
+pip install pyinstaller
+
+# Build standalone executable
+pyinstaller --onefile --windowed --name "FaleovadAI" main.py
+```
+
 ## 🚀 Usage
 
 ### Wizard Workflow
 
-1. **Setup Tab**: Enter your course topic, target audience, and optional branding (logo, website URL)
+1. **Setup Tab**: Enter your course topic and target audience
+   - **Extended License**: Also add your custom logo and website URL for PDF branding
 
 2. **Blueprint Tab**: Generate an AI-powered course outline, then edit the chapter titles as needed
 
-3. **Drafting Tab**: Start the AI writing process - watch as each chapter is generated in real-time
+3. **Drafting Tab**: Start the AI writing process - watch the **Live Typewriter Preview** as each chapter is generated in real-time on a paper-like white background
 
 4. **Export Tab**: Generate a DALL-E 3 cover image and build your final professional PDF
 
 ## 📂 Project Structure
 
 ```
-CourseSmith-AI/
+Faleovad-AI/
 ├── main.py              # Application entry point
 ├── app.py               # Main GUI application
-├── license_guard.py     # DRM license validation
-├── session_manager.py   # Session token management (anti-tamper)
-├── ai_worker.py         # Threaded AI operations
-├── pdf_engine.py        # PDF generation engine
+├── license_guard.py     # DRM license validation (tiered)
+├── session_manager.py   # Session token + tier management
+├── ai_worker.py         # Threaded AI operations with streaming
+├── ai_manager.py        # OpenAI API client
+├── pdf_engine.py        # PDF generation with tier-based branding
 ├── project_manager.py   # Project data model
 ├── admin_keygen.py      # License key generator (admin tool)
-├── utils.py             # Utility functions
+├── utils.py             # Utility functions + Right-Click menu
 ├── requirements.txt     # Python dependencies
 └── .env                 # API key configuration (create this)
 ```
 
 ## 🔒 Security Architecture
 
-CourseSmith ENTERPRISE implements a **Session Token** system for anti-tamper protection:
+Faleovad AI Enterprise implements a **Session Token** system for anti-tamper protection:
 
-1. When the license is validated, a unique session token is generated
+1. When the license is validated, a unique session token is generated along with the tier
 2. The `ai_worker` and `pdf_engine` modules require this token to function
-3. If the license gate is bypassed, these core modules will fail without a valid token
-
-This ensures the software cannot be used without proper license activation.
+3. The `pdf_engine` enforces tier-based branding restrictions:
+   - **Standard**: Logo and website URL are forced to None
+   - **Extended**: Full branding customization allowed
+4. If the license gate is bypassed, these core modules will fail without a valid token
 
 ## 📄 Output
 
 The generated PDF includes:
 - Professional cover page with AI-generated image
-- Branded headers with optional logo
-- Footers with page numbers and website URL
+- **Extended Tier**: Branded headers with custom logo
+- **Extended Tier**: Footers with page numbers and your website URL
 - Clean Helvetica typography
 - Automatic markdown formatting (headers, bold, italic)
 - Page breaks between chapters
 
 ## 🛠️ Technical Stack
 
-- **GUI**: customtkinter (Dark Mode)
-- **AI**: OpenAI GPT-4o (content) + DALL-E 3 (images)
+- **GUI**: customtkinter (Dark Mode) with Right-Click context menus
+- **AI**: OpenAI GPT-4o (content with streaming) + DALL-E 3 (images)
 - **PDF**: ReportLab Platypus engine
-- **Security**: SHA256-based license validation with session tokens
+- **Security**: SHA256-based tiered license validation with session tokens
+
+## 🎨 UX Features
+
+- **Live Typewriter Preview**: Watch your chapters being written in real-time on a paper-like white preview panel
+- **Right-Click Context Menu**: Cut/Copy/Paste functionality works reliably on all input fields
+- **Tier Indicator**: PRO Features Active badge for Extended license users
+- **Upgrade Button**: Standard license users see a prominent upgrade button to unlock branding features
 
 ## 📝 License
 
@@ -113,4 +149,4 @@ This software is proprietary. A valid license key is required for use.
 
 ---
 
-*Generated by CourseSmith ENTERPRISE*
+*Generated by Faleovad AI Enterprise*

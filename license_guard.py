@@ -1,7 +1,11 @@
 """
-License Guard Module - DRM Security for CourseSmith ENTERPRISE.
-Provides license key generation and validation using SHA256 hashing.
-Returns session tokens on successful validation for anti-tamper protection.
+License Guard Module - DRM Security for Faleovad AI Enterprise.
+Provides tiered license key generation and validation using SHA256 hashing.
+Returns session tokens and tier info on successful validation for anti-tamper protection.
+
+Tiers:
+- Standard (STD-): Basic features, no branding customization
+- Extended (EXT-): Full features, custom logo and website support
 """
 
 import hashlib
@@ -14,53 +18,84 @@ from utils import get_data_dir
 
 
 # Secret salt for license key generation - DO NOT SHARE
-SECRET_SALT = "CS_2026_SECURE_SALT"
+SECRET_SALT = "FALEOVAD_AI_2026_GOLD"
 
 # License file name (hidden file)
 LICENSE_FILE = ".license"
 
 
-def generate_key(email):
+def generate_key(email, tier='standard'):
     """
-    Generate a license key for the given email address.
+    Generate a license key for the given email address and tier.
     
-    Uses SHA256 hash of email + secret salt to create a unique key.
+    Uses SHA256 hash of email + tier + secret salt to create a unique key.
+    Prefixes the key with STD- or EXT- based on tier.
     
     Args:
         email: The buyer's email address.
+        tier: The license tier ('standard' or 'extended').
         
     Returns:
-        str: The generated license key (base64 encoded).
+        str: The generated license key with tier prefix.
     """
     email = email.strip().lower()
+    tier = tier.lower() if tier else 'standard'
     
-    # Create hash from email + salt
-    hash_input = f"{email}{SECRET_SALT}"
+    # Validate tier
+    if tier not in ('standard', 'extended'):
+        tier = 'standard'
+    
+    # Create hash from email + tier + salt
+    hash_input = f"{email}{tier}{SECRET_SALT}"
     hash_bytes = hashlib.sha256(hash_input.encode('utf-8')).digest()
     
-    # Encode as base64 and take first 32 characters for cleaner key
-    key = base64.b64encode(hash_bytes).decode('utf-8')[:32]
+    # Encode as base64 and take first 24 characters for cleaner key
+    key = base64.b64encode(hash_bytes).decode('utf-8')[:24]
     
-    # Format key with dashes for readability (8-8-8-8 format)
-    formatted_key = f"{key[:8]}-{key[8:16]}-{key[16:24]}-{key[24:32]}"
+    # Format key with tier prefix (TIER-XXXX-XXXX-XXXX format)
+    prefix = "EXT" if tier == 'extended' else "STD"
+    formatted_key = f"{prefix}-{key[:8]}-{key[8:16]}-{key[16:24]}"
     
     return formatted_key
 
 
-def _generate_session_token(email):
+def _generate_session_token(email, tier):
     """
     Generate a session token for a validated license.
     
     Args:
         email: The validated user's email address.
+        tier: The license tier.
         
     Returns:
         str: A unique session token.
     """
     timestamp = str(time.time())
-    token_input = f"{email}{timestamp}{SECRET_SALT}"
+    token_input = f"{email}{tier}{timestamp}{SECRET_SALT}"
     token_bytes = hashlib.sha256(token_input.encode('utf-8')).digest()
     return base64.b64encode(token_bytes).decode('utf-8')[:48]
+
+
+def _extract_tier_from_key(key):
+    """
+    Extract the tier from a license key prefix.
+    
+    Args:
+        key: The license key.
+        
+    Returns:
+        str: 'standard' or 'extended', or None if invalid prefix.
+    """
+    if not key:
+        return None
+    
+    key_upper = key.strip().upper()
+    if key_upper.startswith('EXT-'):
+        return 'extended'
+    elif key_upper.startswith('STD-'):
+        return 'standard'
+    else:
+        return None
 
 
 def validate_license(email, key):
@@ -72,18 +107,28 @@ def validate_license(email, key):
         key: The license key to validate.
         
     Returns:
-        str or None: A session token if valid, None if invalid.
+        dict or None: Dictionary with 'valid', 'tier', 'token' if valid, None if invalid.
     """
     if not email or not key:
         return None
     
-    # Generate expected key for this email
-    expected_key = generate_key(email)
+    # Extract tier from key prefix
+    tier = _extract_tier_from_key(key)
+    if tier is None:
+        return None
+    
+    # Generate expected key for this email and tier
+    expected_key = generate_key(email, tier)
     
     # Compare keys (case-insensitive)
     if key.strip().upper() == expected_key.upper():
-        # Valid! Return a session token
-        return _generate_session_token(email)
+        # Valid! Return session info
+        token = _generate_session_token(email, tier)
+        return {
+            'valid': True,
+            'tier': tier,
+            'token': token
+        }
     
     return None
 
@@ -113,9 +158,13 @@ def save_license(email, key):
     try:
         license_path = get_license_path()
         
+        # Extract tier from key
+        tier = _extract_tier_from_key(key)
+        
         license_data = {
             "email": email.strip().lower(),
             "key": key.strip(),
+            "tier": tier or 'standard',
             "version": "2.0"
         }
         
@@ -133,14 +182,13 @@ def load_license():
     Load and validate the stored license.
     
     Returns:
-        tuple: (session_token, email) - session_token is the token if valid (or None),
-               email is the registered email or None.
+        tuple: (session_token, email, tier) - token/email/tier if valid (or None values).
     """
     try:
         license_path = get_license_path()
         
         if not os.path.exists(license_path):
-            return None, None
+            return None, None, None
         
         with open(license_path, 'r', encoding='utf-8') as f:
             license_data = json.load(f)
@@ -148,17 +196,17 @@ def load_license():
         email = license_data.get("email", "")
         key = license_data.get("key", "")
         
-        # Validate and get session token
-        session_token = validate_license(email, key)
+        # Validate and get session info
+        result = validate_license(email, key)
         
-        if session_token:
-            return session_token, email
+        if result and result.get('valid'):
+            return result['token'], email, result['tier']
         else:
-            return None, None
+            return None, None, None
             
     except (IOError, OSError, json.JSONDecodeError) as e:
         print(f"Failed to load license: {e}")
-        return None, None
+        return None, None, None
 
 
 def remove_license():

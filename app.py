@@ -1,18 +1,20 @@
 """
-CourseSmith ENTERPRISE - Main Application GUI.
+Faleovad AI Enterprise - Main Application GUI.
 A commercial desktop tool to generate educational PDF books using AI with DRM protection.
 Uses session token system for anti-tamper protection.
+Features tiered licensing: Standard ($59) vs Extended ($249).
 """
 
 import os
 import threading
+import webbrowser
 from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, Menu
 
-from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all
+from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu
 from license_guard import load_license, save_license, validate_license
-from session_manager import set_token, is_active, clear_session
+from session_manager import set_session, set_token, is_active, get_tier, is_extended, clear_session
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator, AIWorkerBase
 from pdf_engine import PDFBuilder
@@ -22,75 +24,8 @@ from pdf_engine import PDFBuilder
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
-
-class ClipboardContextMenu:
-    """
-    Right-click context menu for text input widgets.
-    Provides Cut, Copy, Paste, and Select All functionality.
-    Works with both CTkEntry and CTkTextbox widgets.
-    """
-    
-    def __init__(self, widget):
-        """
-        Initialize context menu for a widget.
-        
-        Args:
-            widget: The CTkEntry or CTkTextbox widget to attach the menu to.
-        """
-        self.widget = widget
-        
-        # Get the underlying tkinter widget
-        # CTkEntry and CTkTextbox have a _entry or _textbox attribute
-        if hasattr(widget, '_entry'):
-            self.tk_widget = widget._entry
-        elif hasattr(widget, '_textbox'):
-            self.tk_widget = widget._textbox
-        else:
-            self.tk_widget = widget
-        
-        # Create the context menu
-        self.menu = Menu(self.tk_widget, tearoff=0)
-        self.menu.add_command(label="Cut", accelerator="Ctrl+X", command=self._cut)
-        self.menu.add_command(label="Copy", accelerator="Ctrl+C", command=self._copy)
-        self.menu.add_command(label="Paste", accelerator="Ctrl+V", command=self._paste)
-        self.menu.add_separator()
-        self.menu.add_command(label="Select All", accelerator="Ctrl+A", command=self._select_all)
-        
-        # Bind right-click to show menu
-        self.tk_widget.bind("<Button-3>", self._show_menu)
-        
-        # Explicitly bind keyboard shortcuts (both lower and uppercase for Caps Lock)
-        shortcuts = [
-            ('c', self._copy), ('C', self._copy),
-            ('x', self._cut), ('X', self._cut),
-            ('v', self._paste), ('V', self._paste),
-            ('a', self._select_all), ('A', self._select_all),
-        ]
-        for key, action in shortcuts:
-            self.tk_widget.bind(f"<Control-{key}>", lambda e, a=action: a())
-    
-    def _show_menu(self, event):
-        """Show the context menu at cursor position."""
-        try:
-            self.menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            self.menu.grab_release()
-    
-    def _cut(self):
-        """Cut selected text to clipboard."""
-        clipboard_cut(self.tk_widget)
-    
-    def _copy(self):
-        """Copy selected text to clipboard."""
-        clipboard_copy(self.tk_widget)
-    
-    def _paste(self):
-        """Paste text from clipboard."""
-        clipboard_paste(self.tk_widget)
-    
-    def _select_all(self):
-        """Select all text in widget."""
-        clipboard_select_all(self.tk_widget)
+# Upgrade URL for upsell
+UPGRADE_URL = "https://www.codester.com"
 
 
 def bind_clipboard_menu(widget):
@@ -101,20 +36,20 @@ def bind_clipboard_menu(widget):
         widget: The CTkEntry or CTkTextbox widget to bind to.
         
     Returns:
-        ClipboardContextMenu: The created context menu instance.
+        RightClickMenu: The created context menu instance.
     """
-    return ClipboardContextMenu(widget)
+    return add_context_menu(widget)
 
 
 class App(ctk.CTk):
-    """Main application window for CourseSmith ENTERPRISE with DRM protection."""
+    """Main application window for Faleovad AI Enterprise with DRM protection."""
 
     def __init__(self):
         """Initialize the application window and widgets."""
         super().__init__()
 
         # Window configuration
-        self.title("CourseSmith ENTERPRISE - Educational PDF Generator")
+        self.title("Faleovad AI Enterprise - Educational PDF Generator")
         self.geometry("1000x700")
         self.minsize(900, 600)
 
@@ -124,6 +59,7 @@ class App(ctk.CTk):
         # Track state
         self.is_licensed = False
         self.licensed_email = None
+        self.license_tier = None  # 'standard' or 'extended'
         self.is_generating = False
         self.current_chapter_index = 0
         self.total_chapters = 0
@@ -137,16 +73,18 @@ class App(ctk.CTk):
 
     def _check_license(self):
         """Check license status and show appropriate UI."""
-        session_token, email = load_license()
+        session_token, email, tier = load_license()
         
         if session_token:
-            # Set the session token for anti-tamper protection
-            set_token(session_token, email)
+            # Set the session with token, email, and tier for anti-tamper protection
+            set_session(session_token, email, tier)
             self.is_licensed = True
             self.licensed_email = email
+            self.license_tier = tier
             self._create_main_ui()
         else:
             self.is_licensed = False
+            self.license_tier = None
             clear_session()
             self._create_activation_ui()
 
@@ -164,7 +102,7 @@ class App(ctk.CTk):
         # Logo/Title
         title_label = ctk.CTkLabel(
             self.activation_frame,
-            text="🔐 CourseSmith ENTERPRISE",
+            text="🔐 Faleovad AI Enterprise",
             font=ctk.CTkFont(size=32, weight="bold"),
         )
         title_label.grid(row=0, column=0, padx=40, pady=(40, 10))
@@ -239,19 +177,25 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Please enter your license key.")
             return
 
-        # Validate the license and get session token
-        session_token = validate_license(email, key)
+        # Validate the license and get session info
+        result = validate_license(email, key)
         
-        if session_token:
+        if result and result.get('valid'):
             # Save the license
             if save_license(email, key):
-                # Set the session token for anti-tamper protection
-                set_token(session_token, email)
+                # Set the session with token, email, and tier for anti-tamper protection
+                tier = result.get('tier', 'standard')
+                set_session(result['token'], email, tier)
                 self.is_licensed = True
                 self.licensed_email = email
+                self.license_tier = tier
+                
+                tier_label = "Extended" if tier == 'extended' else "Standard"
                 messagebox.showinfo(
                     "Success",
-                    "License activated successfully!\n\nWelcome to CourseSmith ENTERPRISE.",
+                    f"License activated successfully!\n\n"
+                    f"Tier: {tier_label}\n\n"
+                    f"Welcome to Faleovad AI Enterprise.",
                 )
                 self._create_main_ui()
             else:
@@ -293,7 +237,7 @@ class App(ctk.CTk):
         self._create_export_tab()
 
     def _create_header(self):
-        """Create the header bar with title, user info, and settings."""
+        """Create the header bar with title, tier info, and settings."""
         header_frame = ctk.CTkFrame(self, height=60, corner_radius=0)
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
         header_frame.grid_columnconfigure(1, weight=1)
@@ -301,10 +245,27 @@ class App(ctk.CTk):
         # Title
         title_label = ctk.CTkLabel(
             header_frame,
-            text="CourseSmith ENTERPRISE",
+            text="Faleovad AI Enterprise",
             font=ctk.CTkFont(size=22, weight="bold"),
         )
         title_label.grid(row=0, column=0, padx=20, pady=15, sticky="w")
+
+        # Tier indicator
+        if self.license_tier == 'extended':
+            tier_label = ctk.CTkLabel(
+                header_frame,
+                text="✓ PRO Features Active",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color="#ffd700",  # Gold color for PRO
+            )
+        else:
+            tier_label = ctk.CTkLabel(
+                header_frame,
+                text="Standard License",
+                font=ctk.CTkFont(size=12),
+                text_color="#888888",
+            )
+        tier_label.grid(row=0, column=1, padx=10, pady=15, sticky="w")
 
         # Settings button
         settings_btn = ctk.CTkButton(
@@ -317,17 +278,17 @@ class App(ctk.CTk):
             hover_color="#666666",
             command=self._show_settings,
         )
-        settings_btn.grid(row=0, column=1, padx=10, pady=15, sticky="e")
+        settings_btn.grid(row=0, column=2, padx=10, pady=15, sticky="e")
 
         # User info
         if self.licensed_email:
             user_label = ctk.CTkLabel(
                 header_frame,
-                text=f"✓ Licensed to: {self.licensed_email}",
+                text=f"✓ {self.licensed_email}",
                 font=ctk.CTkFont(size=12),
                 text_color="#28a745",
             )
-            user_label.grid(row=0, column=2, padx=20, pady=15, sticky="e")
+            user_label.grid(row=0, column=3, padx=20, pady=15, sticky="e")
 
     def _show_settings(self):
         """Show the settings dialog for API key configuration."""
@@ -432,7 +393,7 @@ class App(ctk.CTk):
 
     # ==================== SETUP TAB ====================
     def _create_setup_tab(self):
-        """Create the Setup tab content."""
+        """Create the Setup tab content with tier-based branding restrictions."""
         self.tab_setup.grid_columnconfigure(0, weight=1)
         self.tab_setup.grid_columnconfigure(1, weight=1)
 
@@ -470,9 +431,13 @@ class App(ctk.CTk):
         right_frame = ctk.CTkFrame(self.tab_setup)
         right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
+        # Check if Extended tier for branding access
+        is_extended_tier = is_extended()
+        
+        branding_title = "🎨 Branding (PRO)" if is_extended_tier else "🔒 Branding (Extended Only)"
         ctk.CTkLabel(
             right_frame,
-            text="🎨 Branding (Optional)",
+            text=branding_title,
             font=ctk.CTkFont(size=18, weight="bold"),
         ).grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 15), sticky="w")
 
@@ -484,23 +449,56 @@ class App(ctk.CTk):
         logo_frame = ctk.CTkFrame(right_frame, fg_color="transparent")
         logo_frame.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
         
-        self.logo_entry = ctk.CTkEntry(logo_frame, placeholder_text="Path to logo image...", width=250, height=35)
+        self.logo_entry = ctk.CTkEntry(
+            logo_frame, 
+            placeholder_text="Path to logo image..." if is_extended_tier else "🔒 Extended License Required",
+            width=250, 
+            height=35,
+            state="normal" if is_extended_tier else "disabled"
+        )
         self.logo_entry.grid(row=0, column=0, padx=(0, 10))
-        bind_clipboard_menu(self.logo_entry)
+        if is_extended_tier:
+            bind_clipboard_menu(self.logo_entry)
         
-        ctk.CTkButton(
-            logo_frame, text="Browse", width=80, height=35, command=self._browse_logo
-        ).grid(row=0, column=1)
+        self.browse_logo_btn = ctk.CTkButton(
+            logo_frame, 
+            text="Browse", 
+            width=80, 
+            height=35, 
+            command=self._browse_logo,
+            state="normal" if is_extended_tier else "disabled"
+        )
+        self.browse_logo_btn.grid(row=0, column=1)
 
         # Website URL
         ctk.CTkLabel(right_frame, text="Website URL:", font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=3, column=0, padx=20, pady=(10, 5), sticky="w"
         )
         self.website_entry = ctk.CTkEntry(
-            right_frame, placeholder_text="e.g., www.yourcompany.com", width=350, height=40
+            right_frame, 
+            placeholder_text="e.g., www.yourcompany.com" if is_extended_tier else "🔒 Extended License Required",
+            width=350, 
+            height=40,
+            state="normal" if is_extended_tier else "disabled"
         )
-        self.website_entry.grid(row=4, column=0, padx=20, pady=(0, 20))
-        bind_clipboard_menu(self.website_entry)
+        self.website_entry.grid(row=4, column=0, padx=20, pady=(0, 10))
+        if is_extended_tier:
+            bind_clipboard_menu(self.website_entry)
+
+        # Upgrade button for Standard tier users
+        if not is_extended_tier:
+            upgrade_btn = ctk.CTkButton(
+                right_frame,
+                text="🔒 Unlock Branding (Get Extended)",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                height=40,
+                width=300,
+                fg_color="#ffd700",
+                hover_color="#e6c200",
+                text_color="black",
+                command=self._open_upgrade_url,
+            )
+            upgrade_btn.grid(row=5, column=0, padx=20, pady=(10, 20))
 
         # Save button
         ctk.CTkButton(
@@ -522,6 +520,10 @@ class App(ctk.CTk):
         if filepath:
             self.logo_entry.delete(0, "end")
             self.logo_entry.insert(0, filepath)
+
+    def _open_upgrade_url(self):
+        """Open the upgrade URL in the default browser."""
+        webbrowser.open(UPGRADE_URL)
 
     def _save_setup(self):
         """Save setup data and move to Blueprint tab."""
