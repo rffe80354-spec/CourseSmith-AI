@@ -12,8 +12,8 @@ from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, Menu
 
-from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, handle_custom_paste, bind_paste_shortcut
-from license_guard import load_license, save_license, validate_license
+from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, get_underlying_tk_widget
+from license_guard import validate_license
 from session_manager import set_session, set_token, is_active, get_tier, is_extended, clear_session
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator, AIWorkerBase
@@ -30,7 +30,8 @@ UPGRADE_URL = "https://www.codester.com"
 
 def bind_clipboard_menu(widget):
     """
-    Bind a clipboard context menu and explicit paste shortcut to a widget.
+    Bind a clipboard context menu and click-to-focus to a widget.
+    Keyboard shortcuts (Ctrl+A/C/V/X) are handled globally at the root window level.
     
     Args:
         widget: The CTkEntry or CTkTextbox widget to bind to.
@@ -38,9 +39,13 @@ def bind_clipboard_menu(widget):
     Returns:
         RightClickMenu: The created context menu instance.
     """
-    # Add explicit Ctrl+V binding for reliable paste support
-    bind_paste_shortcut(widget)
-    # Add right-click context menu
+    # Get the underlying tkinter widget for focus binding
+    tk_widget = get_underlying_tk_widget(widget)
+    
+    # Bind Button-1 to ensure immediate keyboard focus on click
+    tk_widget.bind("<Button-1>", lambda e: tk_widget.focus_set(), add="+")
+    
+    # Add right-click context menu (keyboard shortcuts are global)
     return add_context_menu(widget)
 
 
@@ -78,21 +83,16 @@ class App(ctk.CTk):
         self._check_license()
 
     def _check_license(self):
-        """Check license status and show appropriate UI."""
-        session_token, email, tier = load_license()
+        """Initialize the application to require fresh authentication.
         
-        if session_token:
-            # Set the session with token, email, and tier for anti-tamper protection
-            set_session(session_token, email, tier)
-            self.is_licensed = True
-            self.licensed_email = email
-            self.license_tier = tier
-            self._create_main_ui()
-        else:
-            self.is_licensed = False
-            self.license_tier = None
-            clear_session()
-            self._create_activation_ui()
+        Security: Always requires fresh login. No persistent sessions.
+        The user must enter their email and license key every time the app starts.
+        """
+        # Security: Always start with no session - require fresh login every time
+        self.is_licensed = False
+        self.license_tier = None
+        clear_session()
+        self._create_activation_ui()
 
     def _create_activation_ui(self):
         """Create the license activation screen."""
@@ -187,25 +187,22 @@ class App(ctk.CTk):
         result = validate_license(email, key)
         
         if result and result.get('valid'):
-            # Save the license
-            if save_license(email, key):
-                # Set the session with token, email, and tier for anti-tamper protection
-                tier = result.get('tier', 'standard')
-                set_session(result['token'], email, tier)
-                self.is_licensed = True
-                self.licensed_email = email
-                self.license_tier = tier
-                
-                tier_label = "Extended" if tier == 'extended' else "Standard"
-                messagebox.showinfo(
-                    "Success",
-                    f"License activated successfully!\n\n"
-                    f"Tier: {tier_label}\n\n"
-                    f"Welcome to Faleovad AI Enterprise.",
-                )
-                self._create_main_ui()
-            else:
-                messagebox.showerror("Error", "Failed to save license. Please try again.")
+            # Set the session with token, email, and tier for anti-tamper protection
+            # Security: Session is volatile only - no persistence to disk
+            tier = result.get('tier', 'standard')
+            set_session(result['token'], email, tier)
+            self.is_licensed = True
+            self.licensed_email = email
+            self.license_tier = tier
+            
+            tier_label = "Extended" if tier == 'extended' else "Standard"
+            messagebox.showinfo(
+                "Success",
+                f"License activated successfully!\n\n"
+                f"Tier: {tier_label}\n\n"
+                f"Welcome to Faleovad AI Enterprise.",
+            )
+            self._create_main_ui()
         else:
             messagebox.showerror(
                 "Invalid License",
@@ -1196,6 +1193,27 @@ class App(ctk.CTk):
         
         return "break"
 
+    def _get_selected_text(self, tk_widget):
+        """
+        Get selected text from a widget.
+        
+        Args:
+            tk_widget: The underlying tkinter widget (Entry or Text).
+            
+        Returns:
+            tuple: (selected_text, is_text_widget) or (None, None) if no selection.
+        """
+        if hasattr(tk_widget, 'tag_ranges'):
+            # Text-based widget (CTkTextbox or tk.Text)
+            sel_ranges = tk_widget.tag_ranges("sel")
+            if sel_ranges:
+                return tk_widget.get("sel.first", "sel.last"), True
+            return None, None
+        elif hasattr(tk_widget, 'selection_present') and tk_widget.selection_present():
+            # Entry-based widget (CTkEntry or tk.Entry)
+            return tk_widget.selection_get(), False
+        return None, None
+
     def _on_copy(self, event=None):
         """Handle Ctrl+C (Copy) globally."""
         focused, tk_widget = self._get_focused_tk_widget()
@@ -1203,7 +1221,13 @@ class App(ctk.CTk):
             return "break"
         
         try:
-            tk_widget.event_generate("<<Copy>>")
+            selected_text, _ = self._get_selected_text(tk_widget)
+            if selected_text is None:
+                return "break"  # No selection
+            
+            # Copy to clipboard
+            self.clipboard_clear()
+            self.clipboard_append(selected_text)
         except Exception:
             pass
         
@@ -1256,7 +1280,20 @@ class App(ctk.CTk):
             if widget_state == "disabled" or widget_state == "readonly":
                 return "break"
             
-            tk_widget.event_generate("<<Cut>>")
+            selected_text, is_text_widget = self._get_selected_text(tk_widget)
+            if selected_text is None:
+                return "break"  # No selection
+            
+            # Copy to clipboard
+            self.clipboard_clear()
+            self.clipboard_append(selected_text)
+            
+            # Delete selected text (different methods for text vs entry widgets)
+            if is_text_widget:
+                tk_widget.delete("sel.first", "sel.last")
+            else:
+                # Entry widget: delete using selection indices
+                tk_widget.delete("sel.first", "sel.last")
         except Exception:
             pass
         
