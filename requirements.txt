@@ -4,3 +4,5 @@ reportlab
 python-dotenv
 pillow
 requests
+cryptography
+pyinstaller
