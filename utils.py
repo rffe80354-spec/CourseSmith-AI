@@ -207,20 +207,37 @@ class RightClickMenu:
         clipboard_copy(self.widget)
     
     def _paste(self):
-        """Paste text from clipboard directly (avoids double-paste bug)."""
+        """Paste text from clipboard directly using focus_get (avoids double-paste bug)."""
         try:
+            # Get the currently focused widget (handles CustomTkinter focus issues)
+            focused_widget = self.widget.focus_get()
+            if focused_widget is None:
+                focused_widget = self.widget
+            
+            # Check if widget is in normal state (can accept input)
+            widget_state = str(focused_widget.cget("state")) if hasattr(focused_widget, "cget") else "normal"
+            if widget_state == "disabled" or widget_state == "readonly":
+                return
+            
+            # Get clipboard content
             text = self.widget.clipboard_get()
         except tk.TclError:
             # Clipboard is empty or unavailable
             return
+        
         # Delete selected text first (if any), then insert clipboard content
         try:
-            self.widget.delete("sel.first", "sel.last")
+            focused_widget.delete("sel.first", "sel.last")
         except tk.TclError:
             # No selection exists, which is fine
             pass
+        
         # Insert text at current cursor position
-        self.widget.insert("insert", text)
+        try:
+            focused_widget.insert("insert", text)
+        except tk.TclError:
+            # Fallback: try inserting at the widget itself
+            self.widget.insert("insert", text)
     
     def _select_all(self):
         """Select all text in widget."""
@@ -247,3 +264,74 @@ def add_context_menu(widget):
         tk_widget = widget
     
     return RightClickMenu(tk_widget)
+
+
+def handle_custom_paste(event, widget):
+    """
+    Handle Ctrl+V paste event for CustomTkinter widgets.
+    This function directly accesses the clipboard and inserts text at the cursor.
+    Returns "break" to prevent the default Tkinter handler from firing.
+    
+    Args:
+        event: The key event (can be None for direct calls).
+        widget: The CTkEntry, CTkTextbox, or tkinter widget to paste into.
+        
+    Returns:
+        str: "break" to stop event propagation.
+    """
+    # Get the underlying tkinter widget for customtkinter widgets
+    if hasattr(widget, '_entry'):
+        tk_widget = widget._entry
+    elif hasattr(widget, '_textbox'):
+        tk_widget = widget._textbox
+    else:
+        tk_widget = widget
+    
+    try:
+        # Check if widget is in normal state (can accept input)
+        widget_state = str(tk_widget.cget("state")) if hasattr(tk_widget, "cget") else "normal"
+        if widget_state == "disabled" or widget_state == "readonly":
+            return "break"
+        
+        # Get clipboard content
+        text = tk_widget.clipboard_get()
+    except tk.TclError:
+        # Clipboard is empty or unavailable
+        return "break"
+    
+    # Delete selected text first (if any)
+    try:
+        tk_widget.delete("sel.first", "sel.last")
+    except tk.TclError:
+        # No selection exists, which is fine
+        pass
+    
+    # Insert text at current cursor position
+    try:
+        tk_widget.insert("insert", text)
+    except tk.TclError:
+        pass
+    
+    # Return "break" to prevent default handler (CRITICAL)
+    return "break"
+
+
+def bind_paste_shortcut(widget):
+    """
+    Bind Ctrl+V paste shortcut to a CustomTkinter widget.
+    This provides explicit paste handling that works reliably with CTkEntry and CTkTextbox.
+    
+    Args:
+        widget: The CTkEntry, CTkTextbox, or tkinter widget to bind to.
+    """
+    # Get the underlying tkinter widget for customtkinter widgets
+    if hasattr(widget, '_entry'):
+        tk_widget = widget._entry
+    elif hasattr(widget, '_textbox'):
+        tk_widget = widget._textbox
+    else:
+        tk_widget = widget
+    
+    # Bind both uppercase and lowercase for Ctrl+V
+    tk_widget.bind("<Control-v>", lambda e: handle_custom_paste(e, widget))
+    tk_widget.bind("<Control-V>", lambda e: handle_custom_paste(e, widget))

@@ -12,7 +12,7 @@ from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, Menu
 
-from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu
+from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, handle_custom_paste, bind_paste_shortcut
 from license_guard import load_license, save_license, validate_license
 from session_manager import set_session, set_token, is_active, get_tier, is_extended, clear_session
 from project_manager import CourseProject
@@ -30,7 +30,7 @@ UPGRADE_URL = "https://www.codester.com"
 
 def bind_clipboard_menu(widget):
     """
-    Bind a clipboard context menu to a widget.
+    Bind a clipboard context menu and explicit paste shortcut to a widget.
     
     Args:
         widget: The CTkEntry or CTkTextbox widget to bind to.
@@ -38,6 +38,9 @@ def bind_clipboard_menu(widget):
     Returns:
         RightClickMenu: The created context menu instance.
     """
+    # Add explicit Ctrl+V binding for reliable paste support
+    bind_paste_shortcut(widget)
+    # Add right-click context menu
     return add_context_menu(widget)
 
 
