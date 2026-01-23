@@ -176,10 +176,12 @@ class RightClickMenu:
     def _cut(self):
         """Cut selected text to clipboard."""
         clipboard_cut(self.widget)
+        return "break"
     
     def _copy(self):
         """Copy selected text to clipboard."""
         clipboard_copy(self.widget)
+        return "break"
     
     def _paste(self):
         """Paste text from clipboard directly using focus_get (avoids double-paste bug)."""
@@ -219,6 +221,7 @@ class RightClickMenu:
     def _select_all(self):
         """Select all text in widget."""
         clipboard_select_all(self.widget)
+        return "break"
 
 
 def get_underlying_tk_widget(widget):
