@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Admin Key Generator GUI - Vendor Tool for Faleovad AI Enterprise.
+Admin Key Generator GUI - Enterprise Vendor Tool for Faleovad AI.
 
-CustomTkinter-based graphical interface for generating tiered license keys.
+CustomTkinter-based graphical interface for generating and managing tiered license keys.
 This tool is for SELLERS ONLY to generate license keys for buyers.
 
-Features:
-- Dark mode professional interface
+Enterprise Features:
+- Dark mode professional interface with animations
 - Email input validation
 - License tier selection (Standard vs Extended)
-- One-click key generation
+- Duration selection (Lifetime / 1 Month / 1 Year)
+- SQLite database integration for key tracking
+- HWID binding support
+- Key revocation/management tab
 - Copy to clipboard functionality
-- Mock key generation (connect real logic later)
+- Responsive layout (no overflow bugs)
 
 Tiers:
 - Standard ($59): Basic features, no custom branding
@@ -22,13 +25,111 @@ Usage:
 """
 
 import customtkinter as ctk
-from tkinter import messagebox
-import hashlib
+from tkinter import messagebox, ttk
+import threading
+import time
 from datetime import datetime
+from typing import Optional
+
+from license_guard import generate_key, get_hwid
+from database_manager import (
+    create_license, get_license_by_key, search_licenses,
+    revoke_license, reactivate_license, list_all_licenses,
+    get_license_stats, is_license_expired
+)
+
+
+class SplashScreen(ctk.CTkToplevel):
+    """Splash screen with loading animation."""
+    
+    def __init__(self, parent):
+        """Initialize splash screen."""
+        super().__init__(parent)
+        
+        # Configure window
+        self.title("")
+        self.geometry("500x350")
+        self.resizable(False, False)
+        
+        # Remove window decorations
+        self.overrideredirect(True)
+        
+        # Center on screen
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() // 2) - (500 // 2)
+        y = (self.winfo_screenheight() // 2) - (350 // 2)
+        self.geometry(f"500x350+{x}+{y}")
+        
+        # Create UI
+        self._create_ui()
+        
+        # Make sure it's on top
+        self.lift()
+        self.focus_force()
+        
+    def _create_ui(self):
+        """Create splash screen UI."""
+        # Main frame with depth
+        main_frame = ctk.CTkFrame(self, corner_radius=20, border_width=3, border_color="#1f6aa5")
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Logo/Title
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text="🔐",
+            font=ctk.CTkFont(size=80)
+        )
+        title_label.pack(pady=(50, 10))
+        
+        app_name_label = ctk.CTkLabel(
+            main_frame,
+            text="Faleovad AI Enterprise",
+            font=ctk.CTkFont(size=28, weight="bold"),
+            text_color=("#1f6aa5", "#3b8ed0")
+        )
+        app_name_label.pack(pady=(0, 5))
+        
+        subtitle_label = ctk.CTkLabel(
+            main_frame,
+            text="License Key Generator",
+            font=ctk.CTkFont(size=16),
+            text_color="gray"
+        )
+        subtitle_label.pack(pady=(0, 40))
+        
+        # Progress bar
+        self.progress = ctk.CTkProgressBar(
+            main_frame,
+            width=350,
+            height=15,
+            corner_radius=10,
+            mode="indeterminate"
+        )
+        self.progress.pack(pady=(0, 15))
+        self.progress.start()
+        
+        # Status label
+        self.status_label = ctk.CTkLabel(
+            main_frame,
+            text="Initializing...",
+            font=ctk.CTkFont(size=12),
+            text_color="gray"
+        )
+        self.status_label.pack(pady=(0, 30))
+    
+    def update_status(self, text):
+        """Update status message."""
+        self.status_label.configure(text=text)
+        self.update()
+    
+    def close_splash(self):
+        """Close splash screen with fade effect."""
+        self.progress.stop()
+        self.destroy()
 
 
 class KeygenApp(ctk.CTk):
-    """Admin License Key Generator GUI Application."""
+    """Admin License Key Generator GUI Application with Enterprise Features."""
     
     def __init__(self):
         """Initialize the keygen application."""
@@ -36,147 +137,483 @@ class KeygenApp(ctk.CTk):
         
         # Window configuration
         self.title("Faleovad AI Enterprise - License Key Generator")
-        self.geometry("700x600")
-        self.minsize(600, 500)
+        self.geometry("900x750")
+        self.minsize(800, 650)
         
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
         
-        # Create main UI
+        # Hide main window initially
+        self.withdraw()
+        
+        # Show splash screen
+        self._show_splash()
+        
+    def _show_splash(self):
+        """Show splash screen with loading animation."""
+        splash = SplashScreen(self)
+        
+        def load_app():
+            """Simulate loading and initialize app."""
+            time.sleep(0.5)
+            splash.update_status("Loading database...")
+            time.sleep(0.5)
+            splash.update_status("Initializing UI components...")
+            time.sleep(0.5)
+            splash.update_status("Ready!")
+            time.sleep(0.3)
+            
+            # Close splash and show main window
+            self.after(0, lambda: self._finish_loading(splash))
+        
+        # Run loading in thread
+        thread = threading.Thread(target=load_app, daemon=True)
+        thread.start()
+    
+    def _finish_loading(self, splash):
+        """Finish loading and show main window."""
+        splash.close_splash()
+        self.deiconify()
         self._create_ui()
         
-    def _create_ui(self):
-        """Create the main user interface."""
-        # Main container frame with generous padding
-        main_frame = ctk.CTkFrame(self, corner_radius=15, border_width=2, border_color="gray30")
-        main_frame.grid(row=0, column=0, padx=40, pady=40, sticky="nsew")
-        main_frame.grid_columnconfigure(0, weight=1)
+        # Center window
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() // 2) - (900 // 2)
+        y = (self.winfo_screenheight() // 2) - (750 // 2)
+        self.geometry(f"900x750+{x}+{y}")
         
-        # Header section
+    def _create_ui(self):
+        """Create the main user interface with tabs."""
+        # Create tab view
+        self.tabview = ctk.CTkTabview(self, corner_radius=15)
+        self.tabview.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+        
+        # Add tabs
+        self.tabview.add("Generate Key")
+        self.tabview.add("Manage Keys")
+        self.tabview.add("Statistics")
+        
+        # Configure tab grids
+        self.tabview.tab("Generate Key").grid_columnconfigure(0, weight=1)
+        self.tabview.tab("Manage Keys").grid_columnconfigure(0, weight=1)
+        self.tabview.tab("Statistics").grid_columnconfigure(0, weight=1)
+        
+        # Create tab contents
+        self._create_generate_tab()
+        self._create_manage_tab()
+        self._create_stats_tab()
+        
+    def _create_generate_tab(self):
+        """Create the Generate Key tab."""
+        tab = self.tabview.tab("Generate Key")
+        
+        # Scrollable frame for content
+        scroll_frame = ctk.CTkScrollableFrame(tab, corner_radius=10)
+        scroll_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        scroll_frame.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(0, weight=1)
+        
+        # Header
         header_label = ctk.CTkLabel(
-            main_frame,
-            text="🔑 License Key Generator",
-            font=ctk.CTkFont(size=28, weight="bold"),
+            scroll_frame,
+            text="🔑 Generate License Key",
+            font=ctk.CTkFont(size=24, weight="bold"),
             text_color=("#1f6aa5", "#3b8ed0"),
         )
-        header_label.grid(row=0, column=0, padx=30, pady=(35, 10))
+        header_label.grid(row=0, column=0, padx=20, pady=(20, 10))
         
-        subtitle_label = ctk.CTkLabel(
-            main_frame,
-            text="Admin Tool - Vendor Use Only",
-            font=ctk.CTkFont(size=14),
-            text_color="gray",
-        )
-        subtitle_label.grid(row=1, column=0, padx=30, pady=(0, 30))
-        
-        # Email input section
+        # Email input
         email_label = ctk.CTkLabel(
-            main_frame,
+            scroll_frame,
             text="📧 Buyer Email Address:",
-            font=ctk.CTkFont(size=16, weight="bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
             anchor="w"
         )
-        email_label.grid(row=2, column=0, padx=30, pady=(15, 8), sticky="w")
+        email_label.grid(row=1, column=0, padx=20, pady=(15, 5), sticky="w")
         
         self.email_entry = ctk.CTkEntry(
-            main_frame,
+            scroll_frame,
             placeholder_text="buyer@example.com",
-            height=50,
-            font=ctk.CTkFont(size=14),
+            height=45,
+            font=ctk.CTkFont(size=13),
             border_width=2,
-            corner_radius=10,
+            corner_radius=8,
         )
-        self.email_entry.grid(row=3, column=0, padx=30, pady=(0, 25), sticky="ew")
+        self.email_entry.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="ew")
         
-        # License tier section
+        # License tier
         tier_label = ctk.CTkLabel(
-            main_frame,
+            scroll_frame,
             text="📋 License Tier:",
-            font=ctk.CTkFont(size=16, weight="bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
             anchor="w"
         )
-        tier_label.grid(row=4, column=0, padx=30, pady=(15, 15), sticky="w")
+        tier_label.grid(row=3, column=0, padx=20, pady=(10, 5), sticky="w")
         
-        # Radio button frame
-        radio_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        radio_frame.grid(row=5, column=0, padx=30, pady=(0, 25), sticky="ew")
-        radio_frame.grid_columnconfigure(0, weight=1)
-        radio_frame.grid_columnconfigure(1, weight=1)
+        tier_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        tier_frame.grid(row=4, column=0, padx=20, pady=(0, 15), sticky="ew")
+        tier_frame.grid_columnconfigure((0, 1), weight=1)
         
         self.tier_var = ctk.StringVar(value="standard")
         
         standard_radio = ctk.CTkRadioButton(
-            radio_frame,
+            tier_frame,
             text="Standard ($59)\nBasic Features",
             variable=self.tier_var,
             value="standard",
-            font=ctk.CTkFont(size=14),
-            radiobutton_width=25,
-            radiobutton_height=25,
+            font=ctk.CTkFont(size=13),
+            radiobutton_width=22,
+            radiobutton_height=22,
         )
-        standard_radio.grid(row=0, column=0, padx=15, pady=10, sticky="w")
+        standard_radio.grid(row=0, column=0, padx=10, pady=5, sticky="w")
         
         extended_radio = ctk.CTkRadioButton(
-            radio_frame,
+            tier_frame,
             text="Extended ($249)\nFull Features + Branding",
             variable=self.tier_var,
             value="extended",
-            font=ctk.CTkFont(size=14),
-            radiobutton_width=25,
-            radiobutton_height=25,
+            font=ctk.CTkFont(size=13),
+            radiobutton_width=22,
+            radiobutton_height=22,
         )
-        extended_radio.grid(row=0, column=1, padx=15, pady=10, sticky="w")
+        extended_radio.grid(row=0, column=1, padx=10, pady=5, sticky="w")
+        
+        # Duration selection
+        duration_label = ctk.CTkLabel(
+            scroll_frame,
+            text="⏰ License Duration:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            anchor="w"
+        )
+        duration_label.grid(row=5, column=0, padx=20, pady=(10, 5), sticky="w")
+        
+        self.duration_combo = ctk.CTkComboBox(
+            scroll_frame,
+            values=["Lifetime", "1 Month", "1 Year"],
+            height=45,
+            font=ctk.CTkFont(size=13),
+            dropdown_font=ctk.CTkFont(size=12),
+            corner_radius=8,
+            border_width=2,
+            state="readonly"
+        )
+        self.duration_combo.set("Lifetime")
+        self.duration_combo.grid(row=6, column=0, padx=20, pady=(0, 15), sticky="ew")
+        
+        # Notes (optional)
+        notes_label = ctk.CTkLabel(
+            scroll_frame,
+            text="📝 Notes (Optional):",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            anchor="w"
+        )
+        notes_label.grid(row=7, column=0, padx=20, pady=(10, 5), sticky="w")
+        
+        self.notes_entry = ctk.CTkEntry(
+            scroll_frame,
+            placeholder_text="Customer name, order number, etc.",
+            height=45,
+            font=ctk.CTkFont(size=13),
+            border_width=2,
+            corner_radius=8,
+        )
+        self.notes_entry.grid(row=8, column=0, padx=20, pady=(0, 20), sticky="ew")
         
         # Generate button
         self.generate_btn = ctk.CTkButton(
-            main_frame,
+            scroll_frame,
             text="🚀 GENERATE LICENSE KEY",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            height=60,
-            corner_radius=12,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=55,
+            corner_radius=10,
             fg_color=("#1f6aa5", "#3b8ed0"),
             hover_color=("#1a5a8f", "#2f5ba0"),
             command=self._generate_key,
         )
-        self.generate_btn.grid(row=6, column=0, padx=30, pady=(20, 20), sticky="ew")
+        self.generate_btn.grid(row=9, column=0, padx=20, pady=(0, 15), sticky="ew")
         
         # Result section
         result_label = ctk.CTkLabel(
-            main_frame,
+            scroll_frame,
             text="🔐 Generated License Key:",
-            font=ctk.CTkFont(size=16, weight="bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
             anchor="w"
         )
-        result_label.grid(row=7, column=0, padx=30, pady=(20, 8), sticky="w")
+        result_label.grid(row=10, column=0, padx=20, pady=(15, 5), sticky="w")
         
-        self.result_entry = ctk.CTkEntry(
-            main_frame,
-            placeholder_text="Key will appear here after generation...",
-            height=50,
-            font=ctk.CTkFont(family="Courier", size=13),
+        # Use textbox instead of entry for better wrapping
+        self.result_text = ctk.CTkTextbox(
+            scroll_frame,
+            height=80,
+            font=ctk.CTkFont(family="Courier", size=12),
             border_width=2,
-            corner_radius=10,
-            state="readonly",
+            corner_radius=8,
+            wrap="word",
+            state="disabled"
         )
-        self.result_entry.grid(row=8, column=0, padx=30, pady=(0, 15), sticky="ew")
+        self.result_text.grid(row=11, column=0, padx=20, pady=(0, 15), sticky="ew")
         
         # Copy button
         self.copy_btn = ctk.CTkButton(
-            main_frame,
+            scroll_frame,
             text="📋 COPY TO CLIPBOARD",
-            font=ctk.CTkFont(size=15, weight="bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
             height=50,
-            corner_radius=10,
+            corner_radius=8,
             fg_color=("#28a745", "#20873a"),
             hover_color=("#218838", "#1a6d2e"),
             state="disabled",
             command=self._copy_to_clipboard,
         )
-        self.copy_btn.grid(row=9, column=0, padx=30, pady=(0, 35), sticky="ew")
+        self.copy_btn.grid(row=12, column=0, padx=20, pady=(0, 20), sticky="ew")
+
+        
+    def _create_manage_tab(self):
+        """Create the Manage Keys tab."""
+        tab = self.tabview.tab("Manage Keys")
+        tab.grid_rowconfigure(1, weight=1)
+        
+        # Search frame
+        search_frame = ctk.CTkFrame(tab, corner_radius=10)
+        search_frame.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
+        search_frame.grid_columnconfigure(1, weight=1)
+        
+        search_label = ctk.CTkLabel(
+            search_frame,
+            text="🔍 Search:",
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        search_label.grid(row=0, column=0, padx=(15, 10), pady=15)
+        
+        self.search_entry = ctk.CTkEntry(
+            search_frame,
+            placeholder_text="Enter email or key fragment...",
+            height=40,
+            font=ctk.CTkFont(size=12),
+            corner_radius=8
+        )
+        self.search_entry.grid(row=0, column=1, padx=(0, 10), pady=15, sticky="ew")
+        
+        search_btn = ctk.CTkButton(
+            search_frame,
+            text="Search",
+            width=100,
+            height=40,
+            corner_radius=8,
+            command=self._search_keys
+        )
+        search_btn.grid(row=0, column=2, padx=(0, 10), pady=15)
+        
+        refresh_btn = ctk.CTkButton(
+            search_frame,
+            text="Refresh",
+            width=100,
+            height=40,
+            corner_radius=8,
+            command=self._refresh_keys
+        )
+        refresh_btn.grid(row=0, column=3, padx=(0, 15), pady=15)
+        
+        # Keys list frame
+        list_frame = ctk.CTkFrame(tab, corner_radius=10)
+        list_frame.grid(row=1, column=0, padx=10, pady=(5, 10), sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+        list_frame.grid_rowconfigure(0, weight=1)
+        
+        # Create scrollable text area for keys
+        self.keys_text = ctk.CTkTextbox(
+            list_frame,
+            font=ctk.CTkFont(family="Courier", size=11),
+            corner_radius=8,
+            wrap="none"
+        )
+        self.keys_text.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        
+        # Action buttons frame
+        actions_frame = ctk.CTkFrame(tab, corner_radius=10)
+        actions_frame.grid(row=2, column=0, padx=10, pady=(5, 10), sticky="ew")
+        actions_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        
+        self.selected_key_var = ctk.StringVar()
+        
+        key_entry_label = ctk.CTkLabel(
+            actions_frame,
+            text="Selected Key:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        key_entry_label.grid(row=0, column=0, padx=(15, 5), pady=(15, 5), sticky="w")
+        
+        self.selected_key_entry = ctk.CTkEntry(
+            actions_frame,
+            textvariable=self.selected_key_var,
+            placeholder_text="Paste or type key here...",
+            height=40,
+            font=ctk.CTkFont(size=11),
+            corner_radius=8
+        )
+        self.selected_key_entry.grid(row=1, column=0, columnspan=3, padx=15, pady=(0, 10), sticky="ew")
+        
+        revoke_btn = ctk.CTkButton(
+            actions_frame,
+            text="🚫 Revoke Key",
+            height=45,
+            corner_radius=8,
+            fg_color=("#dc3545", "#c82333"),
+            hover_color=("#bd2130", "#a71d2a"),
+            command=self._revoke_key
+        )
+        revoke_btn.grid(row=2, column=0, padx=(15, 5), pady=(0, 15), sticky="ew")
+        
+        reactivate_btn = ctk.CTkButton(
+            actions_frame,
+            text="✅ Reactivate Key",
+            height=45,
+            corner_radius=8,
+            fg_color=("#28a745", "#20873a"),
+            hover_color=("#218838", "#1a6d2e"),
+            command=self._reactivate_key
+        )
+        reactivate_btn.grid(row=2, column=1, padx=5, pady=(0, 15), sticky="ew")
+        
+        view_btn = ctk.CTkButton(
+            actions_frame,
+            text="👁 View Details",
+            height=45,
+            corner_radius=8,
+            command=self._view_key_details
+        )
+        view_btn.grid(row=2, column=2, padx=(5, 15), pady=(0, 15), sticky="ew")
+        
+        # Load keys initially
+        self._refresh_keys()
+    
+    def _create_stats_tab(self):
+        """Create the Statistics tab."""
+        tab = self.tabview.tab("Statistics")
+        
+        # Stats frame
+        stats_frame = ctk.CTkFrame(tab, corner_radius=15)
+        stats_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+        stats_frame.grid_columnconfigure((0, 1), weight=1)
+        tab.grid_rowconfigure(0, weight=1)
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            stats_frame,
+            text="📊 License Statistics",
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=("#1f6aa5", "#3b8ed0")
+        )
+        title_label.grid(row=0, column=0, columnspan=2, padx=20, pady=(30, 30))
+        
+        # Get stats
+        stats = get_license_stats()
+        
+        # Display stats in cards
+        # Total
+        total_card = ctk.CTkFrame(stats_frame, corner_radius=12, border_width=2, border_color="gray30")
+        total_card.grid(row=1, column=0, padx=(20, 10), pady=10, sticky="ew")
+        
+        ctk.CTkLabel(
+            total_card,
+            text="📦 Total Licenses",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=(20, 5))
+        
+        ctk.CTkLabel(
+            total_card,
+            text=str(stats['total']),
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=("#1f6aa5", "#3b8ed0")
+        ).pack(pady=(0, 20))
+        
+        # Active
+        active_card = ctk.CTkFrame(stats_frame, corner_radius=12, border_width=2, border_color="gray30")
+        active_card.grid(row=1, column=1, padx=(10, 20), pady=10, sticky="ew")
+        
+        ctk.CTkLabel(
+            active_card,
+            text="✅ Active Licenses",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=(20, 5))
+        
+        ctk.CTkLabel(
+            active_card,
+            text=str(stats['active']),
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=("#28a745", "#20873a")
+        ).pack(pady=(0, 20))
+        
+        # Banned
+        banned_card = ctk.CTkFrame(stats_frame, corner_radius=12, border_width=2, border_color="gray30")
+        banned_card.grid(row=2, column=0, padx=(20, 10), pady=10, sticky="ew")
+        
+        ctk.CTkLabel(
+            banned_card,
+            text="🚫 Banned Licenses",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=(20, 5))
+        
+        ctk.CTkLabel(
+            banned_card,
+            text=str(stats['banned']),
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=("#dc3545", "#c82333")
+        ).pack(pady=(0, 20))
+        
+        # Expired
+        expired_card = ctk.CTkFrame(stats_frame, corner_radius=12, border_width=2, border_color="gray30")
+        expired_card.grid(row=2, column=1, padx=(10, 20), pady=10, sticky="ew")
+        
+        ctk.CTkLabel(
+            expired_card,
+            text="⏰ Expired Licenses",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=(20, 5))
+        
+        ctk.CTkLabel(
+            expired_card,
+            text=str(stats['expired']),
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=("#ffc107", "#ff9800")
+        ).pack(pady=(0, 20))
+        
+        # Refresh button
+        refresh_stats_btn = ctk.CTkButton(
+            stats_frame,
+            text="🔄 Refresh Statistics",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=50,
+            corner_radius=10,
+            command=lambda: self._create_stats_tab()
+        )
+        refresh_stats_btn.grid(row=3, column=0, columnspan=2, padx=20, pady=(20, 30), sticky="ew")
+        
+        # HWID info
+        hwid_frame = ctk.CTkFrame(stats_frame, corner_radius=12, border_width=2, border_color="gray30")
+        hwid_frame.grid(row=4, column=0, columnspan=2, padx=20, pady=(10, 30), sticky="ew")
+        
+        ctk.CTkLabel(
+            hwid_frame,
+            text="🖥️ Current Machine HWID",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(pady=(15, 5))
+        
+        hwid_text = ctk.CTkTextbox(
+            hwid_frame,
+            height=60,
+            font=ctk.CTkFont(family="Courier", size=11),
+            corner_radius=8,
+            wrap="word"
+        )
+        hwid_text.pack(padx=15, pady=(0, 15), fill="x")
+        hwid_text.insert("1.0", get_hwid())
+        hwid_text.configure(state="disabled")
+
         
     def _generate_key(self):
-        """Generate a license key based on email and tier selection."""
+        """Generate a license key and save to database."""
         email = self.email_entry.get().strip()
         
         # Validate email
@@ -184,80 +621,201 @@ class KeygenApp(ctk.CTk):
             messagebox.showerror("Error", "Please enter a buyer email address.")
             return
             
-        if '@' not in email or '.' not in email:
+        if '@' not in email or '.' not in email.split('@')[-1]:
             messagebox.showerror("Error", "Please enter a valid email address.")
             return
         
-        # Get selected tier
+        # Get selected tier and duration
         tier = self.tier_var.get()
+        duration_display = self.duration_combo.get()
         
-        # Generate mock license key
-        license_key = self._mock_generate_key(email, tier)
+        # Map display duration to internal format
+        duration_map = {
+            "Lifetime": "lifetime",
+            "1 Month": "1_month",
+            "1 Year": "1_year"
+        }
+        duration = duration_map.get(duration_display, "lifetime")
         
-        # Display result
-        self.result_entry.configure(state="normal")
-        self.result_entry.delete(0, "end")
-        self.result_entry.insert(0, license_key)
-        self.result_entry.configure(state="readonly")
+        # Get notes
+        notes = self.notes_entry.get().strip() or None
         
-        # Enable copy button
-        self.copy_btn.configure(state="normal")
-        
-        # Show success message
-        tier_name = "Extended" if tier == "extended" else "Standard"
-        messagebox.showinfo(
-            "Success",
-            f"License key generated successfully!\n\n"
-            f"Email: {email}\n"
-            f"Tier: {tier_name}\n\n"
-            f"Key: {license_key}\n\n"
-            f"Send this key to the buyer for activation."
-        )
-        
-    def _mock_generate_key(self, email, tier):
-        """
-        Mock license key generation function.
-        
-        TODO: Replace this with real license generation logic from license_guard module.
-        
-        Args:
-            email: Buyer's email address
-            tier: License tier ('standard' or 'extended')
+        try:
+            # Generate license key
+            license_key, expires_at = generate_key(email, tier, duration)
             
-        Returns:
-            str: Generated license key
-        """
-        # Create a deterministic but unique key based on email and tier
-        hash_input = f"{email}|{tier}|{datetime.now().year}"
-        hash_obj = hashlib.sha256(hash_input.encode())
-        hash_hex = hash_obj.hexdigest()[:16].upper()
-        
-        # Format as license key
-        tier_prefix = "FALEOVAD-EXT" if tier == "extended" else "FALEOVAD-STD"
-        year = datetime.now().year
-        
-        # Split hash into parts for readability
-        part1 = hash_hex[:4]
-        part2 = hash_hex[4:8]
-        part3 = hash_hex[8:12]
-        
-        license_key = f"{tier_prefix}-{part1}-{part2}-{year}"
-        
-        return license_key
+            # Save to database
+            license_id = create_license(email, license_key, tier, duration, expires_at, notes)
+            
+            # Display result
+            self.result_text.configure(state="normal")
+            self.result_text.delete("1.0", "end")
+            self.result_text.insert("1.0", license_key)
+            self.result_text.configure(state="disabled")
+            
+            # Store for clipboard
+            self.generated_key = license_key
+            
+            # Enable copy button
+            self.copy_btn.configure(state="normal")
+            
+            # Show success message
+            tier_name = "Extended" if tier == "extended" else "Standard"
+            duration_name = duration_display
+            expires_msg = f"\nExpires: {datetime.fromisoformat(expires_at).strftime('%Y-%m-%d')}" if expires_at else "\nExpires: Never (Lifetime)"
+            
+            messagebox.showinfo(
+                "Success",
+                f"License key generated and saved to database!\n\n"
+                f"Email: {email}\n"
+                f"Tier: {tier_name}\n"
+                f"Duration: {duration_name}{expires_msg}\n"
+                f"Database ID: {license_id}\n\n"
+                f"Key: {license_key}\n\n"
+                f"Send this key to the buyer for activation."
+            )
+            
+            # Refresh manage tab
+            self._refresh_keys()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate license key:\n{str(e)}")
     
     def _copy_to_clipboard(self):
         """Copy the generated license key to clipboard."""
-        license_key = self.result_entry.get()
-        
-        if license_key and not license_key.startswith("Key will appear"):
-            # Copy to clipboard
+        if hasattr(self, 'generated_key') and self.generated_key:
             self.clipboard_clear()
-            self.clipboard_append(license_key)
-            
-            # Show confirmation
+            self.clipboard_append(self.generated_key)
             messagebox.showinfo("Copied", "License key copied to clipboard!")
         else:
             messagebox.showwarning("Warning", "No license key to copy. Generate a key first.")
+    
+    def _search_keys(self):
+        """Search for keys by email or key fragment."""
+        search_term = self.search_entry.get().strip()
+        
+        if not search_term:
+            messagebox.showwarning("Warning", "Please enter a search term.")
+            return
+        
+        try:
+            results = search_licenses(search_term)
+            self._display_keys(results)
+        except Exception as e:
+            messagebox.showerror("Error", f"Search failed:\n{str(e)}")
+    
+    def _refresh_keys(self):
+        """Refresh the keys list."""
+        try:
+            all_keys = list_all_licenses()
+            self._display_keys(all_keys)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load licenses:\n{str(e)}")
+    
+    def _display_keys(self, licenses):
+        """Display licenses in the text area."""
+        self.keys_text.configure(state="normal")
+        self.keys_text.delete("1.0", "end")
+        
+        if not licenses:
+            self.keys_text.insert("1.0", "No licenses found.")
+        else:
+            header = f"{'ID':<6} {'Email':<30} {'Tier':<10} {'Duration':<12} {'Status':<10} {'Key'}\n"
+            self.keys_text.insert("end", header)
+            self.keys_text.insert("end", "=" * 120 + "\n")
+            
+            for lic in licenses:
+                lid = lic.get('id', 'N/A')
+                email = lic.get('email', 'N/A')[:28]
+                tier = lic.get('tier', 'N/A')[:8].capitalize()
+                duration = lic.get('duration', 'N/A')[:10]
+                status = lic.get('status', 'N/A')[:8]
+                key = lic.get('key', 'N/A')
+                
+                # Check if expired
+                if status == 'Active' and is_license_expired(lic):
+                    status = 'Expired'
+                
+                line = f"{lid:<6} {email:<30} {tier:<10} {duration:<12} {status:<10} {key}\n"
+                self.keys_text.insert("end", line)
+        
+        self.keys_text.configure(state="disabled")
+    
+    def _revoke_key(self):
+        """Revoke a license key."""
+        key = self.selected_key_var.get().strip()
+        
+        if not key:
+            messagebox.showwarning("Warning", "Please enter a license key to revoke.")
+            return
+        
+        # Confirm
+        if not messagebox.askyesno("Confirm", f"Are you sure you want to revoke this license key?\n\n{key}"):
+            return
+        
+        try:
+            success = revoke_license(key, "Revoked by admin")
+            if success:
+                messagebox.showinfo("Success", "License key revoked successfully.")
+                self._refresh_keys()
+                self.selected_key_var.set("")
+            else:
+                messagebox.showerror("Error", "License key not found in database.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to revoke license:\n{str(e)}")
+    
+    def _reactivate_key(self):
+        """Reactivate a revoked license key."""
+        key = self.selected_key_var.get().strip()
+        
+        if not key:
+            messagebox.showwarning("Warning", "Please enter a license key to reactivate.")
+            return
+        
+        try:
+            success = reactivate_license(key)
+            if success:
+                messagebox.showinfo("Success", "License key reactivated successfully.")
+                self._refresh_keys()
+                self.selected_key_var.set("")
+            else:
+                messagebox.showerror("Error", "License key not found in database.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to reactivate license:\n{str(e)}")
+    
+    def _view_key_details(self):
+        """View detailed information about a license key."""
+        key = self.selected_key_var.get().strip()
+        
+        if not key:
+            messagebox.showwarning("Warning", "Please enter a license key to view details.")
+            return
+        
+        try:
+            license_data = get_license_by_key(key)
+            if not license_data:
+                messagebox.showerror("Error", "License key not found in database.")
+                return
+            
+            # Format details
+            details = f"""License Key Details:
+            
+ID: {license_data.get('id', 'N/A')}
+Email: {license_data.get('email', 'N/A')}
+Key: {license_data.get('key', 'N/A')}
+Tier: {license_data.get('tier', 'N/A').capitalize()}
+Duration: {license_data.get('duration', 'N/A')}
+Status: {license_data.get('status', 'N/A')}
+HWID: {license_data.get('hwid') or 'Not activated yet'}
+Created: {license_data.get('created_at', 'N/A')}
+Expires: {license_data.get('expires_at') or 'Never (Lifetime)'}
+Notes: {license_data.get('notes') or 'None'}
+Expired: {'Yes' if is_license_expired(license_data) else 'No'}
+"""
+            
+            messagebox.showinfo("License Details", details)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to retrieve license details:\n{str(e)}")
 
 
 def main():
