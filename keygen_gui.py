@@ -272,7 +272,7 @@ class KeygenApp(ctk.CTk):
         )
         self.email_entry.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="ew")
         
-        # License tier
+        # License tier - Use dropdown instead of radio buttons
         tier_label = ctk.CTkLabel(
             scroll_frame,
             text="📋 License Tier:",
@@ -281,35 +281,20 @@ class KeygenApp(ctk.CTk):
         )
         tier_label.grid(row=3, column=0, padx=20, pady=(20, 5), sticky="w")
         
-        tier_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
-        tier_frame.grid(row=4, column=0, padx=20, pady=(0, 20), sticky="ew")
-        tier_frame.grid_columnconfigure((0, 1), weight=1)
-        
-        self.tier_var = ctk.StringVar(value="standard")
-        
-        standard_radio = ctk.CTkRadioButton(
-            tier_frame,
-            text="Standard ($59)\nBasic Features",
-            variable=self.tier_var,
-            value="standard",
+        self.tier_combo = ctk.CTkComboBox(
+            scroll_frame,
+            values=["Trial (3 days, 10 pages)", "Standard (50 pages)", "Enterprise (300 pages, all features)", "Lifetime (Enterprise, no expiration)"],
+            height=45,
             font=ctk.CTkFont(size=13),
-            radiobutton_width=22,
-            radiobutton_height=22,
+            dropdown_font=ctk.CTkFont(size=12),
+            corner_radius=8,
+            border_width=2,
+            state="readonly"
         )
-        standard_radio.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.tier_combo.set("Standard (50 pages)")
+        self.tier_combo.grid(row=4, column=0, padx=20, pady=(0, 20), sticky="ew")
         
-        extended_radio = ctk.CTkRadioButton(
-            tier_frame,
-            text="Extended ($249)\nFull Features + Branding",
-            variable=self.tier_var,
-            value="extended",
-            font=ctk.CTkFont(size=13),
-            radiobutton_width=22,
-            radiobutton_height=22,
-        )
-        extended_radio.grid(row=0, column=1, padx=10, pady=5, sticky="w")
-        
-        # Duration selection
+        # Duration selection - Updated with all durations
         duration_label = ctk.CTkLabel(
             scroll_frame,
             text="⏰ License Duration:",
@@ -320,7 +305,7 @@ class KeygenApp(ctk.CTk):
         
         self.duration_combo = ctk.CTkComboBox(
             scroll_frame,
-            values=["Lifetime", "1 Month", "1 Year"],
+            values=["3 Days", "1 Month", "3 Months", "6 Months", "1 Year", "Lifetime"],
             height=45,
             font=ctk.CTkFont(size=13),
             dropdown_font=ctk.CTkFont(size=12),
@@ -675,14 +660,26 @@ class KeygenApp(ctk.CTk):
             return
         
         # Get selected tier and duration
-        tier = self.tier_var.get()
+        tier_display = self.tier_combo.get()
         duration_display = self.duration_combo.get()
+        
+        # Map display tier to internal format
+        tier_map = {
+            "Trial (3 days, 10 pages)": "trial",
+            "Standard (50 pages)": "standard",
+            "Enterprise (300 pages, all features)": "enterprise",
+            "Lifetime (Enterprise, no expiration)": "lifetime"
+        }
+        tier = tier_map.get(tier_display, "trial")
         
         # Map display duration to internal format
         duration_map = {
-            "Lifetime": "lifetime",
+            "3 Days": "3_day",
             "1 Month": "1_month",
-            "1 Year": "1_year"
+            "3 Months": "3_month",
+            "6 Months": "6_month",
+            "1 Year": "1_year",
+            "Lifetime": "lifetime"
         }
         duration = duration_map.get(duration_display, "lifetime")
         
@@ -693,7 +690,7 @@ class KeygenApp(ctk.CTk):
             # Generate license key
             license_key, expires_at = generate_key(email, tier, duration)
             
-            # Save to database
+            # Save to database (sync to Supabase via postgrest)
             license_id = create_license(email, license_key, tier, duration, expires_at, notes)
             
             # Display result
@@ -709,13 +706,20 @@ class KeygenApp(ctk.CTk):
             self.copy_btn.configure(state="normal")
             
             # Show success message
-            tier_name = "Extended" if tier == "extended" else "Standard"
+            tier_name_map = {
+                "trial": "Trial",
+                "standard": "Standard",
+                "enterprise": "Enterprise",
+                "lifetime": "Lifetime"
+            }
+            tier_name = tier_name_map.get(tier, "Trial")
             duration_name = duration_display
             expires_msg = f"\nExpires: {datetime.fromisoformat(expires_at).strftime('%Y-%m-%d')}" if expires_at else "\nExpires: Never (Lifetime)"
             
             messagebox.showinfo(
                 "Success",
-                f"License key generated and saved to database!\n\n"
+                f"License key generated and saved to database!\n"
+                f"Synced to Supabase cloud.\n\n"
                 f"Email: {email}\n"
                 f"Tier: {tier_name}\n"
                 f"Duration: {duration_name}{expires_msg}\n"

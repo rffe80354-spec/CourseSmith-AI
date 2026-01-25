@@ -454,7 +454,14 @@ class App(ctk.CTk):
                 # Continue anyway - validation succeeded
         
         # Show success message
-        tier_label = "Extended" if tier == 'extended' else "Standard"
+        tier_label_map = {
+            'trial': 'Trial',
+            'standard': 'Standard',
+            'enterprise': 'Enterprise',
+            'lifetime': 'Lifetime',
+            'extended': 'Enterprise'  # Legacy support
+        }
+        tier_label = tier_label_map.get(tier, 'Trial')
         expires_msg = ""
         if expires_at:
             try:
@@ -558,21 +565,26 @@ class App(ctk.CTk):
         )
         title_label.grid(row=0, column=0, padx=20, pady=15, sticky="w")
 
-        # Tier indicator
-        if self.license_tier == 'extended':
-            tier_label = ctk.CTkLabel(
-                header_frame,
-                text="✓ PRO Features Active",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color="#ffd700",  # Gold color for PRO
-            )
-        else:
-            tier_label = ctk.CTkLabel(
-                header_frame,
-                text="Standard License",
-                font=ctk.CTkFont(size=12),
-                text_color="#888888",
-            )
+        # Tier indicator - Support all 4 tiers
+        tier_display_map = {
+            'trial': ('Trial (10 pages)', '#ff9800'),
+            'standard': ('Standard (50 pages)', '#888888'),
+            'enterprise': ('✓ Enterprise (300 pages)', '#ffd700'),
+            'lifetime': ('✓ Lifetime (Unlimited)', '#00ff00'),
+            'extended': ('✓ Enterprise (300 pages)', '#ffd700')  # Legacy support
+        }
+        
+        tier_text, tier_color = tier_display_map.get(
+            self.license_tier, 
+            ('Trial', '#888888')
+        )
+        
+        tier_label = ctk.CTkLabel(
+            header_frame,
+            text=tier_text,
+            font=ctk.CTkFont(size=12, weight="bold" if self.license_tier in ('enterprise', 'lifetime', 'extended') else "normal"),
+            text_color=tier_color,
+        )
         tier_label.grid(row=0, column=1, padx=10, pady=15, sticky="w")
 
         # Switch/Reset Key button - subtle secondary button
