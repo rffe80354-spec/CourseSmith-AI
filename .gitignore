@@ -79,5 +79,7 @@ test_ui_demo.py
 test_features.py
 test_keygen.py
 test_pagination.py
+test_custom_images.py
+validate_changes.py
 screenshot_*.png
 app_backup.py

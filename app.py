@@ -1930,7 +1930,16 @@ class App(ctk.CTk):
                 
                 # Create builder with tier parameter
                 builder = PDFBuilder(filepath, tier=current_tier)
-                result = builder.build_pdf(self.project, tier=current_tier)
+                
+                # Get custom images from project UI settings
+                custom_images = []
+                if hasattr(self.project, 'ui_settings') and self.project.ui_settings:
+                    custom_images = self.project.ui_settings.get('custom_images', [])
+                
+                # Convert to absolute paths for safety
+                custom_images = [os.path.abspath(img) for img in custom_images if img]
+                
+                result = builder.build_pdf(self.project, tier=current_tier, custom_images=custom_images)
                 
                 # Calculate actual pages from ContentDistributor
                 from generator import ContentDistributor
