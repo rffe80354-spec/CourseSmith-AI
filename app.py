@@ -543,7 +543,12 @@ class App(ctk.CTk):
         """Create the header bar with title, tier info, and settings."""
         header_frame = ctk.CTkFrame(self, height=60, corner_radius=0)
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
-        header_frame.grid_columnconfigure(1, weight=1)
+        # Configure grid columns: column 1 (tier label) expands to fill space
+        header_frame.grid_columnconfigure(0, weight=0)  # Title - fixed
+        header_frame.grid_columnconfigure(1, weight=1)  # Tier label - expands
+        header_frame.grid_columnconfigure(2, weight=0)  # Switch Key - fixed
+        header_frame.grid_columnconfigure(3, weight=0)  # Settings - fixed
+        header_frame.grid_columnconfigure(4, weight=0)  # User info - fixed
 
         # Title
         title_label = ctk.CTkLabel(
