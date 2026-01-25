@@ -1154,16 +1154,15 @@ class App(ctk.CTk):
         self.stats_modules_label = self._create_stat_card(stats_frame, "🧩 Modules", "8", 2)
         self.stats_keywords_label = self._create_stat_card(stats_frame, "🔑 Keywords", "15+", 3)
 
-        # === Main Content Area (Textbox + Sidebar) ===
+        # === Main Content Area (Textbox only - manual buttons removed) ===
         content_frame = ctk.CTkFrame(self.tab_blueprint, fg_color="transparent")
         content_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 20), sticky="nsew")
         content_frame.grid_columnconfigure(0, weight=1)
-        content_frame.grid_columnconfigure(1, weight=0)
         content_frame.grid_rowconfigure(0, weight=1)
 
-        # Editable outline textbox (left side)
+        # Editable outline textbox (full width)
         textbox_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-        textbox_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
+        textbox_frame.grid(row=0, column=0, sticky="nsew")
         textbox_frame.grid_columnconfigure(0, weight=1)
         textbox_frame.grid_rowconfigure(1, weight=1)
 
@@ -1182,90 +1181,9 @@ class App(ctk.CTk):
         self.outline_textbox.grid(row=1, column=0, sticky="nsew")
         bind_clipboard_menu(self.outline_textbox)
 
-        # === Sidebar (Right side - vertical button bar) ===
-        sidebar_frame = ctk.CTkFrame(
-            content_frame,
-            fg_color=("gray85", "gray20"),
-            corner_radius=8,
-            width=50,
-        )
-        sidebar_frame.grid(row=0, column=1, sticky="ns")
-        sidebar_frame.grid_propagate(False)
-
-        # Sidebar buttons
-        sidebar_btn_style = {
-            "width": 40,
-            "height": 40,
-            "corner_radius": 8,
-            "font": ctk.CTkFont(size=16),
-            "fg_color": ("gray75", "gray30"),
-            "hover_color": ("gray65", "gray40"),
-            "text_color": ("gray20", "gray90"),
-        }
-
-        # Add Chapter button
-        self.btn_add_chapter = ctk.CTkButton(
-            sidebar_frame,
-            text="➕",
-            command=self._add_chapter,
-            **sidebar_btn_style,
-        )
-        self.btn_add_chapter.pack(pady=(10, 5), padx=5)
-
-        # Delete button
-        self.btn_delete_chapter = ctk.CTkButton(
-            sidebar_frame,
-            text="❌",
-            command=self._delete_chapter,
-            **sidebar_btn_style,
-        )
-        self.btn_delete_chapter.pack(pady=5, padx=5)
-
-        # Move Up button
-        self.btn_move_up = ctk.CTkButton(
-            sidebar_frame,
-            text="⬆️",
-            command=self._move_chapter_up,
-            **sidebar_btn_style,
-        )
-        self.btn_move_up.pack(pady=5, padx=5)
-
-        # Move Down button
-        self.btn_move_down = ctk.CTkButton(
-            sidebar_frame,
-            text="⬇️",
-            command=self._move_chapter_down,
-            **sidebar_btn_style,
-        )
-        self.btn_move_down.pack(pady=5, padx=5)
-
-        # Separator
-        separator = ctk.CTkFrame(sidebar_frame, height=2, fg_color=("gray60", "gray50"))
-        separator.pack(fill="x", padx=8, pady=10)
-
-        # Add Quiz button (Gold highlight - Extended feature)
-        self.btn_add_quiz = ctk.CTkButton(
-            sidebar_frame,
-            text="❓",
-            command=self._add_quiz,
-            width=40,
-            height=40,
-            corner_radius=8,
-            font=ctk.CTkFont(size=16),
-            fg_color="#D4AF37",  # Gold color
-            hover_color="#B8962F",
-            text_color="black",
-        )
-        self.btn_add_quiz.pack(pady=5, padx=5)
-
-        # Quiz label
-        quiz_label = ctk.CTkLabel(
-            sidebar_frame,
-            text="Quiz",
-            font=ctk.CTkFont(size=10),
-            text_color="#D4AF37",
-        )
-        quiz_label.pack(pady=(0, 10))
+        # Note: Manual +/X/arrow buttons removed per requirement
+        # The outline can be edited directly in the textbox
+        # Quiz button removed as well for cleaner UI
 
         # === Confirm Button Row ===
         ctk.CTkButton(
