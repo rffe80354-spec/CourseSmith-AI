@@ -58,7 +58,7 @@ class PDFBuilder:
         self.logo_path = None
         self.website_url = ""
         self.tier = tier or get_tier() or 'trial'
-        self.distributor = ContentDistributor(self.tier)
+        self.distributor = None  # Will be created when needed
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
 
@@ -364,6 +364,10 @@ class PDFBuilder:
             project: CourseProject object with outline and chapter content.
             story: The story list to append elements to.
         """
+        # Create distributor if not exists
+        if not self.distributor:
+            self.distributor = ContentDistributor(self.tier)
+        
         # Use smart content distribution
         distributed_content = distribute_chapter_content(
             project.chapters_content, 
@@ -392,24 +396,9 @@ class PDFBuilder:
                     if total_pages_used >= max_pages:
                         break
                     
-                    # Check if this page is slightly over and needs shrink-to-fit
-                    content_length = len(page_content)
-                    
-                    # Apply local shrink-to-fit if content is slightly over
-                    if content_length > 1000:
-                        # Calculate scale factor for this page only
-                        scale = min(1.0, 1000 / content_length)
-                        # Apply temporary font scaling for this page
-                        temp_style = ParagraphStyle(
-                            name=f"CustomBodyText_Scaled_{page_idx}",
-                            parent=self.styles["CustomBodyText"],
-                            fontSize=self.styles["CustomBodyText"].fontSize * scale,
-                            leading=self.styles["CustomBodyText"].leading * scale,
-                        )
-                        elements = self._parse_markdown_content_with_style(page_content, temp_style)
-                    else:
-                        # Normal parsing with standard style
-                        elements = self._parse_markdown_content(page_content)
+                    # Parse content with standard style
+                    # The distributor already ensures content is <= 1000 chars
+                    elements = self._parse_markdown_content(page_content)
                     
                     story.extend(elements)
                     total_pages_used += 1
@@ -441,10 +430,12 @@ class PDFBuilder:
         if output_path:
             self.filename = output_path
         
-        # Update tier if provided
+        # Update tier if provided and recreate distributor
         if tier:
             self.tier = tier
             self.distributor = ContentDistributor(tier)
+        elif not self.distributor:
+            self.distributor = ContentDistributor(self.tier)
         
         # Get branding options from project
         branding = project.branding

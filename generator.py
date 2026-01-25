@@ -162,6 +162,19 @@ class ContentDistributor:
         # Last resort: hard truncate
         return text[:max_chars].rstrip() + '...'
     
+    def truncate_at_sentence(self, text, max_chars):
+        """
+        Public method to truncate text at the last complete sentence before max_chars.
+        
+        Args:
+            text: The text to truncate.
+            max_chars: Maximum characters allowed.
+            
+        Returns:
+            str: Truncated text ending at a sentence boundary.
+        """
+        return self._truncate_at_sentence(text, max_chars)
+    
     def get_page_info(self):
         """
         Get information about page limits for current tier.
@@ -200,12 +213,12 @@ def distribute_chapter_content(chapters_dict, tier=None):
         # Calculate scaling factor
         scale_factor = distributor.max_total_chars / total_chars
         
-        # Truncate each chapter proportionally
+        # Truncate each chapter proportionally using public method
         scaled_chapters = {}
         for title, content in chapters_dict.items():
             target_chars = int(len(content) * scale_factor)
             if target_chars > 0:
-                scaled_content = distributor._truncate_at_sentence(content, target_chars)
+                scaled_content = distributor.truncate_at_sentence(content, target_chars)
                 scaled_chapters[title] = scaled_content
             else:
                 scaled_chapters[title] = ""
