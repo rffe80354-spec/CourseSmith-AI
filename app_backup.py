@@ -1,5 +1,5 @@
 """
-CourseSmith AI Enterprise - Main Application GUI.
+Faleovad AI Enterprise - Main Application GUI.
 A commercial desktop tool to generate educational PDF books using AI with DRM protection.
 Uses session token system for anti-tamper protection.
 Features tiered licensing: Standard ($59) vs Extended ($249).
@@ -8,6 +8,7 @@ Features tiered licensing: Standard ($59) vs Extended ($249).
 import os
 import re
 import threading
+import webbrowser
 from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, Menu
@@ -23,6 +24,9 @@ from pdf_engine import PDFBuilder
 # Configure appearance
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
+
+# Upgrade URL for upsell
+UPGRADE_URL = "https://www.codester.com"
 
 
 def bind_clipboard_menu(widget):
@@ -47,14 +51,14 @@ def bind_clipboard_menu(widget):
 
 
 class App(ctk.CTk):
-    """Main application window for CourseSmith AI Enterprise with DRM protection."""
+    """Main application window for Faleovad AI Enterprise with DRM protection."""
 
     def __init__(self):
         """Initialize the application window and widgets."""
         super().__init__()
 
         # Window configuration
-        self.title("CourseSmith AI Enterprise - Educational PDF Generator")
+        self.title("Faleovad AI Enterprise - Educational PDF Generator")
         self.geometry("1000x700")
         self.minsize(900, 600)
 
@@ -92,95 +96,80 @@ class App(ctk.CTk):
         self._create_activation_ui()
 
     def _create_activation_ui(self):
-        """Create the license activation screen with modern, professional design."""
+        """Create the license activation screen."""
         # Clear any existing widgets
         for widget in self.winfo_children():
             widget.destroy()
 
-        # Main activation frame - centered with modern styling
-        self.activation_frame = ctk.CTkFrame(self, corner_radius=20, border_width=2, border_color=("#3b8ed0", "#1f6aa5"))
+        # Main activation frame
+        self.activation_frame = ctk.CTkFrame(self, corner_radius=20)
         self.activation_frame.grid(row=0, column=0, padx=100, pady=100, sticky="nsew")
         self.activation_frame.grid_columnconfigure(0, weight=1)
 
-        # Logo/Title with enhanced styling
+        # Logo/Title
         title_label = ctk.CTkLabel(
             self.activation_frame,
-            text="🔐 CourseSmith AI Enterprise",
-            font=ctk.CTkFont(size=36, weight="bold"),
-            text_color=("#1f6aa5", "#3b8ed0"),
+            text="🔐 Faleovad AI Enterprise",
+            font=ctk.CTkFont(size=32, weight="bold"),
         )
-        title_label.grid(row=0, column=0, padx=40, pady=(50, 10))
+        title_label.grid(row=0, column=0, padx=40, pady=(40, 10))
 
         subtitle_label = ctk.CTkLabel(
             self.activation_frame,
-            text="Professional PDF Course Generator",
-            font=ctk.CTkFont(size=14),
+            text="License Activation Required",
+            font=ctk.CTkFont(size=16),
             text_color="gray",
         )
-        subtitle_label.grid(row=1, column=0, padx=40, pady=(0, 5))
-        
-        subtitle_label2 = ctk.CTkLabel(
-            self.activation_frame,
-            text="License Activation Required",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            text_color=("#555", "#aaa"),
-        )
-        subtitle_label2.grid(row=2, column=0, padx=40, pady=(0, 35))
+        subtitle_label.grid(row=1, column=0, padx=40, pady=(0, 30))
 
-        # Email entry with modern styling
+        # Email entry
         email_label = ctk.CTkLabel(
             self.activation_frame,
-            text="📧 Email Address:",
+            text="Email Address:",
             font=ctk.CTkFont(size=14, weight="bold"),
         )
-        email_label.grid(row=3, column=0, padx=40, pady=(20, 5), sticky="w")
+        email_label.grid(row=2, column=0, padx=40, pady=(20, 5), sticky="w")
 
         self.email_entry = ctk.CTkEntry(
             self.activation_frame,
             placeholder_text="your.email@example.com",
-            width=420,
-            height=50,
+            width=400,
+            height=45,
             font=ctk.CTkFont(size=14),
-            border_width=2,
-            corner_radius=10,
         )
-        self.email_entry.grid(row=4, column=0, padx=40, pady=(0, 20))
+        self.email_entry.grid(row=3, column=0, padx=40, pady=(0, 15))
         bind_clipboard_menu(self.email_entry)
 
-        # License key entry with modern styling
+        # License key entry
         key_label = ctk.CTkLabel(
             self.activation_frame,
-            text="🔑 License Key:",
+            text="License Key:",
             font=ctk.CTkFont(size=14, weight="bold"),
         )
-        key_label.grid(row=5, column=0, padx=40, pady=(10, 5), sticky="w")
+        key_label.grid(row=4, column=0, padx=40, pady=(10, 5), sticky="w")
 
         self.key_entry = ctk.CTkEntry(
             self.activation_frame,
             placeholder_text="XXXX-XXXX-XXXX-XXXX",
-            width=420,
-            height=50,
+            width=400,
+            height=45,
             font=ctk.CTkFont(size=14),
-            border_width=2,
-            corner_radius=10,
         )
-        self.key_entry.grid(row=6, column=0, padx=40, pady=(0, 35))
+        self.key_entry.grid(row=5, column=0, padx=40, pady=(0, 30))
         bind_clipboard_menu(self.key_entry)
 
-        # Activate button with enhanced styling
+        # Activate button
         self.activate_btn = ctk.CTkButton(
             self.activation_frame,
-            text="🔓 ACTIVATE & ENTER",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            height=55,
-            width=320,
-            corner_radius=12,
-            fg_color=("#28a745", "#20873a"),
-            hover_color=("#218838", "#1a6d2e"),
-            border_width=0,
+            text="🔓 ACTIVATE LICENSE",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=50,
+            width=300,
+            fg_color="#28a745",
+            hover_color="#218838",
             command=self._on_activate_click,
         )
-        self.activate_btn.grid(row=7, column=0, padx=40, pady=(10, 50))
+        self.activate_btn.grid(row=6, column=0, padx=40, pady=(10, 40))
 
     def _on_activate_click(self):
         """Handle license activation."""
@@ -442,109 +431,6 @@ class App(ctk.CTk):
         self.audience_entry.grid(row=4, column=0, padx=20, pady=(0, 20))
         bind_clipboard_menu(self.audience_entry)
 
-        # === NEW FEATURE: Page Count Selector ===
-        ctk.CTkLabel(
-            left_frame, 
-            text="📄 Target Page Count:", 
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=5, column=0, padx=20, pady=(10, 5), sticky="w")
-        
-        # Page slider with value display
-        page_selector_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
-        page_selector_frame.grid(row=6, column=0, padx=20, pady=(0, 20), sticky="ew")
-        
-        self.page_count_slider = ctk.CTkSlider(
-            page_selector_frame,
-            from_=10,
-            to=300,
-            number_of_steps=145,  # (300-10)/2 = 145 steps for increments of 2
-            width=250,
-            command=self._update_page_count_display,
-        )
-        self.page_count_slider.set(50)  # Default to 50 pages
-        self.page_count_slider.pack(side="left", padx=(0, 15))
-        
-        self.page_count_label = ctk.CTkLabel(
-            page_selector_frame,
-            text="50 pages",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            width=80,
-        )
-        self.page_count_label.pack(side="left")
-
-        # === NEW FEATURE: Custom Media Upload ===
-        ctk.CTkLabel(
-            left_frame,
-            text="🖼️ Custom Images:",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=7, column=0, padx=20, pady=(10, 5), sticky="w")
-        
-        custom_media_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
-        custom_media_frame.grid(row=8, column=0, padx=20, pady=(0, 20), sticky="ew")
-        
-        self.select_images_btn = ctk.CTkButton(
-            custom_media_frame,
-            text="📁 Select Custom Images",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            height=38,
-            width=200,
-            fg_color="#6c5ce7",
-            hover_color="#5b4cdb",
-            command=self._select_custom_images,
-        )
-        self.select_images_btn.pack(side="left", padx=(0, 10))
-        
-        self.selected_images_label = ctk.CTkLabel(
-            custom_media_frame,
-            text="No images selected",
-            font=ctk.CTkFont(size=12),
-            text_color="gray",
-        )
-        self.selected_images_label.pack(side="left")
-        
-        # Store selected images
-        self.custom_images = []
-
-        # === NEW FEATURE: Typography Controls ===
-        ctk.CTkLabel(
-            left_frame,
-            text="✍️ Content Styling:",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=9, column=0, padx=20, pady=(10, 5), sticky="w")
-        
-        typography_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
-        typography_frame.grid(row=10, column=0, padx=20, pady=(0, 20), sticky="ew")
-        
-        # Text style selector (Segmented button)
-        self.text_style_var = ctk.StringVar(value="Normal Text")
-        self.text_style_selector = ctk.CTkSegmentedButton(
-            typography_frame,
-            values=["Normal Text", "Header H1", "Header H2"],
-            variable=self.text_style_var,
-            font=ctk.CTkFont(size=12),
-            width=320,
-        )
-        self.text_style_selector.pack(pady=(0, 10))
-        
-        # Font size selector
-        font_size_frame = ctk.CTkFrame(typography_frame, fg_color="transparent")
-        font_size_frame.pack(fill="x")
-        
-        ctk.CTkLabel(
-            font_size_frame,
-            text="Font Size:",
-            font=ctk.CTkFont(size=12),
-        ).pack(side="left", padx=(0, 10))
-        
-        self.font_size_var = ctk.StringVar(value="Medium")
-        self.font_size_selector = ctk.CTkOptionMenu(
-            font_size_frame,
-            values=["Small", "Medium", "Large"],
-            variable=self.font_size_var,
-            width=120,
-        )
-        self.font_size_selector.pack(side="left")
-
         # Right column - Branding
         right_frame = ctk.CTkFrame(self.tab_setup)
         right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
@@ -638,64 +524,10 @@ class App(ctk.CTk):
         if filepath:
             self.logo_entry.delete(0, "end")
             self.logo_entry.insert(0, filepath)
-    
-    def _normalize_page_count(self, value):
-        """
-        Normalize page count to even numbers within valid range.
-        
-        Args:
-            value: The raw page count value
-            
-        Returns:
-            int: Normalized even page count between 10 and 300
-        """
-        page_count = int(float(value))
-        # Clamp to valid range
-        page_count = max(10, min(300, page_count))
-        # Ensure even number
-        if page_count % 2 != 0:
-            page_count = min(page_count + 1, 300)
-        return page_count
-    
-    def _update_page_count_display(self, value):
-        """Update the page count label when slider moves."""
-        page_count = self._normalize_page_count(value)
-        self.page_count_label.configure(text=f"{page_count} pages")
-    
-    def _select_custom_images(self):
-        """Open file dialog to select multiple custom images."""
-        filepaths = filedialog.askopenfilenames(
-            title="Select Custom Images for PDF",
-            filetypes=[
-                ("Image Files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
-                ("All Files", "*.*")
-            ],
-        )
-        if filepaths:
-            self.custom_images = list(filepaths)
-            count = len(self.custom_images)
-            if count == 1:
-                self.selected_images_label.configure(
-                    text="1 image selected",
-                    text_color="#28a745"
-                )
-            else:
-                self.selected_images_label.configure(
-                    text=f"{count} images selected",
-                    text_color="#28a745"
-                )
-        else:
-            # User cancelled selection
-            pass
 
     def _open_upgrade_url(self):
-        """Show upgrade information message (marketplace-agnostic)."""
-        messagebox.showinfo(
-            "Upgrade to Extended License",
-            "To unlock Extended features, please return to the marketplace where you purchased this software "
-            "(Fiverr, Whop, etc.) and purchase the 'Extended License' upgrade.\n\n"
-            "Then enter your new key here to activate Extended features."
-        )
+        """Open the upgrade URL in the default browser."""
+        webbrowser.open(UPGRADE_URL)
 
     def _save_setup(self):
         """Save setup data and move to Blueprint tab."""
@@ -717,24 +549,10 @@ class App(ctk.CTk):
             logo_path=self.logo_entry.get().strip(),
             website_url=self.website_entry.get().strip(),
         )
-        
-        # Store new UI settings in project metadata (using helper for consistency)
-        page_count = self._normalize_page_count(self.page_count_slider.get())
-        
-        # Add custom properties to project (these can be used by PDF engine)
-        if not hasattr(self.project, 'ui_settings'):
-            self.project.ui_settings = {}
-        
-        self.project.ui_settings['target_page_count'] = page_count
-        self.project.ui_settings['custom_images'] = self.custom_images
-        self.project.ui_settings['text_style'] = self.text_style_var.get()
-        self.project.ui_settings['font_size'] = self.font_size_var.get()
-        
-        self._log_message(f"Setup saved. Target: {page_count} pages, {len(self.custom_images)} custom images.")
 
         # Switch to Blueprint tab
         self.tabview.set("📋 Blueprint")
-        self._log_message("Ready to generate outline.")
+        self._log_message("Setup saved. Ready to generate outline.")
 
     # ==================== BLUEPRINT TAB ====================
     def _create_blueprint_tab(self):
@@ -1008,11 +826,11 @@ class App(ctk.CTk):
                 "• Quiz generation for each chapter\n"
                 "• Custom branding options\n"
                 "• Priority support\n\n"
-                "Would you like to see upgrade information?",
+                "Would you like to upgrade now?",
                 icon="info"
             )
             if result == "yes":
-                self._open_upgrade_url()
+                webbrowser.open(UPGRADE_URL)
             return
         
         # Extended user - add quiz placeholder
@@ -1426,30 +1244,15 @@ class App(ctk.CTk):
 
         self.build_pdf_btn = ctk.CTkButton(
             pdf_frame,
-            text="📑 GENERATE FINAL PDF",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            height=55,
-            width=300,
-            corner_radius=12,
-            fg_color=("#28a745", "#20873a"),
-            hover_color=("#218838", "#1a6d2e"),
-            border_width=2,
-            border_color=("#20873a", "#28a745"),
+            text="📑 Build Final PDF",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=45,
+            width=280,
+            fg_color="#28a745",
+            hover_color="#218838",
             command=self._build_pdf,
         )
         self.build_pdf_btn.grid(row=2, column=0, padx=20, pady=(0, 20))
-        
-        # Add progress bar to PDF frame
-        self.pdf_progress_label = ctk.CTkLabel(
-            pdf_frame,
-            text="",
-            font=ctk.CTkFont(size=12),
-        )
-        self.pdf_progress_label.grid(row=3, column=0, padx=20, pady=(5, 5))
-        
-        self.pdf_progress_bar = ctk.CTkProgressBar(pdf_frame, width=260)
-        self.pdf_progress_bar.grid(row=4, column=0, padx=20, pady=(0, 20))
-        self.pdf_progress_bar.set(0)
 
         # Bottom - Export log
         self.export_log = ctk.CTkTextbox(
@@ -1550,20 +1353,12 @@ class App(ctk.CTk):
 
         self._log_export("Building PDF document...")
         self.pdf_status.configure(text="Building PDF...")
-        self.pdf_progress_label.configure(text="Processing...")
-        self.pdf_progress_bar.set(0.3)
-        self.build_pdf_btn.configure(state="disabled", text="⏳ BUILDING...")
+        self.build_pdf_btn.configure(state="disabled", text="⏳ Building...")
 
         def build():
             try:
-                # Simulate progress updates
-                self.after(100, lambda: self.pdf_progress_bar.set(0.5))
-                self.after(200, lambda: self.pdf_progress_label.configure(text="Generating pages..."))
-                
                 builder = PDFBuilder(filepath)
                 result = builder.build_pdf(self.project)
-                
-                self.after(0, lambda: self.pdf_progress_bar.set(0.8))
                 self.after(0, lambda: self._on_pdf_built(result))
             except Exception as e:
                 self.after(0, lambda: self._on_pdf_error(str(e)))
@@ -1573,9 +1368,7 @@ class App(ctk.CTk):
 
     def _on_pdf_built(self, filepath):
         """Handle successful PDF build."""
-        self.pdf_progress_bar.set(1.0)
-        self.pdf_progress_label.configure(text="✓ Complete!")
-        self.build_pdf_btn.configure(state="normal", text="📑 GENERATE FINAL PDF")
+        self.build_pdf_btn.configure(state="normal", text="📑 Build Final PDF")
         self.pdf_status.configure(text="✓ PDF exported!", text_color="#28a745")
         self._log_export(f"✓ PDF saved: {filepath}")
         self.project.output_pdf_path = filepath
@@ -1587,9 +1380,7 @@ class App(ctk.CTk):
 
     def _on_pdf_error(self, error):
         """Handle PDF build error."""
-        self.pdf_progress_bar.set(0)
-        self.pdf_progress_label.configure(text="❌ Failed")
-        self.build_pdf_btn.configure(state="normal", text="📑 GENERATE FINAL PDF")
+        self.build_pdf_btn.configure(state="normal", text="📑 Build Final PDF")
         self.pdf_status.configure(text="❌ Build failed", text_color="#e74c3c")
         self._log_export(f"❌ Error: {error}")
         messagebox.showerror("Error", f"Failed to build PDF:\n\n{error}")
