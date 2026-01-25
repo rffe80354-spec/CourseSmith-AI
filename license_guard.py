@@ -2,17 +2,17 @@
 License Guard Module - Enterprise DRM Security for CourseSmith AI.
 Provides enterprise-grade license key generation and validation with:
 - HWID Locking (Hardware ID binding) - Enterprise tier and above
-- Custom Key Format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE
+- Custom Key Format: CS-XXXX-XXXX (12 characters, 8 hex digits)
 - Time-Bombing with NTP verification (anti-tamper)
 - Persistent Session with encrypted tokens
 - Cloud-based license validation with Supabase
 - Four-tier system with cloud protection
 
 Tiers:
-- Trial (TRL): 3 days, 10 pages, cloud-protected
-- Standard (STD): 50 pages, cloud-protected, basic features
-- Enterprise (ENT): 300 pages, all AI features, HWID binding, cloud-protected
-- Lifetime (LFT): Enterprise features, no expiration, cloud-protected
+- Trial: 3 days, 10 pages, cloud-protected
+- Standard: 50 pages, cloud-protected, basic features
+- Enterprise: 300 pages, all AI features, HWID binding, cloud-protected
+- Lifetime: Enterprise features, no expiration, cloud-protected
 
 Durations:
 - 3 Days: Trial period
@@ -37,6 +37,14 @@ from cryptography.fernet import Fernet
 
 from utils import get_data_dir
 
+# Try to import database_manager for license validation
+try:
+    from database_manager import get_license_by_key, check_cloud_status, update_hwid
+    DATABASE_AVAILABLE = True
+except ImportError:
+    DATABASE_AVAILABLE = False
+    print("Warning: database_manager not available. Some features may not work.")
+
 # Try to import NTP library for time verification
 try:
     import ntplib
@@ -48,6 +56,11 @@ except ImportError:
 
 # Secret salt for license key generation - DO NOT SHARE
 SECRET_SALT = "FALEOVAD_2009_SECURE_A5432_ENTERPRISE_v2"
+
+# Key format constants
+KEY_FORMAT_LENGTH = 12  # CS-XXXX-XXXX = 12 characters
+KEY_DASH_COUNT = 2      # 2 dashes in the format
+KEY_PREFIX = "CS-"      # All keys start with CS-
 
 # Session file for persistent login (encrypted)
 SESSION_FILE = ".session_token"
@@ -382,7 +395,7 @@ def _calculate_expiration(duration: str) -> Optional[str]:
 def generate_key(email: str, tier: str = 'trial', duration: str = 'lifetime') -> Tuple[str, Optional[str]]:
     """
     Generate a license key in CS-XXXX-XXXX format (standardized for all tiers).
-    Format: CS-XXXX-XXXX where X is an uppercase hex character (8 hex chars total).
+    Format: CS-XXXX-XXXX where X is an uppercase hex character (8 hex chars total, 12 chars including prefix and dashes).
     
     Args:
         email: The buyer's email address.
@@ -421,7 +434,7 @@ def generate_key(email: str, tier: str = 'trial', duration: str = 'lifetime') ->
     # Convert to hex and take first 8 characters for CS-XXXX-XXXX format
     hex_signature = signature_bytes.hex().upper()[:8]
     
-    # Format as CS-XXXX-XXXX (CS + 4 hex + dash + 4 hex = 11 chars total)
+    # Format as CS-XXXX-XXXX (CS + 4 hex + dash + 4 hex = 12 chars total)
     license_key = f"CS-{hex_signature[:4]}-{hex_signature[4:]}"
     
     return license_key, expires_at
@@ -538,17 +551,22 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
     if hwid is None:
         hwid = get_hwid()
     
-    # Validate CS-XXXX-XXXX format (12 chars: CS + dash + 4 hex + dash + 4 hex)
-    if not key.startswith('CS-') or len(key) != 12 or key.count('-') != 2:
+    # Validate CS-XXXX-XXXX format using constants
+    if not key.startswith(KEY_PREFIX) or len(key) != KEY_FORMAT_LENGTH or key.count('-') != KEY_DASH_COUNT:
         return {
             'valid': False,
-            'message': 'Invalid license key format. Expected: CS-XXXX-XXXX'
+            'message': f'Invalid license key format. Expected: {KEY_PREFIX}XXXX-XXXX'
+        }
+    
+    # Check if database is available
+    if not DATABASE_AVAILABLE:
+        return {
+            'valid': False,
+            'message': 'License validation unavailable. Database module not loaded.'
         }
     
     # Look up the license in the database
     try:
-        from database_manager import get_license_by_key, check_cloud_status
-        
         # Check cloud first, then local database
         license_data = get_license_by_key(key, check_cloud=True)
         
@@ -615,7 +633,6 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
             else:
                 # First activation - bind HWID
                 try:
-                    from database_manager import update_hwid
                     update_hwid(key, hwid)
                 except Exception as e:
                     print(f"Warning: Failed to bind HWID: {e}")
