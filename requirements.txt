@@ -6,3 +6,5 @@ pillow>=10.3.0
 requests
 cryptography>=42.0.4
 pyinstaller
+supabase>=2.0.0
+ntplib>=0.4.0

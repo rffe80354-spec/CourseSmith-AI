@@ -1,7 +1,13 @@
 """
-Database Manager Module - SQLite Database for License Management.
-Manages license keys, HWID bindings, expirations, and revocations.
-Used by the Admin KeyGen tool to track all generated licenses.
+Database Manager Module - Hybrid SQLite/Supabase License Management.
+Manages license keys with cloud synchronization, HWID bindings, and tier-based features.
+Supports dual-tier system: Standard (10 pages) vs Enterprise (300 pages, HWID, AI features).
+
+Cloud Features:
+- Supabase integration for remote license validation
+- Remote revocation and status checking
+- Real-time license updates
+- Graceful offline fallback to local SQLite cache
 """
 
 import sqlite3
@@ -9,12 +15,130 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
+from dotenv import load_dotenv
 
 from utils import get_data_dir
 
+# Try to import Supabase, but don't fail if not available
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    print("Warning: Supabase not available. Using local-only mode.")
+
+
+# Load environment variables
+load_dotenv()
+
+# Supabase configuration
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_TABLE = "licenses"
 
 # Database file name
 DB_NAME = "licenses.db"
+
+# Global Supabase client
+_supabase_client: Optional['Client'] = None
+
+
+def get_supabase_client() -> Optional['Client']:
+    """
+    Get or create Supabase client singleton.
+    
+    Returns:
+        Client: Supabase client instance, or None if not configured/available.
+    """
+    global _supabase_client
+    
+    if not SUPABASE_AVAILABLE:
+        return None
+    
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
+    
+    if _supabase_client is None:
+        try:
+            _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        except Exception as e:
+            print(f"Failed to initialize Supabase client: {e}")
+            return None
+    
+    return _supabase_client
+
+
+def is_cloud_enabled() -> bool:
+    """
+    Check if cloud (Supabase) features are available and configured.
+    
+    Returns:
+        bool: True if Supabase is available and configured.
+    """
+    return get_supabase_client() is not None
+
+
+def sync_to_cloud(license_data: Dict[str, Any]) -> bool:
+    """
+    Sync a license to Supabase cloud database.
+    
+    Args:
+        license_data: License dictionary to sync.
+        
+    Returns:
+        bool: True if successful, False otherwise.
+    """
+    client = get_supabase_client()
+    if not client:
+        return False
+    
+    try:
+        # Upsert to Supabase (insert or update)
+        client.table(SUPABASE_TABLE).upsert(license_data).execute()
+        return True
+    except Exception as e:
+        print(f"Failed to sync to cloud: {e}")
+        return False
+
+
+def fetch_from_cloud(key: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch a license from Supabase cloud database by key.
+    
+    Args:
+        key: License key to fetch.
+        
+    Returns:
+        dict: License data, or None if not found or error.
+    """
+    client = get_supabase_client()
+    if not client:
+        return None
+    
+    try:
+        response = client.table(SUPABASE_TABLE).select("*").eq("key", key).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"Failed to fetch from cloud: {e}")
+        return None
+
+
+def check_cloud_status(key: str) -> Optional[str]:
+    """
+    Check the status of a license in the cloud (for remote revocation).
+    
+    Args:
+        key: License key to check.
+        
+    Returns:
+        str: Status ('Active', 'Banned', 'Expired'), or None if offline/not found.
+    """
+    license_data = fetch_from_cloud(key)
+    if license_data:
+        return license_data.get('status')
+    return None
 
 
 def get_db_path():
@@ -116,8 +240,9 @@ def create_license(email: str, key: str, tier: str, duration: str,
     if expires_at is None:
         if duration == 'lifetime':
             expires_at = None
-        elif duration == '1_month':
-            expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+        elif duration == '1_month' or duration == '3_day':
+            days = 3 if duration == '3_day' else 30
+            expires_at = (datetime.now() + timedelta(days=days)).isoformat()
         elif duration == '1_year':
             expires_at = (datetime.now() + timedelta(days=365)).isoformat()
         else:
@@ -125,6 +250,7 @@ def create_license(email: str, key: str, tier: str, duration: str,
     
     created_at = datetime.now().isoformat()
     
+    # Create license in local database
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -132,19 +258,70 @@ def create_license(email: str, key: str, tier: str, duration: str,
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (email, key, tier, duration, None, created_at, expires_at, 'Active', notes))
         
-        return cursor.lastrowid
+        license_id = cursor.lastrowid
+    
+    # Sync to cloud if available
+    if is_cloud_enabled():
+        license_data = {
+            'id': license_id,
+            'email': email,
+            'key': key,
+            'tier': tier,
+            'duration': duration,
+            'hwid': None,
+            'created_at': created_at,
+            'expires_at': expires_at,
+            'status': 'Active',
+            'notes': notes
+        }
+        sync_to_cloud(license_data)
+    
+    return license_id
 
 
-def get_license_by_key(key: str) -> Optional[Dict[str, Any]]:
+def get_license_by_key(key: str, check_cloud: bool = True) -> Optional[Dict[str, Any]]:
     """
     Retrieve a license by its key.
+    First checks cloud (if enabled), then falls back to local database.
     
     Args:
         key: The license key to search for.
+        check_cloud: Whether to check cloud database first (default True).
         
     Returns:
         dict: License information, or None if not found.
     """
+    # Try cloud first if enabled and requested
+    if check_cloud and is_cloud_enabled():
+        cloud_data = fetch_from_cloud(key)
+        if cloud_data:
+            # Cache in local database
+            try:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    # Upsert into local cache
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO licenses 
+                        (id, email, key, tier, duration, hwid, created_at, expires_at, status, notes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        cloud_data.get('id'),
+                        cloud_data.get('email'),
+                        cloud_data.get('key'),
+                        cloud_data.get('tier'),
+                        cloud_data.get('duration'),
+                        cloud_data.get('hwid'),
+                        cloud_data.get('created_at'),
+                        cloud_data.get('expires_at'),
+                        cloud_data.get('status'),
+                        cloud_data.get('notes')
+                    ))
+            except Exception as e:
+                print(f"Failed to cache cloud data locally: {e}")
+            
+            return cloud_data
+    
+    # Fallback to local database
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM licenses WHERE key = ?", (key,))
