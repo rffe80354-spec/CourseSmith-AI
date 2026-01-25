@@ -191,6 +191,11 @@ class App(ctk.CTk):
         self.is_generating = False
         self.current_chapter_index = 0
         self.total_chapters = 0
+        self.target_pages = 50  # Global page count from Setup, default 50
+        
+        # Animation state for progress indicators
+        self._animation_running = False
+        self._animation_step = 0
 
         # Configure grid layout
         self.grid_columnconfigure(0, weight=1)
@@ -211,6 +216,8 @@ class App(ctk.CTk):
         
         def load_app():
             """Simulate loading and check license."""
+            time.sleep(0.3)
+            splash.update_status("Loading modules...")
             time.sleep(0.3)
             splash.update_status("Loading license system...")
             time.sleep(0.3)
@@ -1083,6 +1090,9 @@ class App(ctk.CTk):
         # Store new UI settings in project metadata (using helper for consistency)
         page_count = self._normalize_page_count(self.page_count_slider.get())
         
+        # Set global target_pages for synchronization with Blueprint
+        self.target_pages = page_count
+        
         # Add custom properties to project (these can be used by PDF engine)
         if not hasattr(self.project, 'ui_settings'):
             self.project.ui_settings = {}
@@ -1094,8 +1104,9 @@ class App(ctk.CTk):
         
         self._log_message(f"Setup saved. Target: {page_count} pages, {len(self.custom_images)} custom images.")
 
-        # Switch to Blueprint tab
+        # Switch to Blueprint tab and update page display
         self.tabview.set("📋 Blueprint")
+        self._update_blueprint_page_display()
         self._log_message("Ready to generate outline.")
 
     # ==================== BLUEPRINT TAB ====================
@@ -1138,7 +1149,7 @@ class App(ctk.CTk):
         stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         # Initialize stats labels with default values
-        self.stats_pages_label = self._create_stat_card(stats_frame, "📄 Pages", "45-60", 0)
+        self.stats_pages_label = self._create_stat_card(stats_frame, "📄 Pages", "50", 0)
         self.stats_level_label = self._create_stat_card(stats_frame, "🎓 Level", "Expert", 1)
         self.stats_modules_label = self._create_stat_card(stats_frame, "🧩 Modules", "8", 2)
         self.stats_keywords_label = self._create_stat_card(stats_frame, "🔑 Keywords", "15+", 3)
@@ -1386,6 +1397,11 @@ class App(ctk.CTk):
         
         self._log_message("Quiz placeholder added. Quizzes will be generated with chapter content.")
 
+    def _update_blueprint_page_display(self):
+        """Update the Blueprint page display to show exact value from Setup."""
+        # Display exact page count from Setup instead of estimate
+        self.stats_pages_label.configure(text=str(self.target_pages))
+    
     def _update_stats_from_outline(self):
         """Update stats header based on the current outline content."""
         current_text = self.outline_textbox.get("1.0", "end").strip()
@@ -1395,11 +1411,8 @@ class App(ctk.CTk):
         # Update Modules count
         self.stats_modules_label.configure(text=str(num_chapters) if num_chapters > 0 else "0")
         
-        # Estimate pages (8-12 pages per chapter)
-        min_pages = num_chapters * 8
-        max_pages = num_chapters * 12
-        pages_text = f"{min_pages}-{max_pages}" if num_chapters > 0 else "0"
-        self.stats_pages_label.configure(text=pages_text)
+        # Update Pages to show exact target from Setup (synchronized)
+        self.stats_pages_label.configure(text=str(self.target_pages))
         
         # Update level based on chapters
         if num_chapters <= 3:
@@ -1725,7 +1738,16 @@ class App(ctk.CTk):
     def _on_chapter_written(self, title, content):
         """Handle successful chapter writing."""
         self.project.set_chapter_content(title, content)
-        self._log_drafting(f"✓ Chapter '{title}' complete ({len(content)} characters)")
+        
+        # Calculate page count for this chapter using ContentDistributor
+        from generator import ContentDistributor
+        from session_manager import get_tier
+        distributor = ContentDistributor(get_tier())
+        pages = distributor.distribute_content(content)
+        page_count = len(pages)
+        
+        # Log with page count instead of just character count
+        self._log_drafting(f"✓ Chapter '{title}' complete ({page_count} pages, {len(content)} characters)")
 
         self.current_chapter_index += 1
         self._write_next_chapter()
@@ -1922,35 +1944,75 @@ class App(ctk.CTk):
 
         self._log_export("Building PDF document...")
         self.pdf_status.configure(text="Building PDF...")
-        self.pdf_progress_label.configure(text="Processing...")
-        self.pdf_progress_bar.set(0.3)
+        self.pdf_progress_label.configure(text="Initializing...")
+        self.pdf_progress_bar.set(0.1)
         self.build_pdf_btn.configure(state="disabled", text="⏳ BUILDING...")
+        
+        # Start animation on progress label
+        self._start_status_animation(self.pdf_progress_label, "Generating pages")
 
         def build():
             try:
-                # Simulate progress updates
-                self.after(100, lambda: self.pdf_progress_bar.set(0.5))
-                self.after(200, lambda: self.pdf_progress_label.configure(text="Generating pages..."))
-                
                 # Get current tier from session (already imported at top)
                 current_tier = get_tier()
+                
+                # Calculate estimated page count for progress display
+                total_pages = self.target_pages
+                
+                # Simulate page-by-page progress updates
+                def update_page_progress(page_num):
+                    progress = page_num / total_pages if total_pages > 0 else 0.5
+                    self.after(0, lambda: self.pdf_progress_bar.set(min(0.9, progress)))
+                    # Note: Animation handles the text, no need to update text here
+                
+                # Update progress at intervals
+                for i in range(1, min(10, total_pages + 1)):
+                    self.after(i * 100, lambda p=i: update_page_progress(p))
                 
                 # Create builder with tier parameter
                 builder = PDFBuilder(filepath, tier=current_tier)
                 result = builder.build_pdf(self.project, tier=current_tier)
                 
-                self.after(0, lambda: self.pdf_progress_bar.set(0.8))
-                self.after(0, lambda: self._on_pdf_built(result))
+                # Calculate actual pages from ContentDistributor
+                from generator import ContentDistributor
+                distributor = ContentDistributor(current_tier)
+                
+                # Count total pages in all chapters
+                total_pages_created = 0
+                if self.project.chapters_content:
+                    for chapter_content in self.project.chapters_content.values():
+                        pages = distributor.distribute_content(chapter_content)
+                        total_pages_created += len(pages)
+                
+                # Log total pages created
+                self._log_export(f"[SUCCESS] Course generated: {total_pages_created} pages completed")
+                
+                self.after(0, lambda: self.pdf_progress_bar.set(1.0))
+                self.after(0, lambda: self._on_pdf_built(result, total_pages_created))
             except Exception as e:
                 self.after(0, lambda: self._on_pdf_error(str(e)))
 
         thread = threading.Thread(target=build, daemon=True)
         thread.start()
 
-    def _on_pdf_built(self, filepath):
-        """Handle successful PDF build."""
+    def _on_pdf_built(self, filepath, total_pages_created=None):
+        """Handle successful PDF build.
+        
+        Args:
+            filepath: The path to the generated PDF
+            total_pages_created: Optional total number of pages created
+        """
+        # Stop animation
+        self._stop_status_animation()
+        
         self.pdf_progress_bar.set(1.0)
-        self.pdf_progress_label.configure(text="✓ Complete!")
+        
+        # Show page count in completion message if available
+        if total_pages_created:
+            self.pdf_progress_label.configure(text=f"✓ Complete! ({total_pages_created} pages)")
+        else:
+            self.pdf_progress_label.configure(text="✓ Complete!")
+        
         self.build_pdf_btn.configure(state="normal", text="📑 GENERATE FINAL PDF")
         self.pdf_status.configure(text="✓ PDF exported!", text_color="#28a745")
         self._log_export(f"✓ PDF saved: {filepath}")
@@ -1963,12 +2025,52 @@ class App(ctk.CTk):
 
     def _on_pdf_error(self, error):
         """Handle PDF build error."""
+        # Stop animation
+        self._stop_status_animation()
+        
         self.pdf_progress_bar.set(0)
         self.pdf_progress_label.configure(text="❌ Failed")
         self.build_pdf_btn.configure(state="normal", text="📑 GENERATE FINAL PDF")
         self.pdf_status.configure(text="❌ Build failed", text_color="#e74c3c")
         self._log_export(f"❌ Error: {error}")
         messagebox.showerror("Error", f"Failed to build PDF:\n\n{error}")
+
+    def _start_status_animation(self, label_widget, base_text):
+        """
+        Start a pulsing animation on a status label.
+        
+        Args:
+            label_widget: The CTkLabel widget to animate
+            base_text: The base text to display with animation
+        """
+        self._animation_running = True
+        self._animation_step = 0
+        self._animate_status(label_widget, base_text)
+    
+    def _stop_status_animation(self):
+        """Stop the status animation."""
+        self._animation_running = False
+    
+    def _animate_status(self, label_widget, base_text):
+        """
+        Recursively animate a status label with pulsing dots.
+        
+        Args:
+            label_widget: The CTkLabel widget to animate
+            base_text: The base text to display
+        """
+        if not self._animation_running:
+            return
+        
+        # Create pulsing effect with dots
+        dots = ["", ".", "..", "..."]
+        current_dots = dots[self._animation_step % len(dots)]
+        label_widget.configure(text=f"{base_text}{current_dots}")
+        
+        self._animation_step += 1
+        
+        # Schedule next animation frame (500ms for smooth pulsing)
+        self.after(500, lambda: self._animate_status(label_widget, base_text))
 
     # ==================== SHARED UTILITIES ====================
     def _log_message(self, message):

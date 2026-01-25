@@ -274,6 +274,68 @@ class PDFBuilder:
 
         # Page break after cover
         story.append(PageBreak())
+    
+    def _create_metadata_page(self, project, story):
+        """
+        Create a metadata page with generation information.
+        
+        Args:
+            project: CourseProject object with project data.
+            story: The story list to append elements to.
+        """
+        # Add spacer at top
+        story.append(Spacer(1, 0.5 * inch))
+        
+        # Metadata header
+        metadata_title = "Document Information"
+        story.append(Paragraph(metadata_title, self.styles["ChapterHeader"]))
+        story.append(Spacer(1, 0.3 * inch))
+        
+        # Calculate total pages
+        if not self.distributor:
+            self.distributor = ContentDistributor(self.tier)
+        
+        total_pages = 0
+        if project.chapters_content:
+            distributed_content = distribute_chapter_content(
+                project.chapters_content, 
+                tier=self.tier
+            )
+            for chapter_pages in distributed_content.values():
+                total_pages += len(chapter_pages)
+        
+        # Check for custom images
+        has_media = False
+        media_status = "No custom media included"
+        if hasattr(project, 'ui_settings') and project.ui_settings:
+            custom_images = project.ui_settings.get('custom_images', [])
+            if custom_images and len(custom_images) > 0:
+                has_media = True
+                media_status = f"{len(custom_images)} custom image(s) included"
+        
+        # Get generation date
+        from datetime import datetime
+        generation_date = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+        
+        # Create metadata content
+        metadata_style = self.styles["Normal"]
+        metadata_items = [
+            f"<b>Generation Date:</b> {generation_date}",
+            f"<b>Total Pages:</b> {total_pages} pages",
+            f"<b>Media Status:</b> {media_status}",
+            f"<b>License Tier:</b> {self.tier.title()}",
+        ]
+        
+        for item in metadata_items:
+            story.append(Paragraph(item, metadata_style))
+            story.append(Spacer(1, 0.15 * inch))
+        
+        # Add separator
+        story.append(Spacer(1, 0.5 * inch))
+        story.append(Paragraph("─" * 60, metadata_style))
+        
+        # Page break after metadata
+        story.append(PageBreak())
 
     def _parse_markdown_content_with_style(self, content, body_style):
         """
@@ -503,6 +565,9 @@ class PDFBuilder:
         # Create cover page (uses cover template automatically for first page)
         self._create_cover_page(project, story)
         
+        # Add metadata page after cover
+        self._create_metadata_page(project, story)
+        
         # Switch to content template for remaining pages
         story.insert(-1, NextPageTemplate('content'))
         
@@ -583,6 +648,9 @@ class PDFBuilder:
                 
                 # Create cover page
                 self._create_cover_page(project, story)
+                
+                # Add metadata page after cover
+                self._create_metadata_page(project, story)
                 
                 # Switch to content template for remaining pages
                 story.insert(-1, NextPageTemplate('content'))
