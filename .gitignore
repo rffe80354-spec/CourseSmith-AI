@@ -72,3 +72,10 @@ CourseSmith_*.pdf
 # Temporary files
 *.tmp
 *.temp
+
+# Test files and screenshots
+test_ui.py
+test_ui_demo.py
+test_features.py
+screenshot_*.png
+app_backup.py

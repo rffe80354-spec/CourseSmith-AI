@@ -1,5 +1,5 @@
 """
-Faleovad AI Enterprise - Main Application GUI.
+CourseSmith AI Enterprise - Main Application GUI.
 A commercial desktop tool to generate educational PDF books using AI with DRM protection.
 Uses session token system for anti-tamper protection.
 Features tiered licensing: Standard ($59) vs Extended ($249).
@@ -51,14 +51,14 @@ def bind_clipboard_menu(widget):
 
 
 class App(ctk.CTk):
-    """Main application window for Faleovad AI Enterprise with DRM protection."""
+    """Main application window for CourseSmith AI Enterprise with DRM protection."""
 
     def __init__(self):
         """Initialize the application window and widgets."""
         super().__init__()
 
         # Window configuration
-        self.title("Faleovad AI Enterprise - Educational PDF Generator")
+        self.title("CourseSmith AI Enterprise - Educational PDF Generator")
         self.geometry("1000x700")
         self.minsize(900, 600)
 
@@ -461,7 +461,7 @@ class App(ctk.CTk):
             page_selector_frame,
             from_=10,
             to=300,
-            number_of_steps=145,  # Steps of 2 (290/2 = 145)
+            number_of_steps=145,  # (300-10)/2 = 145 steps for increments of 2
             width=250,
             command=self._update_page_count_display,
         )
@@ -643,12 +643,27 @@ class App(ctk.CTk):
             self.logo_entry.delete(0, "end")
             self.logo_entry.insert(0, filepath)
     
+    def _normalize_page_count(self, value):
+        """
+        Normalize page count to even numbers within valid range.
+        
+        Args:
+            value: The raw page count value
+            
+        Returns:
+            int: Normalized even page count between 10 and 300
+        """
+        page_count = int(float(value))
+        # Clamp to valid range
+        page_count = max(10, min(300, page_count))
+        # Ensure even number
+        if page_count % 2 != 0:
+            page_count = min(page_count + 1, 300)
+        return page_count
+    
     def _update_page_count_display(self, value):
         """Update the page count label when slider moves."""
-        page_count = int(float(value))
-        # Ensure even numbers for steps of 2
-        if page_count % 2 != 0:
-            page_count = page_count + 1 if page_count < 300 else page_count - 1
+        page_count = self._normalize_page_count(value)
         self.page_count_label.configure(text=f"{page_count} pages")
     
     def _select_custom_images(self):
@@ -702,10 +717,8 @@ class App(ctk.CTk):
             website_url=self.website_entry.get().strip(),
         )
         
-        # Store new UI settings in project metadata
-        page_count = int(self.page_count_slider.get())
-        if page_count % 2 != 0:
-            page_count = page_count + 1 if page_count < 300 else page_count - 1
+        # Store new UI settings in project metadata (using helper for consistency)
+        page_count = self._normalize_page_count(self.page_count_slider.get())
         
         # Add custom properties to project (these can be used by PDF engine)
         if not hasattr(self.project, 'ui_settings'):
