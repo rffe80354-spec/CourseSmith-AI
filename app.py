@@ -281,6 +281,7 @@ class App(ctk.CTk):
             widget.destroy()
 
         # Main activation frame - centered with modern styling and depth
+        # Using responsive padding that scales with window size
         self.activation_frame = ctk.CTkFrame(
             self, 
             corner_radius=20, 
@@ -288,8 +289,10 @@ class App(ctk.CTk):
             border_color=("#3b8ed0", "#1f6aa5"),
             fg_color=("#2b2b2b", "#1a1a1a")
         )
-        self.activation_frame.grid(row=0, column=0, padx=100, pady=80, sticky="nsew")
+        self.activation_frame.grid(row=0, column=0, padx=100, pady=40, sticky="nsew")
         self.activation_frame.grid_columnconfigure(0, weight=1)
+        # Add row weight for the spacer row to enable flexible expansion
+        self.activation_frame.grid_rowconfigure(8, weight=1)
 
         # Logo/Title with enhanced styling
         title_label = ctk.CTkLabel(
@@ -298,7 +301,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=36, weight="bold"),
             text_color=("#1f6aa5", "#3b8ed0"),
         )
-        title_label.grid(row=0, column=0, padx=40, pady=(50, 10))
+        title_label.grid(row=0, column=0, padx=40, pady=(30, 10))
 
         subtitle_label = ctk.CTkLabel(
             self.activation_frame,
@@ -314,7 +317,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=("#555", "#aaa"),
         )
-        subtitle_label2.grid(row=2, column=0, padx=40, pady=(0, 35))
+        subtitle_label2.grid(row=2, column=0, padx=40, pady=(0, 25))
 
         # Email entry with modern styling
         email_label = ctk.CTkLabel(
@@ -322,7 +325,7 @@ class App(ctk.CTk):
             text="📧 Email Address:",
             font=ctk.CTkFont(size=14, weight="bold"),
         )
-        email_label.grid(row=3, column=0, padx=40, pady=(20, 5), sticky="w")
+        email_label.grid(row=3, column=0, padx=40, pady=(10, 5), sticky="w")
 
         self.email_entry = ctk.CTkEntry(
             self.activation_frame,
@@ -333,7 +336,7 @@ class App(ctk.CTk):
             border_width=2,
             corner_radius=10,
         )
-        self.email_entry.grid(row=4, column=0, padx=40, pady=(0, 20))
+        self.email_entry.grid(row=4, column=0, padx=40, pady=(0, 15))
         bind_clipboard_menu(self.email_entry)
 
         # License key entry with modern styling
@@ -353,7 +356,7 @@ class App(ctk.CTk):
             border_width=2,
             corner_radius=10,
         )
-        self.key_entry.grid(row=6, column=0, padx=40, pady=(0, 20))
+        self.key_entry.grid(row=6, column=0, padx=40, pady=(0, 15))
         bind_clipboard_menu(self.key_entry)
 
         # Remember me checkbox
@@ -365,9 +368,14 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=12),
             corner_radius=5
         )
-        remember_checkbox.grid(row=7, column=0, padx=40, pady=(0, 20))
+        remember_checkbox.grid(row=7, column=0, padx=40, pady=(0, 15))
 
-        # Activate button with enhanced styling
+        # Flexible spacer that expands to push button to bottom
+        # This row has weight=1, so it will expand in fullscreen
+        spacer_frame = ctk.CTkFrame(self.activation_frame, fg_color="transparent")
+        spacer_frame.grid(row=8, column=0, sticky="nsew")
+
+        # Activate button with enhanced styling - anchored to bottom
         self.activate_btn = ctk.CTkButton(
             self.activation_frame,
             text="🔓 ACTIVATE & ENTER",
@@ -380,7 +388,7 @@ class App(ctk.CTk):
             border_width=0,
             command=self._on_activate_click,
         )
-        self.activate_btn.grid(row=8, column=0, padx=40, pady=(10, 50))
+        self.activate_btn.grid(row=9, column=0, padx=40, pady=(10, 30))
 
     def _on_activate_click(self):
         """Handle license activation with enterprise features."""
@@ -1397,14 +1405,17 @@ class App(ctk.CTk):
     # ==================== DRAFTING TAB ====================
     def _create_drafting_tab(self):
         """Create the Drafting tab content with split view (console + live preview)."""
-        # Configure grid for split view
-        self.tab_drafting.grid_columnconfigure(0, weight=1)  # Left: Console
-        self.tab_drafting.grid_columnconfigure(1, weight=1)  # Right: Preview
-        self.tab_drafting.grid_rowconfigure(1, weight=1)
+        # Configure grid for split view with proper weights for responsiveness
+        self.tab_drafting.grid_columnconfigure(0, weight=1)  # Left: Console - expands
+        self.tab_drafting.grid_columnconfigure(1, weight=1)  # Right: Preview - expands
+        self.tab_drafting.grid_rowconfigure(0, weight=0)  # Header - fixed
+        self.tab_drafting.grid_rowconfigure(1, weight=1)  # Main content - expands to fill space
+        self.tab_drafting.grid_rowconfigure(2, weight=0)  # Progress bar - fixed
+        self.tab_drafting.grid_rowconfigure(3, weight=0)  # Continue button - fixed
 
         # Header with button (spans both columns)
         header_frame = ctk.CTkFrame(self.tab_drafting, fg_color="transparent")
-        header_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 20), sticky="ew")
+        header_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 10), sticky="ew")
 
         ctk.CTkLabel(
             header_frame,
@@ -1425,45 +1436,47 @@ class App(ctk.CTk):
 
         # ========== LEFT SIDE: Progress Console ==========
         left_frame = ctk.CTkFrame(self.tab_drafting)
-        left_frame.grid(row=1, column=0, padx=(20, 10), pady=(0, 20), sticky="nsew")
+        left_frame.grid(row=1, column=0, padx=(20, 10), pady=(0, 10), sticky="nsew")
         left_frame.grid_columnconfigure(0, weight=1)
-        left_frame.grid_rowconfigure(1, weight=1)
+        left_frame.grid_rowconfigure(0, weight=0)  # Label - fixed
+        left_frame.grid_rowconfigure(1, weight=1)  # Textbox - expands
 
         ctk.CTkLabel(
             left_frame,
             text="📋 Progress Console",
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, padx=20, pady=(20, 5), sticky="w")
+        ).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
 
-        # Progress log
+        # Progress log - expands to fill available space
         self.drafting_log = ctk.CTkTextbox(
             left_frame,
             font=ctk.CTkFont(family="Consolas", size=12),
             wrap="word",
             state="disabled",
         )
-        self.drafting_log.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nsew")
+        self.drafting_log.grid(row=1, column=0, padx=20, pady=(0, 15), sticky="nsew")
         bind_clipboard_menu(self.drafting_log)
 
         # ========== RIGHT SIDE: Live Page Preview ==========
         right_frame = ctk.CTkFrame(self.tab_drafting)
-        right_frame.grid(row=1, column=1, padx=(10, 20), pady=(0, 20), sticky="nsew")
+        right_frame.grid(row=1, column=1, padx=(10, 20), pady=(0, 10), sticky="nsew")
         right_frame.grid_columnconfigure(0, weight=1)
-        right_frame.grid_rowconfigure(1, weight=1)
+        right_frame.grid_rowconfigure(0, weight=0)  # Label - fixed
+        right_frame.grid_rowconfigure(1, weight=1)  # Preview - expands
 
         ctk.CTkLabel(
             right_frame,
             text="📄 Live Page Preview",
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, padx=20, pady=(20, 5), sticky="w")
+        ).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
 
-        # White "paper" frame for document preview (scrollable)
+        # White "paper" frame for document preview (scrollable) - expands to fill
         self.preview_scroll = ctk.CTkScrollableFrame(
             right_frame,
             fg_color="white",
             corner_radius=5,
         )
-        self.preview_scroll.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nsew")
+        self.preview_scroll.grid(row=1, column=0, padx=20, pady=(0, 15), sticky="nsew")
         self.preview_scroll.grid_columnconfigure(0, weight=1)
 
         # Chapter title label (appears above content during generation)
@@ -1492,17 +1505,17 @@ class App(ctk.CTk):
 
         # ========== BOTTOM: Progress Bar (spans both columns) ==========
         progress_frame = ctk.CTkFrame(self.tab_drafting)
-        progress_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 20), sticky="ew")
+        progress_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
+        progress_frame.grid_columnconfigure(0, weight=1)
 
         self.drafting_progress_label = ctk.CTkLabel(
             progress_frame, text="Ready to draft", font=ctk.CTkFont(size=13)
         )
-        self.drafting_progress_label.grid(row=0, column=0, padx=20, pady=(20, 5), sticky="w")
+        self.drafting_progress_label.grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
 
         self.drafting_progress = ctk.CTkProgressBar(progress_frame, height=15)
-        self.drafting_progress.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
+        self.drafting_progress.grid(row=1, column=0, padx=20, pady=(0, 15), sticky="ew")
         self.drafting_progress.set(0)
-        progress_frame.grid_columnconfigure(0, weight=1)
 
         # Continue button (spans both columns)
         self.continue_export_btn = ctk.CTkButton(
@@ -1515,7 +1528,7 @@ class App(ctk.CTk):
             state="disabled",
             command=lambda: self.tabview.set("📤 Export"),
         )
-        self.continue_export_btn.grid(row=3, column=0, columnspan=2, padx=20, pady=(20, 20))
+        self.continue_export_btn.grid(row=3, column=0, columnspan=2, padx=20, pady=(10, 15))
 
         # Track current preview content for accumulation
         self._preview_accumulated_text = ""
