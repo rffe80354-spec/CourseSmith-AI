@@ -501,7 +501,11 @@ class App(ctk.CTk):
         self.tabview.configure(command=self._on_tab_change)
     
     def _on_tab_change(self):
-        """Handle tab change to auto-scroll to top."""
+        """Handle tab change to auto-scroll to top.
+        
+        Note: Uses _parent_canvas which is a private attribute of CTkScrollableFrame.
+        This is the standard approach in CustomTkinter for programmatic scrolling.
+        """
         current_tab = self.tabview.get()
         
         # Scroll to top of the current tab's scrollable frames

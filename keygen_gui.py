@@ -208,7 +208,11 @@ class KeygenApp(ctk.CTk):
         self.tabview.configure(command=self._on_tab_change)
     
     def _on_tab_change(self):
-        """Handle tab change to auto-scroll to top."""
+        """Handle tab change to auto-scroll to top.
+        
+        Note: Uses _parent_canvas which is a private attribute of CTkScrollableFrame.
+        This is the standard approach in CustomTkinter for programmatic scrolling.
+        """
         current_tab = self.tabview.get()
         
         # Scroll to top of the current tab
@@ -449,8 +453,7 @@ class KeygenApp(ctk.CTk):
             list_frame,
             font=ctk.CTkFont(family="Courier", size=11),
             corner_radius=8,
-            wrap="none",
-            height=300
+            wrap="none"
         )
         self.keys_text.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
         
