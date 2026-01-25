@@ -77,5 +77,6 @@ CourseSmith_*.pdf
 test_ui.py
 test_ui_demo.py
 test_features.py
+test_keygen.py
 screenshot_*.png
 app_backup.py

@@ -8,7 +8,6 @@ Features tiered licensing: Standard ($59) vs Extended ($249).
 import os
 import re
 import threading
-import webbrowser
 from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, Menu
@@ -24,9 +23,6 @@ from pdf_engine import PDFBuilder
 # Configure appearance
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
-
-# Upgrade URL for upsell
-UPGRADE_URL = "https://www.codester.com"
 
 
 def bind_clipboard_menu(widget):
@@ -693,8 +689,13 @@ class App(ctk.CTk):
             pass
 
     def _open_upgrade_url(self):
-        """Open the upgrade URL in the default browser."""
-        webbrowser.open(UPGRADE_URL)
+        """Show upgrade information message (marketplace-agnostic)."""
+        messagebox.showinfo(
+            "Upgrade to Extended License",
+            "To unlock Extended features, please return to the marketplace where you purchased this software "
+            "(Fiverr, Whop, etc.) and purchase the 'Extended License' upgrade.\n\n"
+            "Then enter your new key here to activate Extended features."
+        )
 
     def _save_setup(self):
         """Save setup data and move to Blueprint tab."""
@@ -1007,11 +1008,11 @@ class App(ctk.CTk):
                 "• Quiz generation for each chapter\n"
                 "• Custom branding options\n"
                 "• Priority support\n\n"
-                "Would you like to upgrade now?",
+                "Would you like to see upgrade information?",
                 icon="info"
             )
             if result == "yes":
-                webbrowser.open(UPGRADE_URL)
+                self._open_upgrade_url()
             return
         
         # Extended user - add quiz placeholder
