@@ -28,7 +28,7 @@ from reportlab.lib.colors import HexColor, Color
 from reportlab.pdfgen import canvas
 
 from utils import resource_path
-from session_manager import is_active, get_tier, get_max_pages, SecurityError
+from session_manager import is_active, get_tier, SecurityError
 from generator import ContentDistributor, distribute_chapter_content
 
 

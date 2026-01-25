@@ -10,17 +10,11 @@ Features:
 """
 
 import re
-from session_manager import get_tier, get_max_pages
+from session_manager import get_tier
 
 
 # Constants
 MAX_CHARS_PER_PAGE = 1000
-TIER_PAGE_LIMITS = {
-    'trial': 10,
-    'standard': 50,
-    'enterprise': 300,
-    'lifetime': 300
-}
 
 
 class ContentDistributor:
@@ -43,8 +37,29 @@ class ContentDistributor:
                   If None, will be fetched from session manager.
         """
         self.tier = tier or get_tier() or 'trial'
-        self.max_pages = TIER_PAGE_LIMITS.get(self.tier, 10)
+        # Use session manager's tier limits for consistency
+        from session_manager import get_max_pages
+        self.max_pages = get_max_pages() if tier is None else self._get_max_pages_for_tier(tier)
         self.max_total_chars = self.max_pages * MAX_CHARS_PER_PAGE
+    
+    def _get_max_pages_for_tier(self, tier):
+        """
+        Get max pages for a specific tier.
+        Fallback method when tier is explicitly provided.
+        
+        Args:
+            tier: License tier string.
+            
+        Returns:
+            int: Maximum pages for the tier.
+        """
+        tier_limits = {
+            'trial': 10,
+            'standard': 50,
+            'enterprise': 300,
+            'lifetime': 300
+        }
+        return tier_limits.get(tier, 10)
     
     def distribute_content(self, content):
         """

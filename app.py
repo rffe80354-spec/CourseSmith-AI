@@ -1932,8 +1932,7 @@ class App(ctk.CTk):
                 self.after(100, lambda: self.pdf_progress_bar.set(0.5))
                 self.after(200, lambda: self.pdf_progress_label.configure(text="Generating pages..."))
                 
-                # Get current tier from session
-                from session_manager import get_tier
+                # Get current tier from session (already imported at top)
                 current_tier = get_tier()
                 
                 # Create builder with tier parameter
