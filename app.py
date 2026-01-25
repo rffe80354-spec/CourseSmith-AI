@@ -496,6 +496,28 @@ class App(ctk.CTk):
         self._create_blueprint_tab()
         self._create_drafting_tab()
         self._create_export_tab()
+        
+        # Set up tab change handler for auto-scroll to top
+        self.tabview.configure(command=self._on_tab_change)
+    
+    def _on_tab_change(self):
+        """Handle tab change to auto-scroll to top."""
+        current_tab = self.tabview.get()
+        
+        # Scroll to top of the current tab's scrollable frames
+        if current_tab == "📝 Setup":
+            if hasattr(self, 'setup_left_scroll'):
+                self.setup_left_scroll._parent_canvas.yview_moveto(0)
+            if hasattr(self, 'setup_right_scroll'):
+                self.setup_right_scroll._parent_canvas.yview_moveto(0)
+        elif current_tab == "✍️ Drafting":
+            if hasattr(self, 'preview_scroll'):
+                self.preview_scroll._parent_canvas.yview_moveto(0)
+        elif current_tab == "📤 Export":
+            if hasattr(self, 'export_cover_scroll'):
+                self.export_cover_scroll._parent_canvas.yview_moveto(0)
+            if hasattr(self, 'export_pdf_scroll'):
+                self.export_pdf_scroll._parent_canvas.yview_moveto(0)
 
     def _create_header(self):
         """Create the header bar with title, tier info, and settings."""
@@ -657,30 +679,31 @@ class App(ctk.CTk):
         """Create the Setup tab content with tier-based branding restrictions."""
         self.tab_setup.grid_columnconfigure(0, weight=1)
         self.tab_setup.grid_columnconfigure(1, weight=1)
+        self.tab_setup.grid_rowconfigure(0, weight=1)
 
-        # Left column - Course Info
-        left_frame = ctk.CTkFrame(self.tab_setup)
-        left_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        # Left column - Course Info (Scrollable)
+        left_frame = ctk.CTkScrollableFrame(self.tab_setup, corner_radius=10)
+        left_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
 
         ctk.CTkLabel(
             left_frame,
             text="📚 Course Information",
             font=ctk.CTkFont(size=18, weight="bold"),
-        ).grid(row=0, column=0, padx=20, pady=(20, 15), sticky="w")
+        ).grid(row=0, column=0, padx=20, pady=(20, 20), sticky="w")
 
         # Topic
         ctk.CTkLabel(left_frame, text="Topic:", font=ctk.CTkFont(size=14, weight="bold")).grid(
-            row=1, column=0, padx=20, pady=(10, 5), sticky="w"
+            row=1, column=0, padx=20, pady=(20, 5), sticky="w"
         )
         self.topic_entry = ctk.CTkEntry(
             left_frame, placeholder_text="e.g., Bitcoin Trading Strategies", width=350, height=40
         )
-        self.topic_entry.grid(row=2, column=0, padx=20, pady=(0, 15))
+        self.topic_entry.grid(row=2, column=0, padx=20, pady=(0, 20))
         bind_clipboard_menu(self.topic_entry)
 
         # Audience
         ctk.CTkLabel(left_frame, text="Target Audience:", font=ctk.CTkFont(size=14, weight="bold")).grid(
-            row=3, column=0, padx=20, pady=(10, 5), sticky="w"
+            row=3, column=0, padx=20, pady=(20, 5), sticky="w"
         )
         self.audience_entry = ctk.CTkEntry(
             left_frame, placeholder_text="e.g., Beginners with no trading experience", width=350, height=40
@@ -693,7 +716,7 @@ class App(ctk.CTk):
             left_frame, 
             text="📄 Target Page Count:", 
             font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=5, column=0, padx=20, pady=(10, 5), sticky="w")
+        ).grid(row=5, column=0, padx=20, pady=(20, 5), sticky="w")
         
         # Page slider with value display
         page_selector_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
@@ -723,7 +746,7 @@ class App(ctk.CTk):
             left_frame,
             text="🖼️ Custom Images:",
             font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=7, column=0, padx=20, pady=(10, 5), sticky="w")
+        ).grid(row=7, column=0, padx=20, pady=(20, 5), sticky="w")
         
         custom_media_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
         custom_media_frame.grid(row=8, column=0, padx=20, pady=(0, 20), sticky="ew")
@@ -756,7 +779,7 @@ class App(ctk.CTk):
             left_frame,
             text="✍️ Content Styling:",
             font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=9, column=0, padx=20, pady=(10, 5), sticky="w")
+        ).grid(row=9, column=0, padx=20, pady=(20, 5), sticky="w")
         
         typography_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
         typography_frame.grid(row=10, column=0, padx=20, pady=(0, 20), sticky="ew")
@@ -791,9 +814,9 @@ class App(ctk.CTk):
         )
         self.font_size_selector.pack(side="left")
 
-        # Right column - Branding
-        right_frame = ctk.CTkFrame(self.tab_setup)
-        right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+        # Right column - Branding (Scrollable)
+        right_frame = ctk.CTkScrollableFrame(self.tab_setup, corner_radius=10)
+        right_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
         # Check if Extended tier for branding access
         is_extended_tier = is_extended()
@@ -803,15 +826,15 @@ class App(ctk.CTk):
             right_frame,
             text=branding_title,
             font=ctk.CTkFont(size=18, weight="bold"),
-        ).grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 15), sticky="w")
+        ).grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 20), sticky="w")
 
         # Logo path
         ctk.CTkLabel(right_frame, text="Logo Image:", font=ctk.CTkFont(size=14, weight="bold")).grid(
-            row=1, column=0, padx=20, pady=(10, 5), sticky="w"
+            row=1, column=0, padx=20, pady=(20, 5), sticky="w"
         )
         
         logo_frame = ctk.CTkFrame(right_frame, fg_color="transparent")
-        logo_frame.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
+        logo_frame.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="w")
         
         self.logo_entry = ctk.CTkEntry(
             logo_frame, 
@@ -836,7 +859,7 @@ class App(ctk.CTk):
 
         # Website URL
         ctk.CTkLabel(right_frame, text="Website URL:", font=ctk.CTkFont(size=14, weight="bold")).grid(
-            row=3, column=0, padx=20, pady=(10, 5), sticky="w"
+            row=3, column=0, padx=20, pady=(20, 5), sticky="w"
         )
         self.website_entry = ctk.CTkEntry(
             right_frame, 
@@ -845,7 +868,7 @@ class App(ctk.CTk):
             height=40,
             state="normal" if is_extended_tier else "disabled"
         )
-        self.website_entry.grid(row=4, column=0, padx=20, pady=(0, 10))
+        self.website_entry.grid(row=4, column=0, padx=20, pady=(0, 20))
         if is_extended_tier:
             bind_clipboard_menu(self.website_entry)
 
@@ -862,7 +885,11 @@ class App(ctk.CTk):
                 text_color="black",
                 command=self._open_upgrade_url,
             )
-            upgrade_btn.grid(row=5, column=0, padx=20, pady=(10, 20))
+            upgrade_btn.grid(row=5, column=0, padx=20, pady=(20, 20))
+        
+        # Store references for auto-scroll to top
+        self.setup_left_scroll = left_frame
+        self.setup_right_scroll = right_frame
 
         # Save button
         ctk.CTkButton(
@@ -1018,7 +1045,7 @@ class App(ctk.CTk):
             border_color=("gray70", "gray30"),
             corner_radius=8,
         )
-        stats_frame.grid(row=1, column=0, columnspan=2, padx=20, pady=(5, 10), sticky="ew")
+        stats_frame.grid(row=1, column=0, columnspan=2, padx=20, pady=(5, 20), sticky="ew")
         stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         # Initialize stats labels with default values
@@ -1029,14 +1056,14 @@ class App(ctk.CTk):
 
         # === Main Content Area (Textbox + Sidebar) ===
         content_frame = ctk.CTkFrame(self.tab_blueprint, fg_color="transparent")
-        content_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="nsew")
+        content_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 20), sticky="nsew")
         content_frame.grid_columnconfigure(0, weight=1)
         content_frame.grid_columnconfigure(1, weight=0)
         content_frame.grid_rowconfigure(0, weight=1)
 
         # Editable outline textbox (left side)
         textbox_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-        textbox_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        textbox_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
         textbox_frame.grid_columnconfigure(0, weight=1)
         textbox_frame.grid_rowconfigure(1, weight=1)
 
@@ -1149,7 +1176,7 @@ class App(ctk.CTk):
             fg_color="#28a745",
             hover_color="#218838",
             command=self._confirm_outline,
-        ).grid(row=3, column=0, columnspan=2, padx=20, pady=(10, 20))
+        ).grid(row=3, column=0, columnspan=2, padx=20, pady=(20, 20))
 
     def _create_stat_card(self, parent, icon_label, value, column):
         """
@@ -1373,7 +1400,7 @@ class App(ctk.CTk):
 
         # Header with button (spans both columns)
         header_frame = ctk.CTkFrame(self.tab_drafting, fg_color="transparent")
-        header_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 10), sticky="ew")
+        header_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 20), sticky="ew")
 
         ctk.CTkLabel(
             header_frame,
@@ -1394,7 +1421,7 @@ class App(ctk.CTk):
 
         # ========== LEFT SIDE: Progress Console ==========
         left_frame = ctk.CTkFrame(self.tab_drafting)
-        left_frame.grid(row=1, column=0, padx=(20, 10), pady=(0, 10), sticky="nsew")
+        left_frame.grid(row=1, column=0, padx=(20, 10), pady=(0, 20), sticky="nsew")
         left_frame.grid_columnconfigure(0, weight=1)
         left_frame.grid_rowconfigure(1, weight=1)
 
@@ -1402,7 +1429,7 @@ class App(ctk.CTk):
             left_frame,
             text="📋 Progress Console",
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+        ).grid(row=0, column=0, padx=20, pady=(20, 5), sticky="w")
 
         # Progress log
         self.drafting_log = ctk.CTkTextbox(
@@ -1411,12 +1438,12 @@ class App(ctk.CTk):
             wrap="word",
             state="disabled",
         )
-        self.drafting_log.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.drafting_log.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nsew")
         bind_clipboard_menu(self.drafting_log)
 
         # ========== RIGHT SIDE: Live Page Preview ==========
         right_frame = ctk.CTkFrame(self.tab_drafting)
-        right_frame.grid(row=1, column=1, padx=(10, 20), pady=(0, 10), sticky="nsew")
+        right_frame.grid(row=1, column=1, padx=(10, 20), pady=(0, 20), sticky="nsew")
         right_frame.grid_columnconfigure(0, weight=1)
         right_frame.grid_rowconfigure(1, weight=1)
 
@@ -1424,7 +1451,7 @@ class App(ctk.CTk):
             right_frame,
             text="📄 Live Page Preview",
             font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+        ).grid(row=0, column=0, padx=20, pady=(20, 5), sticky="w")
 
         # White "paper" frame for document preview (scrollable)
         self.preview_scroll = ctk.CTkScrollableFrame(
@@ -1432,7 +1459,7 @@ class App(ctk.CTk):
             fg_color="white",
             corner_radius=5,
         )
-        self.preview_scroll.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.preview_scroll.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nsew")
         self.preview_scroll.grid_columnconfigure(0, weight=1)
 
         # Chapter title label (appears above content during generation)
@@ -1461,15 +1488,15 @@ class App(ctk.CTk):
 
         # ========== BOTTOM: Progress Bar (spans both columns) ==========
         progress_frame = ctk.CTkFrame(self.tab_drafting)
-        progress_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
+        progress_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 20), sticky="ew")
 
         self.drafting_progress_label = ctk.CTkLabel(
             progress_frame, text="Ready to draft", font=ctk.CTkFont(size=13)
         )
-        self.drafting_progress_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+        self.drafting_progress_label.grid(row=0, column=0, padx=20, pady=(20, 5), sticky="w")
 
         self.drafting_progress = ctk.CTkProgressBar(progress_frame, height=15)
-        self.drafting_progress.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+        self.drafting_progress.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
         self.drafting_progress.set(0)
         progress_frame.grid_columnconfigure(0, weight=1)
 
@@ -1484,7 +1511,7 @@ class App(ctk.CTk):
             state="disabled",
             command=lambda: self.tabview.set("📤 Export"),
         )
-        self.continue_export_btn.grid(row=3, column=0, columnspan=2, padx=20, pady=(10, 20))
+        self.continue_export_btn.grid(row=3, column=0, columnspan=2, padx=20, pady=(20, 20))
 
         # Track current preview content for accumulation
         self._preview_accumulated_text = ""
@@ -1621,16 +1648,17 @@ class App(ctk.CTk):
         """Create the Export tab content."""
         self.tab_export.grid_columnconfigure(0, weight=1)
         self.tab_export.grid_columnconfigure(1, weight=1)
+        self.tab_export.grid_rowconfigure(0, weight=1)
 
-        # Left - Cover generation
-        cover_frame = ctk.CTkFrame(self.tab_export)
-        cover_frame.grid(row=0, column=0, padx=10, pady=20, sticky="nsew")
+        # Left - Cover generation (Scrollable)
+        cover_frame = ctk.CTkScrollableFrame(self.tab_export, corner_radius=10)
+        cover_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
 
         ctk.CTkLabel(
             cover_frame,
             text="🎨 Cover Image",
             font=ctk.CTkFont(size=18, weight="bold"),
-        ).grid(row=0, column=0, padx=20, pady=(20, 15), sticky="w")
+        ).grid(row=0, column=0, padx=20, pady=(20, 20), sticky="w")
 
         self.cover_status = ctk.CTkLabel(
             cover_frame,
@@ -1638,7 +1666,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=13),
             text_color="gray",
         )
-        self.cover_status.grid(row=1, column=0, padx=20, pady=(0, 15))
+        self.cover_status.grid(row=1, column=0, padx=20, pady=(0, 20))
 
         self.generate_cover_btn = ctk.CTkButton(
             cover_frame,
@@ -1652,15 +1680,15 @@ class App(ctk.CTk):
         )
         self.generate_cover_btn.grid(row=2, column=0, padx=20, pady=(0, 20))
 
-        # Right - PDF export
-        pdf_frame = ctk.CTkFrame(self.tab_export)
-        pdf_frame.grid(row=0, column=1, padx=10, pady=20, sticky="nsew")
+        # Right - PDF export (Scrollable)
+        pdf_frame = ctk.CTkScrollableFrame(self.tab_export, corner_radius=10)
+        pdf_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
         ctk.CTkLabel(
             pdf_frame,
             text="📄 PDF Export",
             font=ctk.CTkFont(size=18, weight="bold"),
-        ).grid(row=0, column=0, padx=20, pady=(20, 15), sticky="w")
+        ).grid(row=0, column=0, padx=20, pady=(20, 20), sticky="w")
 
         self.pdf_status = ctk.CTkLabel(
             pdf_frame,
@@ -1668,7 +1696,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=13),
             text_color="gray",
         )
-        self.pdf_status.grid(row=1, column=0, padx=20, pady=(0, 15))
+        self.pdf_status.grid(row=1, column=0, padx=20, pady=(0, 20))
 
         self.build_pdf_btn = ctk.CTkButton(
             pdf_frame,
@@ -1691,11 +1719,15 @@ class App(ctk.CTk):
             text="",
             font=ctk.CTkFont(size=12),
         )
-        self.pdf_progress_label.grid(row=3, column=0, padx=20, pady=(5, 5))
+        self.pdf_progress_label.grid(row=3, column=0, padx=20, pady=(20, 5))
         
         self.pdf_progress_bar = ctk.CTkProgressBar(pdf_frame, width=260)
         self.pdf_progress_bar.grid(row=4, column=0, padx=20, pady=(0, 20))
         self.pdf_progress_bar.set(0)
+        
+        # Store references for auto-scroll to top
+        self.export_cover_scroll = cover_frame
+        self.export_pdf_scroll = pdf_frame
 
         # Bottom - Export log
         self.export_log = ctk.CTkTextbox(
