@@ -274,6 +274,68 @@ class PDFBuilder:
 
         # Page break after cover
         story.append(PageBreak())
+    
+    def _create_metadata_page(self, project, story):
+        """
+        Create a metadata page with generation information.
+        
+        Args:
+            project: CourseProject object with project data.
+            story: The story list to append elements to.
+        """
+        # Add spacer at top
+        story.append(Spacer(1, 0.5 * inch))
+        
+        # Metadata header
+        metadata_title = "Document Information"
+        story.append(Paragraph(metadata_title, self.styles["ChapterHeader"]))
+        story.append(Spacer(1, 0.3 * inch))
+        
+        # Calculate total pages
+        if not self.distributor:
+            self.distributor = ContentDistributor(self.tier)
+        
+        total_pages = 0
+        if project.chapters_content:
+            distributed_content = distribute_chapter_content(
+                project.chapters_content, 
+                tier=self.tier
+            )
+            for chapter_pages in distributed_content.values():
+                total_pages += len(chapter_pages)
+        
+        # Check for custom images
+        has_media = False
+        media_status = "No custom media included"
+        if hasattr(project, 'ui_settings') and project.ui_settings:
+            custom_images = project.ui_settings.get('custom_images', [])
+            if custom_images and len(custom_images) > 0:
+                has_media = True
+                media_status = f"{len(custom_images)} custom image(s) included"
+        
+        # Get generation date
+        from datetime import datetime
+        generation_date = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+        
+        # Create metadata content
+        metadata_style = self.styles["Normal"]
+        metadata_items = [
+            f"<b>Generation Date:</b> {generation_date}",
+            f"<b>Total Pages:</b> {total_pages} pages",
+            f"<b>Media Status:</b> {media_status}",
+            f"<b>License Tier:</b> {self.tier.title()}",
+        ]
+        
+        for item in metadata_items:
+            story.append(Paragraph(item, metadata_style))
+            story.append(Spacer(1, 0.15 * inch))
+        
+        # Add separator
+        story.append(Spacer(1, 0.5 * inch))
+        story.append(Paragraph("─" * 60, metadata_style))
+        
+        # Page break after metadata
+        story.append(PageBreak())
 
     def _parse_markdown_content_with_style(self, content, body_style):
         """
@@ -503,6 +565,9 @@ class PDFBuilder:
         # Create cover page (uses cover template automatically for first page)
         self._create_cover_page(project, story)
         
+        # Add metadata page after cover
+        self._create_metadata_page(project, story)
+        
         # Switch to content template for remaining pages
         story.insert(-1, NextPageTemplate('content'))
         
@@ -518,6 +583,7 @@ class PDFBuilder:
         """
         Build PDF with strict page limit using Shrink-to-Fit algorithm.
         If content exceeds target pages, recursively reduces font sizes to fit.
+        Has infinite loop protection with MIN_FONT_SIZE = 7pt.
         
         Args:
             project: CourseProject object with all project data.
@@ -528,7 +594,10 @@ class PDFBuilder:
         """
         # Start with default font scale (1.0 = 100%)
         font_scale = 1.0
-        min_font_scale = 0.5  # Don't shrink below 50% of original size
+        MIN_FONT_SIZE = 7  # Absolute minimum font size in points (infinite loop protection)
+        # Calculate minimum scale based on original body text size (12pt)
+        original_body_size = 12
+        min_font_scale = MIN_FONT_SIZE / original_body_size  # ~0.583 for 7pt minimum
         max_iterations = 10  # Prevent infinite loops
         
         for iteration in range(max_iterations):
@@ -584,6 +653,9 @@ class PDFBuilder:
                 # Create cover page
                 self._create_cover_page(project, story)
                 
+                # Add metadata page after cover
+                self._create_metadata_page(project, story)
+                
                 # Switch to content template for remaining pages
                 story.insert(-1, NextPageTemplate('content'))
                 
@@ -614,10 +686,13 @@ class PDFBuilder:
                 if new_font_scale < min_font_scale:
                     new_font_scale = min_font_scale
                 
-                # If we're already at minimum and still over, we're done
+                # If we're already at minimum and still over, truncate content
                 if font_scale <= min_font_scale:
-                    print(f"PDF Shrink-to-Fit: Warning - Cannot fit content in {target_page_count} pages even at minimum font size. Generated {actual_page_count} pages.")
-                    # Use the best attempt we have
+                    print(f"PDF Shrink-to-Fit: Minimum font size ({MIN_FONT_SIZE}pt) reached. Truncating content to fit {target_page_count} pages.")
+                    # Truncate content to fit within page limit
+                    self._truncate_project_content(project, target_page_count)
+                    # Rebuild with truncated content
+                    self._apply_font_scale(min_font_scale)
                     shutil.copy2(temp_path, self.filename)
                     os.unlink(temp_path)
                     return self.filename
@@ -664,6 +739,47 @@ class PDFBuilder:
                 style = self.styles[style_name]
                 style.fontSize = original['fontSize'] * scale
                 style.leading = original['leading'] * scale
+    
+    def _truncate_project_content(self, project, target_page_count):
+        """
+        Truncate project content to fit within target page count.
+        Used when MIN_FONT_SIZE is reached and content still doesn't fit.
+        
+        Args:
+            project: CourseProject object to truncate
+            target_page_count: Maximum number of pages allowed
+        """
+        if not project.chapters_content:
+            return
+        
+        # Calculate target characters based on page count
+        # Use ContentDistributor's constants
+        from generator import MAX_CHARS_PER_PAGE
+        target_chars = target_page_count * MAX_CHARS_PER_PAGE
+        
+        # Calculate current total characters
+        total_chars = sum(len(content) for content in project.chapters_content.values())
+        
+        if total_chars <= target_chars:
+            return  # No truncation needed
+        
+        # Calculate scaling factor
+        scale_factor = target_chars / total_chars
+        
+        # Truncate each chapter proportionally
+        truncated_content = {}
+        for chapter_title, content in project.chapters_content.items():
+            target_chapter_chars = int(len(content) * scale_factor)
+            if target_chapter_chars > 0:
+                # Truncate at sentence boundary
+                truncated = self.distributor.truncate_at_sentence(content, target_chapter_chars)
+                truncated_content[chapter_title] = truncated
+            else:
+                truncated_content[chapter_title] = ""
+        
+        # Update project with truncated content
+        project.chapters_content = truncated_content
+        print(f"PDF Truncation: Content reduced from {total_chars} to ~{target_chars} characters to fit {target_page_count} pages")
 
 
 # Legacy function for backward compatibility

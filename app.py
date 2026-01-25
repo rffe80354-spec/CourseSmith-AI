@@ -191,6 +191,11 @@ class App(ctk.CTk):
         self.is_generating = False
         self.current_chapter_index = 0
         self.total_chapters = 0
+        self.target_pages = 50  # Global page count from Setup, default 50
+        
+        # Animation state for progress indicators
+        self._animation_running = False
+        self._animation_step = 0
 
         # Configure grid layout
         self.grid_columnconfigure(0, weight=1)
@@ -211,6 +216,8 @@ class App(ctk.CTk):
         
         def load_app():
             """Simulate loading and check license."""
+            time.sleep(0.3)
+            splash.update_status("Loading modules...")
             time.sleep(0.3)
             splash.update_status("Loading license system...")
             time.sleep(0.3)
@@ -300,7 +307,7 @@ class App(ctk.CTk):
         self.activation_frame.grid(row=0, column=0, padx=100, pady=40, sticky="nsew")
         self.activation_frame.grid_columnconfigure(0, weight=1)
         # Add row weight for the spacer row to enable flexible expansion
-        self.activation_frame.grid_rowconfigure(8, weight=1)
+        self.activation_frame.grid_rowconfigure(9, weight=1)
 
         # Logo/Title with enhanced styling
         title_label = ctk.CTkLabel(
@@ -377,11 +384,20 @@ class App(ctk.CTk):
             corner_radius=5
         )
         remember_checkbox.grid(row=7, column=0, padx=40, pady=(0, 15))
+        
+        # Status label for validation feedback
+        self.activation_status_label = ctk.CTkLabel(
+            self.activation_frame,
+            text="",
+            font=ctk.CTkFont(size=13),
+            text_color="gray",
+        )
+        self.activation_status_label.grid(row=8, column=0, padx=40, pady=(0, 10))
 
         # Flexible spacer that expands to push button to bottom
         # This row has weight=1, so it will expand in fullscreen
         spacer_frame = ctk.CTkFrame(self.activation_frame, fg_color="transparent")
-        spacer_frame.grid(row=8, column=0, sticky="nsew")
+        spacer_frame.grid(row=9, column=0, sticky="nsew")
 
         # Activate button with enhanced styling - anchored to bottom
         self.activate_btn = ctk.CTkButton(
@@ -396,10 +412,10 @@ class App(ctk.CTk):
             border_width=0,
             command=self._on_activate_click,
         )
-        self.activate_btn.grid(row=9, column=0, padx=40, pady=(10, 30))
+        self.activate_btn.grid(row=10, column=0, padx=40, pady=(10, 30))
 
     def _on_activate_click(self):
-        """Handle license activation with enterprise features."""
+        """Handle license activation with enterprise features in background thread."""
         email = self.email_entry.get().strip()
         key = self.key_entry.get().strip()
 
@@ -411,8 +427,30 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Please enter your license key.")
             return
 
-        # Validate the license with new enterprise validation
-        result = validate_license(email, key, check_expiration=True)
+        # Disable activate button during validation
+        self.activate_btn.configure(state="disabled", text="⏳ Validating...")
+        self.activation_status_label.configure(text="Validating license...", text_color="orange")
+        
+        # Run validation in background thread to prevent UI freeze
+        def validate_in_background():
+            try:
+                # Validate the license with new enterprise validation
+                result = validate_license(email, key, check_expiration=True)
+                
+                # Schedule UI update on main thread
+                self.after(0, lambda: self._on_validation_complete(result, email, key))
+            except Exception as e:
+                # Schedule error handling on main thread
+                self.after(0, lambda: self._on_validation_error(str(e)))
+        
+        # Start validation thread
+        thread = threading.Thread(target=validate_in_background, daemon=True)
+        thread.start()
+    
+    def _on_validation_complete(self, result, email, key):
+        """Handle validation completion on main thread."""
+        # Re-enable activate button
+        self.activate_btn.configure(state="normal", text="🚀 Activate License")
         
         if not result or not result.get('valid'):
             # Show appropriate error message
@@ -430,6 +468,7 @@ class App(ctk.CTk):
                 else:
                     error_msg = "License Expired\n\nYour license has expired.\nPlease contact support to renew your license."
             
+            self.activation_status_label.configure(text="Validation failed", text_color="red")
             messagebox.showerror("License Validation Failed", error_msg)
             return
         
@@ -475,6 +514,8 @@ class App(ctk.CTk):
         # Note: HWID is not displayed to user for security reasons
         # It's only used internally for hardware binding validation
         
+        self.activation_status_label.configure(text="Success!", text_color="green")
+        
         messagebox.showinfo(
             "Success",
             f"License activated successfully!\n\n"
@@ -484,6 +525,13 @@ class App(ctk.CTk):
         
         # Transition to main UI with fade effect
         self._transition_to_main_ui()
+    
+    def _on_validation_error(self, error_msg):
+        """Handle validation error on main thread."""
+        # Re-enable activate button
+        self.activate_btn.configure(state="normal", text="🚀 Activate License")
+        self.activation_status_label.configure(text="Validation error", text_color="red")
+        messagebox.showerror("Error", f"License validation failed:\n\n{error_msg}")
     
     def _transition_to_main_ui(self):
         """Transition from login to main UI with animation."""
@@ -1083,6 +1131,9 @@ class App(ctk.CTk):
         # Store new UI settings in project metadata (using helper for consistency)
         page_count = self._normalize_page_count(self.page_count_slider.get())
         
+        # Set global target_pages for synchronization with Blueprint
+        self.target_pages = page_count
+        
         # Add custom properties to project (these can be used by PDF engine)
         if not hasattr(self.project, 'ui_settings'):
             self.project.ui_settings = {}
@@ -1094,8 +1145,9 @@ class App(ctk.CTk):
         
         self._log_message(f"Setup saved. Target: {page_count} pages, {len(self.custom_images)} custom images.")
 
-        # Switch to Blueprint tab
+        # Switch to Blueprint tab and update page display
         self.tabview.set("📋 Blueprint")
+        self._update_blueprint_page_display()
         self._log_message("Ready to generate outline.")
 
     # ==================== BLUEPRINT TAB ====================
@@ -1138,21 +1190,20 @@ class App(ctk.CTk):
         stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         # Initialize stats labels with default values
-        self.stats_pages_label = self._create_stat_card(stats_frame, "📄 Pages", "45-60", 0)
+        self.stats_pages_label = self._create_stat_card(stats_frame, "📄 Pages", "50", 0)
         self.stats_level_label = self._create_stat_card(stats_frame, "🎓 Level", "Expert", 1)
         self.stats_modules_label = self._create_stat_card(stats_frame, "🧩 Modules", "8", 2)
         self.stats_keywords_label = self._create_stat_card(stats_frame, "🔑 Keywords", "15+", 3)
 
-        # === Main Content Area (Textbox + Sidebar) ===
+        # === Main Content Area (Textbox only - manual buttons removed) ===
         content_frame = ctk.CTkFrame(self.tab_blueprint, fg_color="transparent")
         content_frame.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 20), sticky="nsew")
         content_frame.grid_columnconfigure(0, weight=1)
-        content_frame.grid_columnconfigure(1, weight=0)
         content_frame.grid_rowconfigure(0, weight=1)
 
-        # Editable outline textbox (left side)
+        # Editable outline textbox (full width)
         textbox_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-        textbox_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
+        textbox_frame.grid(row=0, column=0, sticky="nsew")
         textbox_frame.grid_columnconfigure(0, weight=1)
         textbox_frame.grid_rowconfigure(1, weight=1)
 
@@ -1171,90 +1222,9 @@ class App(ctk.CTk):
         self.outline_textbox.grid(row=1, column=0, sticky="nsew")
         bind_clipboard_menu(self.outline_textbox)
 
-        # === Sidebar (Right side - vertical button bar) ===
-        sidebar_frame = ctk.CTkFrame(
-            content_frame,
-            fg_color=("gray85", "gray20"),
-            corner_radius=8,
-            width=50,
-        )
-        sidebar_frame.grid(row=0, column=1, sticky="ns")
-        sidebar_frame.grid_propagate(False)
-
-        # Sidebar buttons
-        sidebar_btn_style = {
-            "width": 40,
-            "height": 40,
-            "corner_radius": 8,
-            "font": ctk.CTkFont(size=16),
-            "fg_color": ("gray75", "gray30"),
-            "hover_color": ("gray65", "gray40"),
-            "text_color": ("gray20", "gray90"),
-        }
-
-        # Add Chapter button
-        self.btn_add_chapter = ctk.CTkButton(
-            sidebar_frame,
-            text="➕",
-            command=self._add_chapter,
-            **sidebar_btn_style,
-        )
-        self.btn_add_chapter.pack(pady=(10, 5), padx=5)
-
-        # Delete button
-        self.btn_delete_chapter = ctk.CTkButton(
-            sidebar_frame,
-            text="❌",
-            command=self._delete_chapter,
-            **sidebar_btn_style,
-        )
-        self.btn_delete_chapter.pack(pady=5, padx=5)
-
-        # Move Up button
-        self.btn_move_up = ctk.CTkButton(
-            sidebar_frame,
-            text="⬆️",
-            command=self._move_chapter_up,
-            **sidebar_btn_style,
-        )
-        self.btn_move_up.pack(pady=5, padx=5)
-
-        # Move Down button
-        self.btn_move_down = ctk.CTkButton(
-            sidebar_frame,
-            text="⬇️",
-            command=self._move_chapter_down,
-            **sidebar_btn_style,
-        )
-        self.btn_move_down.pack(pady=5, padx=5)
-
-        # Separator
-        separator = ctk.CTkFrame(sidebar_frame, height=2, fg_color=("gray60", "gray50"))
-        separator.pack(fill="x", padx=8, pady=10)
-
-        # Add Quiz button (Gold highlight - Extended feature)
-        self.btn_add_quiz = ctk.CTkButton(
-            sidebar_frame,
-            text="❓",
-            command=self._add_quiz,
-            width=40,
-            height=40,
-            corner_radius=8,
-            font=ctk.CTkFont(size=16),
-            fg_color="#D4AF37",  # Gold color
-            hover_color="#B8962F",
-            text_color="black",
-        )
-        self.btn_add_quiz.pack(pady=5, padx=5)
-
-        # Quiz label
-        quiz_label = ctk.CTkLabel(
-            sidebar_frame,
-            text="Quiz",
-            font=ctk.CTkFont(size=10),
-            text_color="#D4AF37",
-        )
-        quiz_label.pack(pady=(0, 10))
+        # Note: Manual +/X/arrow buttons removed per requirement
+        # The outline can be edited directly in the textbox
+        # Quiz button removed as well for cleaner UI
 
         # === Confirm Button Row ===
         ctk.CTkButton(
@@ -1386,6 +1356,11 @@ class App(ctk.CTk):
         
         self._log_message("Quiz placeholder added. Quizzes will be generated with chapter content.")
 
+    def _update_blueprint_page_display(self):
+        """Update the Blueprint page display to show exact value from Setup."""
+        # Display exact page count from Setup instead of estimate
+        self.stats_pages_label.configure(text=str(self.target_pages))
+    
     def _update_stats_from_outline(self):
         """Update stats header based on the current outline content."""
         current_text = self.outline_textbox.get("1.0", "end").strip()
@@ -1395,11 +1370,8 @@ class App(ctk.CTk):
         # Update Modules count
         self.stats_modules_label.configure(text=str(num_chapters) if num_chapters > 0 else "0")
         
-        # Estimate pages (8-12 pages per chapter)
-        min_pages = num_chapters * 8
-        max_pages = num_chapters * 12
-        pages_text = f"{min_pages}-{max_pages}" if num_chapters > 0 else "0"
-        self.stats_pages_label.configure(text=pages_text)
+        # Update Pages to show exact target from Setup (synchronized)
+        self.stats_pages_label.configure(text=str(self.target_pages))
         
         # Update level based on chapters
         if num_chapters <= 3:
@@ -1725,7 +1697,16 @@ class App(ctk.CTk):
     def _on_chapter_written(self, title, content):
         """Handle successful chapter writing."""
         self.project.set_chapter_content(title, content)
-        self._log_drafting(f"✓ Chapter '{title}' complete ({len(content)} characters)")
+        
+        # Calculate page count for this chapter using ContentDistributor
+        from generator import ContentDistributor
+        from session_manager import get_tier
+        distributor = ContentDistributor(get_tier())
+        pages = distributor.distribute_content(content)
+        page_count = len(pages)
+        
+        # Log with page count instead of just character count
+        self._log_drafting(f"✓ Chapter '{title}' complete ({page_count} pages, {len(content)} characters)")
 
         self.current_chapter_index += 1
         self._write_next_chapter()
@@ -1922,35 +1903,75 @@ class App(ctk.CTk):
 
         self._log_export("Building PDF document...")
         self.pdf_status.configure(text="Building PDF...")
-        self.pdf_progress_label.configure(text="Processing...")
-        self.pdf_progress_bar.set(0.3)
+        self.pdf_progress_label.configure(text="Initializing...")
+        self.pdf_progress_bar.set(0.1)
         self.build_pdf_btn.configure(state="disabled", text="⏳ BUILDING...")
+        
+        # Start animation on progress label
+        self._start_status_animation(self.pdf_progress_label, "Generating pages")
 
         def build():
             try:
-                # Simulate progress updates
-                self.after(100, lambda: self.pdf_progress_bar.set(0.5))
-                self.after(200, lambda: self.pdf_progress_label.configure(text="Generating pages..."))
-                
                 # Get current tier from session (already imported at top)
                 current_tier = get_tier()
+                
+                # Calculate estimated page count for progress display
+                total_pages = self.target_pages
+                
+                # Simulate page-by-page progress updates
+                def update_page_progress(page_num):
+                    progress = page_num / total_pages if total_pages > 0 else 0.5
+                    self.after(0, lambda: self.pdf_progress_bar.set(min(0.9, progress)))
+                    # Note: Animation handles the text, no need to update text here
+                
+                # Update progress at intervals
+                for i in range(1, min(10, total_pages + 1)):
+                    self.after(i * 100, lambda p=i: update_page_progress(p))
                 
                 # Create builder with tier parameter
                 builder = PDFBuilder(filepath, tier=current_tier)
                 result = builder.build_pdf(self.project, tier=current_tier)
                 
-                self.after(0, lambda: self.pdf_progress_bar.set(0.8))
-                self.after(0, lambda: self._on_pdf_built(result))
+                # Calculate actual pages from ContentDistributor
+                from generator import ContentDistributor
+                distributor = ContentDistributor(current_tier)
+                
+                # Count total pages in all chapters
+                total_pages_created = 0
+                if self.project.chapters_content:
+                    for chapter_content in self.project.chapters_content.values():
+                        pages = distributor.distribute_content(chapter_content)
+                        total_pages_created += len(pages)
+                
+                # Log total pages created
+                self._log_export(f"[SUCCESS] Course generated: {total_pages_created} pages completed")
+                
+                self.after(0, lambda: self.pdf_progress_bar.set(1.0))
+                self.after(0, lambda: self._on_pdf_built(result, total_pages_created))
             except Exception as e:
                 self.after(0, lambda: self._on_pdf_error(str(e)))
 
         thread = threading.Thread(target=build, daemon=True)
         thread.start()
 
-    def _on_pdf_built(self, filepath):
-        """Handle successful PDF build."""
+    def _on_pdf_built(self, filepath, total_pages_created=None):
+        """Handle successful PDF build.
+        
+        Args:
+            filepath: The path to the generated PDF
+            total_pages_created: Optional total number of pages created
+        """
+        # Stop animation
+        self._stop_status_animation()
+        
         self.pdf_progress_bar.set(1.0)
-        self.pdf_progress_label.configure(text="✓ Complete!")
+        
+        # Show page count in completion message if available
+        if total_pages_created:
+            self.pdf_progress_label.configure(text=f"✓ Complete! ({total_pages_created} pages)")
+        else:
+            self.pdf_progress_label.configure(text="✓ Complete!")
+        
         self.build_pdf_btn.configure(state="normal", text="📑 GENERATE FINAL PDF")
         self.pdf_status.configure(text="✓ PDF exported!", text_color="#28a745")
         self._log_export(f"✓ PDF saved: {filepath}")
@@ -1963,12 +1984,52 @@ class App(ctk.CTk):
 
     def _on_pdf_error(self, error):
         """Handle PDF build error."""
+        # Stop animation
+        self._stop_status_animation()
+        
         self.pdf_progress_bar.set(0)
         self.pdf_progress_label.configure(text="❌ Failed")
         self.build_pdf_btn.configure(state="normal", text="📑 GENERATE FINAL PDF")
         self.pdf_status.configure(text="❌ Build failed", text_color="#e74c3c")
         self._log_export(f"❌ Error: {error}")
         messagebox.showerror("Error", f"Failed to build PDF:\n\n{error}")
+
+    def _start_status_animation(self, label_widget, base_text):
+        """
+        Start a pulsing animation on a status label.
+        
+        Args:
+            label_widget: The CTkLabel widget to animate
+            base_text: The base text to display with animation
+        """
+        self._animation_running = True
+        self._animation_step = 0
+        self._animate_status(label_widget, base_text)
+    
+    def _stop_status_animation(self):
+        """Stop the status animation."""
+        self._animation_running = False
+    
+    def _animate_status(self, label_widget, base_text):
+        """
+        Recursively animate a status label with pulsing dots.
+        
+        Args:
+            label_widget: The CTkLabel widget to animate
+            base_text: The base text to display
+        """
+        if not self._animation_running:
+            return
+        
+        # Create pulsing effect with dots
+        dots = ["", ".", "..", "..."]
+        current_dots = dots[self._animation_step % len(dots)]
+        label_widget.configure(text=f"{base_text}{current_dots}")
+        
+        self._animation_step += 1
+        
+        # Schedule next animation frame (500ms for smooth pulsing)
+        self.after(500, lambda: self._animate_status(label_widget, base_text))
 
     # ==================== SHARED UTILITIES ====================
     def _log_message(self, message):
