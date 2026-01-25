@@ -361,6 +361,7 @@ class PDFBuilder:
     def build_pdf(self, project, output_path=None):
         """
         Build the complete PDF document from a project.
+        Implements Shrink-to-Fit algorithm to respect strict page limits.
 
         Args:
             project: CourseProject object with all project data.
@@ -393,6 +394,28 @@ class PDFBuilder:
             self.logo_path = branding.get("logo_path", "")
             self.website_url = branding.get("website_url", "")
         
+        # Get target page count from project settings
+        target_page_count = None
+        if hasattr(project, 'ui_settings') and project.ui_settings:
+            target_page_count = project.ui_settings.get('target_page_count')
+        
+        # If target page count specified, use Shrink-to-Fit algorithm
+        if target_page_count:
+            return self._build_pdf_with_page_limit(project, target_page_count)
+        else:
+            # Standard build without page limit
+            return self._build_pdf_standard(project)
+    
+    def _build_pdf_standard(self, project):
+        """
+        Build PDF without page limit enforcement (standard behavior).
+        
+        Args:
+            project: CourseProject object with all project data.
+            
+        Returns:
+            str: The path of the generated PDF.
+        """
         # Create document with custom page template
         doc = BaseDocTemplate(
             self.filename,
@@ -447,6 +470,161 @@ class PDFBuilder:
         doc.build(story)
         
         return self.filename
+    
+    def _build_pdf_with_page_limit(self, project, target_page_count):
+        """
+        Build PDF with strict page limit using Shrink-to-Fit algorithm.
+        If content exceeds target pages, recursively reduces font sizes to fit.
+        
+        Args:
+            project: CourseProject object with all project data.
+            target_page_count: Maximum number of pages allowed.
+            
+        Returns:
+            str: The path of the generated PDF.
+        """
+        import tempfile
+        
+        # Start with default font scale (1.0 = 100%)
+        font_scale = 1.0
+        min_font_scale = 0.5  # Don't shrink below 50% of original size
+        max_iterations = 10  # Prevent infinite loops
+        
+        for iteration in range(max_iterations):
+            # Apply current font scale to styles
+            self._apply_font_scale(font_scale)
+            
+            # Build to temporary file to count pages
+            temp_fd, temp_path = tempfile.mkstemp(suffix='.pdf')
+            os.close(temp_fd)
+            
+            try:
+                # Create document
+                doc = BaseDocTemplate(
+                    temp_path,
+                    pagesize=letter,
+                    rightMargin=self.margin,
+                    leftMargin=self.margin,
+                    topMargin=self.margin + 0.3 * inch,
+                    bottomMargin=self.margin + 0.3 * inch,
+                )
+                
+                # Define frame for content
+                frame = Frame(
+                    doc.leftMargin,
+                    doc.bottomMargin,
+                    doc.width,
+                    doc.height,
+                    id='normal'
+                )
+                
+                # Create page template with header/footer
+                template = PageTemplate(
+                    id='content',
+                    frames=[frame],
+                    onPage=self._header_footer
+                )
+                
+                # Cover page template (no header/footer)
+                cover_frame = Frame(
+                    doc.leftMargin,
+                    doc.bottomMargin,
+                    doc.width,
+                    doc.height,
+                    id='cover'
+                )
+                cover_template = PageTemplate(id='cover', frames=[cover_frame])
+                
+                doc.addPageTemplates([cover_template, template])
+                
+                # Build story
+                story = []
+                
+                # Create cover page
+                self._create_cover_page(project, story)
+                
+                # Switch to content template for remaining pages
+                story.insert(-1, NextPageTemplate('content'))
+                
+                # Add chapters
+                self._add_chapters(project, story)
+                
+                # Build the document
+                doc.build(story)
+                
+                # Count pages in the generated PDF
+                actual_page_count = doc.page
+                
+                # Check if we fit within target
+                if actual_page_count <= target_page_count:
+                    # Success! Copy temp file to final destination
+                    import shutil
+                    shutil.copy2(temp_path, self.filename)
+                    os.unlink(temp_path)
+                    print(f"PDF Shrink-to-Fit: Success at {font_scale*100:.0f}% font scale ({actual_page_count}/{target_page_count} pages)")
+                    return self.filename
+                
+                # Need to shrink more
+                # Calculate overage ratio and reduce font scale
+                overage_ratio = actual_page_count / target_page_count
+                # Reduce font scale proportionally (conservative estimate)
+                new_font_scale = font_scale / (overage_ratio ** 0.5)
+                
+                # Don't go below minimum
+                if new_font_scale < min_font_scale:
+                    new_font_scale = min_font_scale
+                
+                # If we're already at minimum and still over, we're done
+                if font_scale <= min_font_scale:
+                    print(f"PDF Shrink-to-Fit: Warning - Cannot fit content in {target_page_count} pages even at minimum font size. Generated {actual_page_count} pages.")
+                    # Use the best attempt we have
+                    import shutil
+                    shutil.copy2(temp_path, self.filename)
+                    os.unlink(temp_path)
+                    return self.filename
+                
+                print(f"PDF Shrink-to-Fit: Iteration {iteration+1} - {actual_page_count} pages (target: {target_page_count}), reducing font scale to {new_font_scale*100:.0f}%")
+                font_scale = new_font_scale
+                
+                # Clean up temp file
+                os.unlink(temp_path)
+                
+            except Exception as e:
+                # Clean up temp file on error
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                raise e
+        
+        # Should not reach here, but if we do, build with minimum scale
+        print(f"PDF Shrink-to-Fit: Max iterations reached. Building with minimum font scale.")
+        self._apply_font_scale(min_font_scale)
+        return self._build_pdf_standard(project)
+    
+    def _apply_font_scale(self, scale):
+        """
+        Apply font scale factor to all paragraph styles.
+        
+        Args:
+            scale: Font scale factor (1.0 = 100%, 0.5 = 50%, etc.)
+        """
+        # Store original font sizes if not already stored
+        if not hasattr(self, '_original_font_sizes'):
+            self._original_font_sizes = {}
+            for style_name in ['CoverTitle', 'CoverSubtitle', 'ChapterHeader', 
+                              'SectionHeader', 'CustomBodyText', 'Footer']:
+                if style_name in self.styles:
+                    style = self.styles[style_name]
+                    self._original_font_sizes[style_name] = {
+                        'fontSize': style.fontSize,
+                        'leading': style.leading
+                    }
+        
+        # Apply scale to all styles
+        for style_name, original in self._original_font_sizes.items():
+            if style_name in self.styles:
+                style = self.styles[style_name]
+                style.fontSize = original['fontSize'] * scale
+                style.leading = original['leading'] * scale
 
 
 # Legacy function for backward compatibility
