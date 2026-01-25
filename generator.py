@@ -10,7 +10,7 @@ Features:
 """
 
 import re
-from session_manager import get_tier
+from session_manager import get_tier, get_max_pages
 
 
 # Constants
@@ -36,9 +36,8 @@ class ContentDistributor:
             tier: License tier ('trial', 'standard', 'enterprise', 'lifetime').
                   If None, will be fetched from session manager.
         """
-        self.tier = tier or get_tier() or 'trial'
+        self.tier = tier if tier is not None else (get_tier() or 'trial')
         # Use session manager's tier limits for consistency
-        from session_manager import get_max_pages
         self.max_pages = get_max_pages() if tier is None else self._get_max_pages_for_tier(tier)
         self.max_total_chars = self.max_pages * MAX_CHARS_PER_PAGE
     

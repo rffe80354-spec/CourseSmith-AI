@@ -57,7 +57,7 @@ class PDFBuilder:
         self.margin = 20 * mm  # 20mm margins on all sides as per spec
         self.logo_path = None
         self.website_url = ""
-        self.tier = tier or get_tier() or 'trial'
+        self.tier = tier if tier is not None else (get_tier() or 'trial')
         self.distributor = None  # Will be created when needed
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
@@ -275,23 +275,6 @@ class PDFBuilder:
         # Page break after cover
         story.append(PageBreak())
 
-    def _parse_markdown_content(self, content):
-        """
-        Parse markdown content and convert to Paragraph objects.
-        
-        Handles:
-        - # for section headers
-        - ## for subsection headers
-        - Regular paragraphs
-        
-        Args:
-            content: The markdown content string.
-            
-        Returns:
-            list: List of Paragraph/Spacer objects.
-        """
-        return self._parse_markdown_content_with_style(content, self.styles["CustomBodyText"])
-    
     def _parse_markdown_content_with_style(self, content, body_style):
         """
         Parse markdown content with a specific body text style.
@@ -391,14 +374,17 @@ class PDFBuilder:
             chapter_pages = distributed_content.get(chapter_title, [])
             
             if chapter_pages:
-                for page_idx, page_content in enumerate(chapter_pages):
+                for page_content in chapter_pages:
                     # Check page limit before adding
                     if total_pages_used >= max_pages:
                         break
                     
                     # Parse content with standard style
                     # The distributor already ensures content is <= 1000 chars
-                    elements = self._parse_markdown_content(page_content)
+                    elements = self._parse_markdown_content_with_style(
+                        page_content, 
+                        self.styles["CustomBodyText"]
+                    )
                     
                     story.extend(elements)
                     total_pages_used += 1
