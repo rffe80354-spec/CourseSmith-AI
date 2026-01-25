@@ -109,13 +109,15 @@ def count_pdf_pages(pdf_path):
         reader = PdfReader(pdf_path)
         return len(reader.pages)
     except ImportError:
-        # Fallback: use reportlab to count pages
-        # Parse the PDF to count pages (basic approach)
+        # Fallback: use regex-based counting (unreliable - may produce inaccurate results)
+        # This is a simplified approach that counts /Page objects in the PDF structure.
+        # WARNING: This method is not robust and may fail on complex PDFs.
+        # For production use, install PyPDF2: pip install pypdf2
         with open(pdf_path, 'rb') as f:
             content = f.read()
-            # Count page objects in PDF
+            # Count page objects in PDF using a simple regex pattern
             import re
-            pages = re.findall(b'/Type\s*/Page[^s]', content)
+            pages = re.findall(rb'/Type\s*/Page[^s]', content)
             return len(pages)
 
 def test_shrink_to_fit_basic():

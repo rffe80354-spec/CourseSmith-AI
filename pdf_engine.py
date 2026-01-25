@@ -7,6 +7,8 @@ TIER CHECK: Standard licenses cannot use custom branding (logo/website).
 
 import os
 import re
+import tempfile
+import shutil
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -483,8 +485,6 @@ class PDFBuilder:
         Returns:
             str: The path of the generated PDF.
         """
-        import tempfile
-        
         # Start with default font scale (1.0 = 100%)
         font_scale = 1.0
         min_font_scale = 0.5  # Don't shrink below 50% of original size
@@ -558,7 +558,6 @@ class PDFBuilder:
                 # Check if we fit within target
                 if actual_page_count <= target_page_count:
                     # Success! Copy temp file to final destination
-                    import shutil
                     shutil.copy2(temp_path, self.filename)
                     os.unlink(temp_path)
                     print(f"PDF Shrink-to-Fit: Success at {font_scale*100:.0f}% font scale ({actual_page_count}/{target_page_count} pages)")
@@ -578,7 +577,6 @@ class PDFBuilder:
                 if font_scale <= min_font_scale:
                     print(f"PDF Shrink-to-Fit: Warning - Cannot fit content in {target_page_count} pages even at minimum font size. Generated {actual_page_count} pages.")
                     # Use the best attempt we have
-                    import shutil
                     shutil.copy2(temp_path, self.filename)
                     os.unlink(temp_path)
                     return self.filename
