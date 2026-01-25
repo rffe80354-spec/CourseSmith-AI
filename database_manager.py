@@ -16,12 +16,28 @@ Cloud Features:
 
 import sqlite3
 import os
+import sys
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 from dotenv import load_dotenv
 
 from utils import get_data_dir
+
+# Load environment variables with PyInstaller support
+try:
+    # PyInstaller creates a temp folder and stores path in _MEIPASS
+    base_path = sys._MEIPASS
+except AttributeError:
+    # Running in development mode
+    base_path = os.path.abspath(".")
+
+env_path = os.path.join(base_path, ".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    # Fallback to current directory for development
+    load_dotenv()
 
 # Try to import Supabase, but don't fail if not available
 try:
@@ -30,10 +46,6 @@ try:
 except ImportError:
     SUPABASE_AVAILABLE = False
     print("Warning: Supabase not available. Using local-only mode.")
-
-
-# Load environment variables
-load_dotenv()
 
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")

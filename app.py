@@ -307,7 +307,7 @@ class App(ctk.CTk):
         self.activation_frame.grid(row=0, column=0, padx=100, pady=40, sticky="nsew")
         self.activation_frame.grid_columnconfigure(0, weight=1)
         # Add row weight for the spacer row to enable flexible expansion
-        self.activation_frame.grid_rowconfigure(8, weight=1)
+        self.activation_frame.grid_rowconfigure(9, weight=1)
 
         # Logo/Title with enhanced styling
         title_label = ctk.CTkLabel(
@@ -384,11 +384,20 @@ class App(ctk.CTk):
             corner_radius=5
         )
         remember_checkbox.grid(row=7, column=0, padx=40, pady=(0, 15))
+        
+        # Status label for validation feedback
+        self.activation_status_label = ctk.CTkLabel(
+            self.activation_frame,
+            text="",
+            font=ctk.CTkFont(size=13),
+            text_color="gray",
+        )
+        self.activation_status_label.grid(row=8, column=0, padx=40, pady=(0, 10))
 
         # Flexible spacer that expands to push button to bottom
         # This row has weight=1, so it will expand in fullscreen
         spacer_frame = ctk.CTkFrame(self.activation_frame, fg_color="transparent")
-        spacer_frame.grid(row=8, column=0, sticky="nsew")
+        spacer_frame.grid(row=9, column=0, sticky="nsew")
 
         # Activate button with enhanced styling - anchored to bottom
         self.activate_btn = ctk.CTkButton(
@@ -403,10 +412,10 @@ class App(ctk.CTk):
             border_width=0,
             command=self._on_activate_click,
         )
-        self.activate_btn.grid(row=9, column=0, padx=40, pady=(10, 30))
+        self.activate_btn.grid(row=10, column=0, padx=40, pady=(10, 30))
 
     def _on_activate_click(self):
-        """Handle license activation with enterprise features."""
+        """Handle license activation with enterprise features in background thread."""
         email = self.email_entry.get().strip()
         key = self.key_entry.get().strip()
 
@@ -418,8 +427,30 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Please enter your license key.")
             return
 
-        # Validate the license with new enterprise validation
-        result = validate_license(email, key, check_expiration=True)
+        # Disable activate button during validation
+        self.activate_btn.configure(state="disabled", text="⏳ Validating...")
+        self.activation_status_label.configure(text="Validating license...", text_color="orange")
+        
+        # Run validation in background thread to prevent UI freeze
+        def validate_in_background():
+            try:
+                # Validate the license with new enterprise validation
+                result = validate_license(email, key, check_expiration=True)
+                
+                # Schedule UI update on main thread
+                self.after(0, lambda: self._on_validation_complete(result, email, key))
+            except Exception as e:
+                # Schedule error handling on main thread
+                self.after(0, lambda: self._on_validation_error(str(e)))
+        
+        # Start validation thread
+        thread = threading.Thread(target=validate_in_background, daemon=True)
+        thread.start()
+    
+    def _on_validation_complete(self, result, email, key):
+        """Handle validation completion on main thread."""
+        # Re-enable activate button
+        self.activate_btn.configure(state="normal", text="🚀 Activate License")
         
         if not result or not result.get('valid'):
             # Show appropriate error message
@@ -437,6 +468,7 @@ class App(ctk.CTk):
                 else:
                     error_msg = "License Expired\n\nYour license has expired.\nPlease contact support to renew your license."
             
+            self.activation_status_label.configure(text="Validation failed", text_color="red")
             messagebox.showerror("License Validation Failed", error_msg)
             return
         
@@ -482,6 +514,8 @@ class App(ctk.CTk):
         # Note: HWID is not displayed to user for security reasons
         # It's only used internally for hardware binding validation
         
+        self.activation_status_label.configure(text="Success!", text_color="green")
+        
         messagebox.showinfo(
             "Success",
             f"License activated successfully!\n\n"
@@ -491,6 +525,13 @@ class App(ctk.CTk):
         
         # Transition to main UI with fade effect
         self._transition_to_main_ui()
+    
+    def _on_validation_error(self, error_msg):
+        """Handle validation error on main thread."""
+        # Re-enable activate button
+        self.activate_btn.configure(state="normal", text="🚀 Activate License")
+        self.activation_status_label.configure(text="Validation error", text_color="red")
+        messagebox.showerror("Error", f"License validation failed:\n\n{error_msg}")
     
     def _transition_to_main_ui(self):
         """Transition from login to main UI with animation."""
