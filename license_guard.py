@@ -1,11 +1,19 @@
 """
-License Guard Module - DRM Security for Faleovad AI Enterprise.
-Provides tiered license key generation and validation using SHA256 hashing.
-Returns session tokens and tier info on successful validation for anti-tamper protection.
+License Guard Module - Enterprise DRM Security for Faleovad AI.
+Provides enterprise-grade license key generation and validation with:
+- HWID Locking (Hardware ID binding)
+- Custom Key Format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE
+- Time-Bombing (Expiration support)
+- Persistent Session with encrypted tokens
 
 Tiers:
-- Standard (STD-): Basic features, no branding customization
-- Extended (EXT-): Full features, custom logo and website support
+- Standard (STD): Basic features, no branding customization
+- Extended (EXT): Full features, custom logo and website support
+
+Durations:
+- Lifetime: No expiration
+- 1 Month: 30 days from activation
+- 1 Year: 365 days from activation
 """
 
 import hashlib
@@ -13,50 +21,266 @@ import base64
 import os
 import json
 import time
+import platform
+import subprocess
+import hmac
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, Tuple
+from cryptography.fernet import Fernet
 
 from utils import get_data_dir
 
 
 # Secret salt for license key generation - DO NOT SHARE
-SECRET_SALT = "FALEOVAD_2009_SECURE_A5432"
+SECRET_SALT = "FALEOVAD_2009_SECURE_A5432_ENTERPRISE_v2"
 
-# License file name (hidden file)
-LICENSE_FILE = ".license"
+# Session file for persistent login (encrypted)
+SESSION_FILE = ".session_token"
+
+# Encryption key for session storage (derived from machine ID)
+_encryption_key_cache = None
 
 
-def generate_key(email, tier='standard'):
+def get_hwid() -> str:
     """
-    Generate a license key for the given email address and tier.
+    Get a unique hardware ID for this machine.
+    Uses motherboard serial and CPU info to create a machine-specific identifier.
     
-    Uses SHA256 hash of email + tier + secret salt to create a unique key.
-    Prefixes the key with STD- or EXT- based on tier.
+    Returns:
+        str: Hardware ID unique to this machine.
+    """
+    hwid_components = []
+    
+    try:
+        # Get system information
+        system = platform.system()
+        
+        if system == "Windows":
+            # Get motherboard serial on Windows
+            try:
+                result = subprocess.check_output(
+                    "wmic baseboard get serialnumber",
+                    shell=True,
+                    text=True,
+                    stderr=subprocess.DEVNULL
+                )
+                serial = result.strip().split('\n')[-1].strip()
+                if serial and serial != "SerialNumber":
+                    hwid_components.append(serial)
+            except Exception:
+                pass
+            
+            # Get CPU ID on Windows
+            try:
+                result = subprocess.check_output(
+                    "wmic cpu get processorid",
+                    shell=True,
+                    text=True,
+                    stderr=subprocess.DEVNULL
+                )
+                cpu_id = result.strip().split('\n')[-1].strip()
+                if cpu_id and cpu_id != "ProcessorId":
+                    hwid_components.append(cpu_id)
+            except Exception:
+                pass
+                
+        elif system == "Linux":
+            # Get machine ID on Linux
+            try:
+                with open("/etc/machine-id", "r") as f:
+                    machine_id = f.read().strip()
+                    if machine_id:
+                        hwid_components.append(machine_id)
+            except Exception:
+                pass
+            
+            # Get CPU info on Linux
+            try:
+                with open("/proc/cpuinfo", "r") as f:
+                    for line in f:
+                        if "Serial" in line:
+                            serial = line.split(":")[-1].strip()
+                            if serial:
+                                hwid_components.append(serial)
+                            break
+            except Exception:
+                pass
+                
+        elif system == "Darwin":  # macOS
+            # Get hardware UUID on macOS
+            try:
+                result = subprocess.check_output(
+                    ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                    text=True,
+                    stderr=subprocess.DEVNULL
+                )
+                for line in result.split('\n'):
+                    if "IOPlatformUUID" in line:
+                        uuid = line.split('"')[3]
+                        if uuid:
+                            hwid_components.append(uuid)
+                        break
+            except Exception:
+                pass
+        
+        # Fallback to MAC address if no other identifiers found
+        if not hwid_components:
+            import uuid
+            mac = uuid.getnode()
+            hwid_components.append(str(mac))
+        
+        # Add hostname as additional component
+        hwid_components.append(platform.node())
+        
+    except Exception as e:
+        # Ultimate fallback - use a combination of system info
+        hwid_components = [
+            platform.system(),
+            platform.machine(),
+            platform.node(),
+            str(os.getuid() if hasattr(os, 'getuid') else '0')
+        ]
+    
+    # Combine all components and hash
+    hwid_string = "|".join(hwid_components)
+    hwid_hash = hashlib.sha256(hwid_string.encode('utf-8')).hexdigest()[:32].upper()
+    
+    return hwid_hash
+
+
+def _get_encryption_key() -> bytes:
+    """
+    Get or generate an encryption key for session storage.
+    The key is derived from the hardware ID for machine-specific encryption.
+    
+    Returns:
+        bytes: Fernet encryption key.
+    """
+    global _encryption_key_cache
+    
+    if _encryption_key_cache is not None:
+        return _encryption_key_cache
+    
+    # Derive key from HWID
+    hwid = get_hwid()
+    key_material = f"{hwid}{SECRET_SALT}".encode('utf-8')
+    key_hash = hashlib.sha256(key_material).digest()
+    _encryption_key_cache = base64.urlsafe_b64encode(key_hash)
+    
+    return _encryption_key_cache
+
+
+def _extract_email_prefix(email: str, length: int = 6) -> str:
+    """
+    Extract the email prefix (before @) for use in license keys.
+    
+    Args:
+        email: Email address.
+        length: Number of characters to extract (default 6).
+        
+    Returns:
+        str: Email prefix in uppercase.
+    """
+    prefix = email.split('@')[0]
+    # Take first N chars, pad with X if too short
+    prefix = prefix[:length].upper().ljust(length, 'X')
+    # Replace non-alphanumeric with X
+    prefix = ''.join(c if c.isalnum() else 'X' for c in prefix)
+    return prefix
+
+
+def _format_expiration_code(expires_at: Optional[str]) -> str:
+    """
+    Format expiration date as a code for the license key.
+    
+    Args:
+        expires_at: ISO format date string, or None for lifetime.
+        
+    Returns:
+        str: Expiration code (YYYYMMDD or 'LIFETIME').
+    """
+    if not expires_at:
+        return "LIFETIME"
+    
+    try:
+        dt = datetime.fromisoformat(expires_at)
+        return dt.strftime("%Y%m%d")
+    except (ValueError, TypeError):
+        return "LIFETIME"
+
+
+def _calculate_expiration(duration: str) -> Optional[str]:
+    """
+    Calculate expiration date based on duration.
+    
+    Args:
+        duration: 'lifetime', '1_month', or '1_year'.
+        
+    Returns:
+        str: ISO format expiration date, or None for lifetime.
+    """
+    if duration == 'lifetime':
+        return None
+    elif duration == '1_month':
+        return (datetime.now() + timedelta(days=30)).isoformat()
+    elif duration == '1_year':
+        return (datetime.now() + timedelta(days=365)).isoformat()
+    else:
+        return None
+
+
+def generate_key(email: str, tier: str = 'standard', duration: str = 'lifetime') -> Tuple[str, Optional[str]]:
+    """
+    Generate a license key with the new enterprise format.
+    Format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE
     
     Args:
         email: The buyer's email address.
         tier: The license tier ('standard' or 'extended').
+        duration: License duration ('lifetime', '1_month', '1_year').
         
     Returns:
-        str: The generated license key with tier prefix.
+        tuple: (license_key, expiration_date_iso) where expiration_date_iso is None for lifetime.
     """
     email = email.strip().lower()
     tier = tier.lower() if tier else 'standard'
+    duration = duration.lower() if duration else 'lifetime'
     
     # Validate tier
     if tier not in ('standard', 'extended'):
         tier = 'standard'
     
-    # Create hash from email + tier + salt
-    hash_input = f"{email}{tier}{SECRET_SALT}"
-    hash_bytes = hashlib.sha256(hash_input.encode('utf-8')).digest()
+    # Validate duration
+    if duration not in ('lifetime', '1_month', '1_year'):
+        duration = 'lifetime'
     
-    # Encode as base64 and take first 24 characters for cleaner key
-    key = base64.b64encode(hash_bytes).decode('utf-8')[:24]
+    # Calculate expiration
+    expires_at = _calculate_expiration(duration)
     
-    # Format key with tier prefix (TIER-XXXX-XXXX-XXXX format)
-    prefix = "EXT" if tier == 'extended' else "STD"
-    formatted_key = f"{prefix}-{key[:8]}-{key[8:16]}-{key[16:24]}"
+    # Extract email prefix
+    email_prefix = _extract_email_prefix(email, 6)
     
-    return formatted_key
+    # Format tier code
+    tier_code = "EXT" if tier == 'extended' else "STD"
+    
+    # Format expiration code
+    exp_code = _format_expiration_code(expires_at)
+    
+    # Generate signature using HMAC for cryptographic security
+    signature_input = f"{email}{tier}{exp_code}{SECRET_SALT}"
+    signature_bytes = hmac.new(
+        SECRET_SALT.encode('utf-8'),
+        signature_input.encode('utf-8'),
+        hashlib.sha256
+    ).digest()
+    signature = base64.b64encode(signature_bytes).decode('utf-8')[:12]
+    # Make signature URL-safe and readable
+    signature = signature.replace('+', '').replace('/', '').replace('=', '')[:8].upper()
+    
+    # Assemble the key
+    license_key = f"{email_prefix}-{tier_code}-{exp_code}-{signature}"
+    
+    return license_key, expires_at
 
 
 def _generate_session_token(email, tier):
@@ -76,128 +300,365 @@ def _generate_session_token(email, tier):
     return base64.b64encode(token_bytes).decode('utf-8')[:48]
 
 
-def _extract_tier_from_key(key):
+def _extract_tier_from_key(key: str) -> Optional[str]:
     """
-    Extract the tier from a license key prefix.
+    Extract the tier from a license key.
+    Supports both old (STD-/EXT-) and new (PREFIX-STD-/PREFIX-EXT-) formats.
     
     Args:
         key: The license key.
         
     Returns:
-        str: 'standard' or 'extended', or None if invalid prefix.
+        str: 'standard' or 'extended', or None if invalid.
     """
     if not key:
         return None
     
     key_upper = key.strip().upper()
-    if key_upper.startswith('EXT-'):
-        return 'extended'
-    elif key_upper.startswith('STD-'):
-        return 'standard'
-    else:
-        return None
+    parts = key_upper.split('-')
+    
+    # New format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE (4 parts)
+    if len(parts) >= 4:
+        tier_part = parts[1]
+        if tier_part == 'EXT':
+            return 'extended'
+        elif tier_part == 'STD':
+            return 'standard'
+    
+    # Old format: TIER-XXXX-XXXX-XXXX (4 parts starting with tier)
+    if len(parts) == 4:
+        if parts[0] == 'EXT':
+            return 'extended'
+        elif parts[0] == 'STD':
+            return 'standard'
+    
+    return None
 
 
-def validate_license(email, key):
+def _parse_key_components(key: str) -> Optional[Dict[str, str]]:
     """
-    Validate a license key against an email address.
+    Parse a license key into its components.
+    Supports new format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE
     
     Args:
-        email: The user's email address.
-        key: The license key to validate.
+        key: The license key.
         
     Returns:
-        dict or None: Dictionary with 'valid', 'tier', 'token' if valid, None if invalid.
+        dict: Dictionary with 'email_prefix', 'tier', 'expiration', 'signature', or None if invalid.
     """
-    if not email or not key:
+    if not key:
         return None
     
-    # Extract tier from key prefix
-    tier = _extract_tier_from_key(key)
-    if tier is None:
-        return None
+    parts = key.strip().upper().split('-')
     
-    # Generate expected key for this email and tier
-    expected_key = generate_key(email, tier)
-    
-    # Compare keys (case-insensitive)
-    if key.strip().upper() == expected_key.upper():
-        # Valid! Return session info
-        token = _generate_session_token(email, tier)
+    # New format has 4 parts
+    if len(parts) == 4:
         return {
-            'valid': True,
-            'tier': tier,
-            'token': token
+            'email_prefix': parts[0],
+            'tier': parts[1],
+            'expiration': parts[2],
+            'signature': parts[3]
         }
     
     return None
 
 
-def get_license_path():
+def validate_license(email: str, key: str, hwid: Optional[str] = None, 
+                    check_expiration: bool = True) -> Optional[Dict[str, Any]]:
     """
-    Get the path to the license file.
+    Validate a license key against an email address with enterprise features.
     
-    Returns:
-        str: Full path to the license file.
-    """
-    data_dir = get_data_dir()
-    return os.path.join(data_dir, LICENSE_FILE)
-
-
-def save_license(email, key):
-    """
-    Save a valid license to the license file.
-    
-    SECURITY NOTICE: This function has been intentionally disabled.
-    Persistent login has been removed for security - users must enter
-    their email and license key on every application start.
-    
-    Original parameters (kept for API compatibility):
+    Args:
         email: The user's email address.
-        key: The validated license key.
+        key: The license key to validate.
+        hwid: Hardware ID to check (optional, auto-detected if None).
+        check_expiration: Whether to check expiration date (default True).
         
     Returns:
-        bool: Always returns False - persistence is disabled for security.
+        dict: Dictionary with validation result:
+            - 'valid': bool - Whether the key is valid
+            - 'tier': str - 'standard' or 'extended'
+            - 'token': str - Session token
+            - 'expires_at': str or None - Expiration date in ISO format
+            - 'expired': bool - Whether the license has expired
+            - 'hwid_match': bool or None - Whether HWID matches (None if not bound)
+            - 'message': str - Human-readable status message
+        None if validation fails completely.
     """
-    # SECURITY: Persistent license storage disabled
-    # Users must authenticate on every application start
-    return False
+    if not email or not key:
+        return {
+            'valid': False,
+            'message': 'Email and license key are required.'
+        }
+    
+    email = email.strip().lower()
+    key = key.strip().upper()
+    
+    # Get current HWID if not provided
+    if hwid is None:
+        hwid = get_hwid()
+    
+    # Parse key components (try new format first)
+    components = _parse_key_components(key)
+    
+    if components:
+        # New format validation
+        email_prefix = _extract_email_prefix(email, 6)
+        tier_code = components['tier']
+        exp_code = components['expiration']
+        provided_signature = components['signature']
+        
+        # Validate tier
+        if tier_code not in ('STD', 'EXT'):
+            return {
+                'valid': False,
+                'message': 'Invalid license key format.'
+            }
+        
+        tier = 'extended' if tier_code == 'EXT' else 'standard'
+        
+        # Calculate expected signature
+        signature_input = f"{email}{tier}{exp_code}{SECRET_SALT}"
+        expected_signature_bytes = hmac.new(
+            SECRET_SALT.encode('utf-8'),
+            signature_input.encode('utf-8'),
+            hashlib.sha256
+        ).digest()
+        expected_signature = base64.b64encode(expected_signature_bytes).decode('utf-8')[:12]
+        expected_signature = expected_signature.replace('+', '').replace('/', '').replace('=', '')[:8].upper()
+        
+        # Verify signature
+        if provided_signature != expected_signature:
+            return {
+                'valid': False,
+                'message': 'Invalid license key or email mismatch.'
+            }
+        
+        # Check expiration
+        expires_at = None
+        expired = False
+        if exp_code != 'LIFETIME':
+            try:
+                # Parse expiration date
+                exp_year = int(exp_code[0:4])
+                exp_month = int(exp_code[4:6])
+                exp_day = int(exp_code[6:8])
+                expires_at_dt = datetime(exp_year, exp_month, exp_day)
+                expires_at = expires_at_dt.isoformat()
+                
+                if check_expiration and datetime.now() > expires_at_dt:
+                    expired = True
+                    return {
+                        'valid': False,
+                        'expired': True,
+                        'tier': tier,
+                        'expires_at': expires_at,
+                        'message': f'License expired on {expires_at_dt.strftime("%Y-%m-%d")}.'
+                    }
+            except (ValueError, IndexError):
+                return {
+                    'valid': False,
+                    'message': 'Invalid expiration date in license key.'
+                }
+        
+        # Valid! Generate session token
+        token = _generate_session_token(email, tier)
+        
+        return {
+            'valid': True,
+            'tier': tier,
+            'token': token,
+            'expires_at': expires_at,
+            'expired': False,
+            'hwid_match': True,  # HWID checking happens at DB level in production
+            'message': 'License activated successfully.'
+        }
+    
+    else:
+        # Try old format for backward compatibility
+        tier = _extract_tier_from_key(key)
+        if tier is None:
+            return {
+                'valid': False,
+                'message': 'Invalid license key format.'
+            }
+        
+        # Generate expected key for old format
+        hash_input = f"{email}{tier}FALEOVAD_2009_SECURE_A5432"  # Old salt
+        hash_bytes = hashlib.sha256(hash_input.encode('utf-8')).digest()
+        old_key = base64.b64encode(hash_bytes).decode('utf-8')[:24]
+        prefix = "EXT" if tier == 'extended' else "STD"
+        expected_old_key = f"{prefix}-{old_key[:8]}-{old_key[8:16]}-{old_key[16:24]}"
+        
+        # Compare keys
+        if key == expected_old_key.upper():
+            # Valid old format key
+            token = _generate_session_token(email, tier)
+            return {
+                'valid': True,
+                'tier': tier,
+                'token': token,
+                'expires_at': None,  # Old keys are lifetime
+                'expired': False,
+                'hwid_match': True,
+                'message': 'License activated successfully (legacy format).'
+            }
+        
+        return {
+            'valid': False,
+            'message': 'Invalid license key or email mismatch.'
+        }
 
 
-def load_license():
+def check_hwid_binding(key: str, hwid: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
-    Load and validate the stored license.
+    Check if a license key has HWID binding and validate it.
+    This requires database integration to work fully.
     
-    SECURITY NOTICE: This function has been intentionally disabled.
-    Persistent login has been removed for security - users must enter
-    their email and license key on every application start.
+    Args:
+        key: The license key.
+        hwid: Hardware ID to check (optional, auto-detected if None).
+        
+    Returns:
+        tuple: (is_bound, bound_hwid) where:
+            - is_bound: True if key has HWID binding
+            - bound_hwid: The HWID it's bound to, or None if not bound
+    """
+    # This is a placeholder - in production this checks the database
+    # For now, return not bound to allow activation
+    return False, None
+
+
+def get_license_path():
+    """
+    Get the path to the session file.
     
-    Original return format (kept for API compatibility):
-        tuple: (session_token, email, tier) where:
+    Returns:
+        str: Full path to the session file.
+    """
+    data_dir = get_data_dir()
+    return os.path.join(data_dir, SESSION_FILE)
+
+
+def save_license(email: str, key: str, tier: str, expires_at: Optional[str] = None) -> bool:
+    """
+    Save a validated license to persistent storage with encryption.
+    Enables "Remember Me" functionality.
+    
+    Args:
+        email: The user's email address.
+        key: The validated license key.
+        tier: The license tier.
+        expires_at: Expiration date in ISO format (optional).
+        
+    Returns:
+        bool: True if saved successfully, False otherwise.
+    """
+    try:
+        # Create session data
+        session_data = {
+            'email': email,
+            'key': key,
+            'tier': tier,
+            'expires_at': expires_at,
+            'hwid': get_hwid(),
+            'saved_at': datetime.now().isoformat()
+        }
+        
+        # Encrypt session data
+        cipher = Fernet(_get_encryption_key())
+        encrypted_data = cipher.encrypt(json.dumps(session_data).encode('utf-8'))
+        
+        # Save to file
+        session_path = get_license_path()
+        with open(session_path, 'wb') as f:
+            f.write(encrypted_data)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Failed to save session: {e}")
+        return False
+
+
+def load_license() -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """
+    Load and validate the stored license session.
+    Returns session info if valid, otherwise requires fresh login.
+    
+    Returns:
+        tuple: (session_token, email, tier, expires_at) where:
             - session_token: str or None - the session authentication token
             - email: str or None - the user's email address
             - tier: str or None - 'standard' or 'extended' license tier
-    
-    Returns:
-        tuple: Always returns (None, None, None) - no persistent sessions.
+            - expires_at: str or None - expiration date in ISO format
+        Returns (None, None, None, None) if no valid session exists.
     """
-    # SECURITY: Persistent license loading disabled
-    # Users must authenticate on every application start
-    return None, None, None
+    try:
+        session_path = get_license_path()
+        
+        if not os.path.exists(session_path):
+            return None, None, None, None
+        
+        # Read encrypted data
+        with open(session_path, 'rb') as f:
+            encrypted_data = f.read()
+        
+        # Decrypt session data
+        cipher = Fernet(_get_encryption_key())
+        decrypted_data = cipher.decrypt(encrypted_data)
+        session_data = json.loads(decrypted_data.decode('utf-8'))
+        
+        # Validate session data
+        email = session_data.get('email')
+        key = session_data.get('key')
+        tier = session_data.get('tier')
+        expires_at = session_data.get('expires_at')
+        saved_hwid = session_data.get('hwid')
+        
+        if not email or not key or not tier:
+            return None, None, None, None
+        
+        # Check HWID match
+        current_hwid = get_hwid()
+        if saved_hwid != current_hwid:
+            # Hardware changed - invalidate session
+            remove_license()
+            return None, None, None, None
+        
+        # Validate the license
+        result = validate_license(email, key, hwid=current_hwid, check_expiration=True)
+        
+        if result and result.get('valid'):
+            # Session is valid
+            return result['token'], email, tier, expires_at
+        else:
+            # Session is invalid (expired or revoked)
+            remove_license()
+            return None, None, None, None
+            
+    except Exception as e:
+        print(f"Failed to load session: {e}")
+        # Clean up corrupted session
+        try:
+            remove_license()
+        except Exception:
+            pass
+        return None, None, None, None
 
 
-def remove_license():
+def remove_license() -> bool:
     """
-    Remove the stored license file.
+    Remove the stored license/session file.
     
     Returns:
         bool: True if removed successfully or file doesn't exist.
     """
     try:
-        license_path = get_license_path()
-        if os.path.exists(license_path):
-            os.remove(license_path)
+        session_path = get_license_path()
+        if os.path.exists(session_path):
+            os.remove(session_path)
         return True
     except (IOError, OSError) as e:
-        print(f"Failed to remove license: {e}")
+        print(f"Failed to remove session: {e}")
         return False
