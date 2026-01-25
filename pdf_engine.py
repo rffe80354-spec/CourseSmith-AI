@@ -416,20 +416,26 @@ class PDFBuilder:
             print(f"Warning: Image not found, skipping: {image_path}")
             return None
         
-        # Validate image file extension
+        # Validate image file extension as a first check
+        # Note: This is a basic check; actual validation happens in ReportLab's Image()
         valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')
         if not image_path.lower().endswith(valid_extensions):
             print(f"Warning: Unsupported image format, skipping: {image_path}")
             return None
         
         try:
-            # Create Image object
+            # Create Image object - this validates the actual image format
             img = Image(image_path)
+            
+            # Validate image dimensions
+            if img.imageWidth <= 0 or img.imageHeight <= 0:
+                print(f"Warning: Invalid image dimensions, skipping: {image_path}")
+                return None
             
             # Calculate available page width (minus margins)
             available_width = self.page_width - (2 * self.margin)
             
-            # Get original aspect ratio
+            # Get original aspect ratio (safe from division by zero after validation)
             aspect_ratio = img.imageHeight / float(img.imageWidth)
             
             # Scale to fit page width while maintaining aspect ratio
@@ -449,9 +455,17 @@ class PDFBuilder:
             
             return img
             
+        except (IOError, OSError) as e:
+            # File I/O errors
+            print(f"Error reading image file {image_path}: {str(e)}")
+            return None
+        except (ValueError, ZeroDivisionError) as e:
+            # Image dimension or calculation errors
+            print(f"Error processing image dimensions {image_path}: {str(e)}")
+            return None
         except Exception as e:
-            # Log error but don't crash - skip this image
-            print(f"Error loading image {image_path}: {str(e)}")
+            # Catch-all for other ReportLab or unexpected errors
+            print(f"Unexpected error loading image {image_path}: {str(e)}")
             return None
 
     def _add_chapters(self, project, story):
