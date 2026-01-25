@@ -27,7 +27,7 @@ class SessionManager:
                     cls._instance = super().__new__(cls)
                     cls._instance._token = None
                     cls._instance._email = None
-                    cls._instance._tier = None  # 'standard' or 'extended'
+                    cls._instance._tier = None  # 'trial', 'standard', 'enterprise', or 'lifetime'
         return cls._instance
     
     def set_session(self, token, email=None, tier=None):
@@ -37,12 +37,15 @@ class SessionManager:
         Args:
             token: The session token from license validation.
             email: The licensed email address (optional).
-            tier: The license tier ('standard' or 'extended').
+            tier: The license tier ('trial', 'standard', 'enterprise', or 'lifetime').
         """
         with self._lock:
             self._token = token
             self._email = email
-            self._tier = tier if tier in ('standard', 'extended') else 'standard'
+            # Support all tiers, with 'extended' as legacy alias for 'enterprise'
+            if tier == 'extended':
+                tier = 'enterprise'
+            self._tier = tier if tier in ('trial', 'standard', 'enterprise', 'lifetime') else 'standard'
     
     def set_token(self, token, email=None):
         """
@@ -84,7 +87,7 @@ class SessionManager:
         Get the current license tier.
         
         Returns:
-            str: 'standard' or 'extended', or None if not set.
+            str: 'trial', 'standard', 'enterprise', or 'lifetime', or None if not set.
         """
         with self._lock:
             return self._tier
@@ -101,13 +104,14 @@ class SessionManager:
     
     def is_extended(self):
         """
-        Check if the current license is Extended tier.
+        Check if the current license is Extended/Enterprise tier or higher.
+        Supports both 'extended' (legacy) and 'enterprise' naming.
         
         Returns:
-            bool: True if Extended license, False otherwise.
+            bool: True if Enterprise/Extended/Lifetime license, False otherwise.
         """
         with self._lock:
-            return self._tier == 'extended'
+            return self._tier in ('extended', 'enterprise', 'lifetime')
     
     def is_standard(self):
         """
@@ -118,6 +122,53 @@ class SessionManager:
         """
         with self._lock:
             return self._tier == 'standard'
+    
+    def is_trial(self):
+        """
+        Check if the current license is Trial tier.
+        
+        Returns:
+            bool: True if Trial license, False otherwise.
+        """
+        with self._lock:
+            return self._tier == 'trial'
+    
+    def is_enterprise(self):
+        """
+        Check if the current license is Enterprise tier.
+        
+        Returns:
+            bool: True if Enterprise license, False otherwise.
+        """
+        with self._lock:
+            return self._tier in ('enterprise', 'extended')
+    
+    def is_lifetime(self):
+        """
+        Check if the current license is Lifetime tier.
+        
+        Returns:
+            bool: True if Lifetime license, False otherwise.
+        """
+        with self._lock:
+            return self._tier == 'lifetime'
+    
+    def get_max_pages(self):
+        """
+        Get the maximum pages allowed for the current tier.
+        
+        Returns:
+            int: Max pages (10 for trial, 50 for standard, 300 for enterprise/lifetime).
+        """
+        with self._lock:
+            tier_page_limits = {
+                'trial': 10,
+                'standard': 50,
+                'enterprise': 300,
+                'extended': 300,  # Legacy support
+                'lifetime': 300
+            }
+            return tier_page_limits.get(self._tier, 10)
     
     def clear(self):
         """Clear the current session token and tier."""
@@ -175,6 +226,26 @@ def is_extended():
 def is_standard():
     """Check if Standard license."""
     return _session_manager.is_standard()
+
+
+def is_trial():
+    """Check if Trial license."""
+    return _session_manager.is_trial()
+
+
+def is_enterprise():
+    """Check if Enterprise license."""
+    return _session_manager.is_enterprise()
+
+
+def is_lifetime():
+    """Check if Lifetime license."""
+    return _session_manager.is_lifetime()
+
+
+def get_max_pages():
+    """Get max pages for current tier."""
+    return _session_manager.get_max_pages()
 
 
 def clear_session():

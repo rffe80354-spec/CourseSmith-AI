@@ -2,17 +2,17 @@
 License Guard Module - Enterprise DRM Security for CourseSmith AI.
 Provides enterprise-grade license key generation and validation with:
 - HWID Locking (Hardware ID binding) - Enterprise tier and above
-- Custom Key Format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE
+- Custom Key Format: CS-XXXX-XXXX (12 characters, 8 hex digits)
 - Time-Bombing with NTP verification (anti-tamper)
 - Persistent Session with encrypted tokens
 - Cloud-based license validation with Supabase
 - Four-tier system with cloud protection
 
 Tiers:
-- Trial (TRL): 3 days, 10 pages, cloud-protected
-- Standard (STD): 50 pages, cloud-protected, basic features
-- Enterprise (ENT): 300 pages, all AI features, HWID binding, cloud-protected
-- Lifetime (LFT): Enterprise features, no expiration, cloud-protected
+- Trial: 3 days, 10 pages, cloud-protected
+- Standard: 50 pages, cloud-protected, basic features
+- Enterprise: 300 pages, all AI features, HWID binding, cloud-protected
+- Lifetime: Enterprise features, no expiration, cloud-protected
 
 Durations:
 - 3 Days: Trial period
@@ -37,6 +37,14 @@ from cryptography.fernet import Fernet
 
 from utils import get_data_dir
 
+# Try to import database_manager for license validation
+try:
+    from database_manager import get_license_by_key, check_cloud_status, update_hwid
+    DATABASE_AVAILABLE = True
+except ImportError:
+    DATABASE_AVAILABLE = False
+    print("Warning: database_manager not available. Some features may not work.")
+
 # Try to import NTP library for time verification
 try:
     import ntplib
@@ -48,6 +56,11 @@ except ImportError:
 
 # Secret salt for license key generation - DO NOT SHARE
 SECRET_SALT = "FALEOVAD_2009_SECURE_A5432_ENTERPRISE_v2"
+
+# Key format constants
+KEY_FORMAT_LENGTH = 12  # CS-XXXX-XXXX = 12 characters
+KEY_DASH_COUNT = 2      # 2 dashes in the format
+KEY_PREFIX = "CS-"      # All keys start with CS-
 
 # Session file for persistent login (encrypted)
 SESSION_FILE = ".session_token"
@@ -381,8 +394,8 @@ def _calculate_expiration(duration: str) -> Optional[str]:
 
 def generate_key(email: str, tier: str = 'trial', duration: str = 'lifetime') -> Tuple[str, Optional[str]]:
     """
-    Generate a license key with the new enterprise format.
-    Format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE
+    Generate a license key in CS-XXXX-XXXX format (standardized for all tiers).
+    Format: CS-XXXX-XXXX where X is an uppercase hex character (8 hex chars total, 12 chars including prefix and dashes).
     
     Args:
         email: The buyer's email address.
@@ -409,28 +422,20 @@ def generate_key(email: str, tier: str = 'trial', duration: str = 'lifetime') ->
     # Calculate expiration
     expires_at = _calculate_expiration(duration)
     
-    # Extract email prefix
-    email_prefix = _extract_email_prefix(email, 6)
-    
-    # Format tier code using module constant
-    tier_code = TIER_CODE_MAP.get(tier, 'TRL')
-    
-    # Format expiration code
-    exp_code = _format_expiration_code(expires_at)
-    
     # Generate signature using HMAC for cryptographic security
-    signature_input = f"{email}{tier}{exp_code}{SECRET_SALT}"
+    # Include all relevant data in the signature for validation
+    signature_input = f"{email}{tier}{duration}{expires_at}{SECRET_SALT}"
     signature_bytes = hmac.new(
         SECRET_SALT.encode('utf-8'),
         signature_input.encode('utf-8'),
         hashlib.sha256
     ).digest()
-    signature = base64.b64encode(signature_bytes).decode('utf-8')[:12]
-    # Make signature URL-safe and readable
-    signature = signature.replace('+', '').replace('/', '').replace('=', '')[:8].upper()
     
-    # Assemble the key
-    license_key = f"{email_prefix}-{tier_code}-{exp_code}-{signature}"
+    # Convert to hex and take first 8 characters for CS-XXXX-XXXX format
+    hex_signature = signature_bytes.hex().upper()[:8]
+    
+    # Format as CS-XXXX-XXXX (CS + 4 hex + dash + 4 hex = 12 chars total)
+    license_key = f"CS-{hex_signature[:4]}-{hex_signature[4:]}"
     
     return license_key, expires_at
 
@@ -512,22 +517,24 @@ def _parse_key_components(key: str) -> Optional[Dict[str, str]]:
 def validate_license(email: str, key: str, hwid: Optional[str] = None, 
                     check_expiration: bool = True) -> Optional[Dict[str, Any]]:
     """
-    Validate a license key against an email address with enterprise features.
+    Validate a license key in CS-XXXX-XXXX format against database records.
+    Supports all tiers: Trial, Standard, Enterprise, Lifetime.
     
     Args:
         email: The user's email address.
-        key: The license key to validate.
+        key: The license key to validate (CS-XXXX-XXXX format).
         hwid: Hardware ID to check (optional, auto-detected if None).
         check_expiration: Whether to check expiration date (default True).
         
     Returns:
         dict: Dictionary with validation result:
             - 'valid': bool - Whether the key is valid
-            - 'tier': str - 'standard' or 'extended'
+            - 'tier': str - 'trial', 'standard', 'enterprise', or 'lifetime'
             - 'token': str - Session token
             - 'expires_at': str or None - Expiration date in ISO format
             - 'expired': bool - Whether the license has expired
             - 'hwid_match': bool or None - Whether HWID matches (None if not bound)
+            - 'tier_limits': dict - Tier configuration with max_pages, etc.
             - 'message': str - Human-readable status message
         None if validation fails completely.
     """
@@ -544,93 +551,91 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
     if hwid is None:
         hwid = get_hwid()
     
-    # Parse key components (try new format first)
-    components = _parse_key_components(key)
+    # Validate CS-XXXX-XXXX format using constants
+    if not key.startswith(KEY_PREFIX) or len(key) != KEY_FORMAT_LENGTH or key.count('-') != KEY_DASH_COUNT:
+        return {
+            'valid': False,
+            'message': f'Invalid license key format. Expected: {KEY_PREFIX}XXXX-XXXX'
+        }
     
-    if components:
-        # New format validation
-        email_prefix = _extract_email_prefix(email, 6)
-        tier_code = components['tier']
-        exp_code = components['expiration']
-        provided_signature = components['signature']
+    # Check if database is available
+    if not DATABASE_AVAILABLE:
+        return {
+            'valid': False,
+            'message': 'License validation unavailable. Database module not loaded.'
+        }
+    
+    # Look up the license in the database
+    try:
+        # Check cloud first, then local database
+        license_data = get_license_by_key(key, check_cloud=True)
         
-        # Validate tier
-        if tier_code not in ('STD', 'EXT'):
+        if not license_data:
             return {
                 'valid': False,
-                'message': 'Invalid license key format.'
+                'message': 'License key not found in database.'
             }
         
-        tier = 'extended' if tier_code == 'EXT' else 'standard'
-        
-        # Calculate expected signature
-        signature_input = f"{email}{tier}{exp_code}{SECRET_SALT}"
-        expected_signature_bytes = hmac.new(
-            SECRET_SALT.encode('utf-8'),
-            signature_input.encode('utf-8'),
-            hashlib.sha256
-        ).digest()
-        expected_signature = base64.b64encode(expected_signature_bytes).decode('utf-8')[:12]
-        expected_signature = expected_signature.replace('+', '').replace('/', '').replace('=', '')[:8].upper()
-        
-        # Verify signature
-        if provided_signature != expected_signature:
+        # Verify email matches
+        if license_data.get('email', '').lower() != email:
             return {
                 'valid': False,
-                'message': 'Invalid license key or email mismatch.'
+                'message': 'License key does not match the provided email address.'
             }
         
-        # Check expiration using NTP time for tamper protection
-        expires_at = None
+        # Check if license is banned
+        if license_data.get('status') == 'Banned':
+            return {
+                'valid': False,
+                'tier': license_data.get('tier', 'trial'),
+                'message': 'License has been revoked. Contact support.'
+            }
+        
+        # Get tier and expiration
+        tier = license_data.get('tier', 'trial').lower()
+        expires_at = license_data.get('expires_at')
+        
+        # Check expiration using NTP time for tamper protection (especially for Trial tier)
         expired = False
-        if exp_code != 'LIFETIME':
+        if expires_at and check_expiration:
             try:
-                # Parse expiration date
-                exp_year = int(exp_code[0:4])
-                exp_month = int(exp_code[4:6])
-                exp_day = int(exp_code[6:8])
-                expires_at_dt = datetime(exp_year, exp_month, exp_day)
-                expires_at = expires_at_dt.isoformat()
-                
-                # Use NTP time if available for anti-tamper
-                if check_expiration:
-                    current_time = get_reliable_time()
-                    if current_time > expires_at_dt:
-                        expired = True
-                        return {
-                            'valid': False,
-                            'expired': True,
-                            'tier': tier,
-                            'expires_at': expires_at,
-                            'message': f'License expired on {expires_at_dt.strftime("%Y-%m-%d")}.'
-                        }
-            except (ValueError, IndexError):
-                return {
-                    'valid': False,
-                    'message': 'Invalid expiration date in license key.'
-                }
+                expires_at_dt = datetime.fromisoformat(expires_at)
+                # Use NTP time if available for anti-tamper (critical for Trial tier)
+                current_time = get_reliable_time()
+                if current_time > expires_at_dt:
+                    expired = True
+                    return {
+                        'valid': False,
+                        'expired': True,
+                        'tier': tier,
+                        'expires_at': expires_at,
+                        'message': f'License expired on {expires_at_dt.strftime("%Y-%m-%d")}.'
+                    }
+            except (ValueError, TypeError):
+                # Invalid date format, treat as not expired
+                pass
         
-        # Check cloud status for remote revocation (if available)
-        try:
-            from database_manager import check_cloud_status
-            cloud_status = check_cloud_status(key)
-            if cloud_status == 'Banned':
-                return {
-                    'valid': False,
-                    'tier': tier,
-                    'message': 'License has been revoked. Contact support.'
-                }
-        except Exception as e:
-            # Cloud check failed, continue with local validation
-            pass
-        
-        # Check HWID for Enterprise tier
+        # Get tier limits (includes max_pages)
         tier_limits = get_tier_limits(tier)
+        
+        # Check HWID binding for tiers that require it (Enterprise and Lifetime)
+        hwid_match = True
         if tier_limits['hwid_required']:
-            # HWID binding required for Enterprise tier
-            # This would check the database for stored HWID
-            # For now, we'll implement basic HWID tracking
-            pass
+            stored_hwid = license_data.get('hwid')
+            if stored_hwid:
+                # HWID already bound, verify match
+                if stored_hwid != hwid:
+                    return {
+                        'valid': False,
+                        'tier': tier,
+                        'message': 'License is bound to a different machine. Contact support to transfer.'
+                    }
+            else:
+                # First activation - bind HWID
+                try:
+                    update_hwid(key, hwid)
+                except Exception as e:
+                    print(f"Warning: Failed to bind HWID: {e}")
         
         # Valid! Generate session token
         token = _generate_session_token(email, tier)
@@ -641,44 +646,16 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
             'token': token,
             'expires_at': expires_at,
             'expired': False,
-            'hwid_match': True,
+            'hwid_match': hwid_match,
             'tier_limits': tier_limits,
             'message': 'License activated successfully.'
         }
-    
-    else:
-        # Try old format for backward compatibility
-        tier = _extract_tier_from_key(key)
-        if tier is None:
-            return {
-                'valid': False,
-                'message': 'Invalid license key format.'
-            }
         
-        # Generate expected key for old format
-        hash_input = f"{email}{tier}FALEOVAD_2009_SECURE_A5432"  # Old salt
-        hash_bytes = hashlib.sha256(hash_input.encode('utf-8')).digest()
-        old_key = base64.b64encode(hash_bytes).decode('utf-8')[:24]
-        prefix = "EXT" if tier == 'extended' else "STD"
-        expected_old_key = f"{prefix}-{old_key[:8]}-{old_key[8:16]}-{old_key[16:24]}"
-        
-        # Compare keys
-        if key == expected_old_key.upper():
-            # Valid old format key
-            token = _generate_session_token(email, tier)
-            return {
-                'valid': True,
-                'tier': tier,
-                'token': token,
-                'expires_at': None,  # Old keys are lifetime
-                'expired': False,
-                'hwid_match': True,
-                'message': 'License activated successfully (legacy format).'
-            }
-        
+    except Exception as e:
+        print(f"License validation error: {e}")
         return {
             'valid': False,
-            'message': 'Invalid license key or email mismatch.'
+            'message': f'License validation failed: {str(e)}'
         }
 
 
