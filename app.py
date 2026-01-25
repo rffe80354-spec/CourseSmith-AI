@@ -449,14 +449,13 @@ class App(ctk.CTk):
         else:
             expires_msg = "\nExpires: Never (Lifetime)"
         
-        # Get HWID for display
-        hwid = get_hwid()
+        # Note: HWID is not displayed to user for security reasons
+        # It's only used internally for hardware binding validation
         
         messagebox.showinfo(
             "Success",
             f"License activated successfully!\n\n"
-            f"Tier: {tier_label}{expires_msg}\n"
-            f"Hardware ID: {hwid[:16]}...\n\n"
+            f"Tier: {tier_label}{expires_msg}\n\n"
             f"Welcome to CourseSmith AI Enterprise!",
         )
         

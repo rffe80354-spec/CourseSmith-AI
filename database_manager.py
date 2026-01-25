@@ -355,8 +355,13 @@ def delete_license(key: str) -> bool:
         return cursor.rowcount > 0
 
 
-# Initialize database on module import
+# Initialize database on module import only if not in test mode
+# This allows for controlled initialization in production
 try:
-    initialize_database()
+    if __name__ != '__main__':
+        # Only auto-initialize when imported, not when run directly
+        initialize_database()
 except Exception as e:
-    print(f"Warning: Failed to initialize database: {e}")
+    print(f"Warning: Failed to auto-initialize database: {e}")
+    print("Call initialize_database() explicitly if needed.")
+

@@ -2,7 +2,7 @@ customtkinter
 openai
 reportlab
 python-dotenv
-pillow
+pillow>=10.3.0
 requests
-cryptography
+cryptography>=42.0.4
 pyinstaller

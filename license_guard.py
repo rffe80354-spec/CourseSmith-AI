@@ -128,17 +128,27 @@ def get_hwid() -> str:
             import uuid
             mac = uuid.getnode()
             hwid_components.append(str(mac))
+            # Add more unique identifiers for better fallback
+            import socket
+            try:
+                hwid_components.append(socket.gethostname())
+                hwid_components.append(str(os.getpid()))
+            except:
+                pass
         
         # Add hostname as additional component
         hwid_components.append(platform.node())
         
     except Exception as e:
-        # Ultimate fallback - use a combination of system info
+        # Ultimate fallback - use a combination of system info and process-specific data
+        import uuid
         hwid_components = [
             platform.system(),
             platform.machine(),
             platform.node(),
-            str(os.getuid() if hasattr(os, 'getuid') else '0')
+            str(uuid.getnode()),  # MAC address
+            str(os.getpid()),  # Process ID for uniqueness
+            os.environ.get('USERNAME', os.environ.get('USER', 'unknown'))  # Username
         ]
     
     # Combine all components and hash
@@ -513,7 +523,10 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
 def check_hwid_binding(key: str, hwid: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
     Check if a license key has HWID binding and validate it.
-    This requires database integration to work fully.
+    
+    NOTE: This is a placeholder for database integration.
+    In production, this should query the database to check if the key
+    has an associated HWID and validate it matches the current machine.
     
     Args:
         key: The license key.
@@ -523,9 +536,15 @@ def check_hwid_binding(key: str, hwid: Optional[str] = None) -> Tuple[bool, Opti
         tuple: (is_bound, bound_hwid) where:
             - is_bound: True if key has HWID binding
             - bound_hwid: The HWID it's bound to, or None if not bound
+            
+    TODO: Implement database integration:
+        1. Query database for license by key
+        2. Check if hwid column is populated
+        3. If populated, compare with current HWID
+        4. Return appropriate values
     """
-    # This is a placeholder - in production this checks the database
-    # For now, return not bound to allow activation
+    # DEVELOPMENT PLACEHOLDER: Always returns not bound to allow activation
+    # In production, this queries the database and validates HWID
     return False, None
 
 

@@ -25,7 +25,7 @@ Usage:
 """
 
 import customtkinter as ctk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 import threading
 import time
 from datetime import datetime
