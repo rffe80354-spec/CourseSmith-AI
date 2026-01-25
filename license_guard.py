@@ -382,7 +382,7 @@ def _calculate_expiration(duration: str) -> Optional[str]:
 def generate_key(email: str, tier: str = 'trial', duration: str = 'lifetime') -> Tuple[str, Optional[str]]:
     """
     Generate a license key in CS-XXXX-XXXX format (standardized for all tiers).
-    Format: CS-XXXX-XXXX where X is an uppercase hex character.
+    Format: CS-XXXX-XXXX where X is an uppercase hex character (8 hex chars total).
     
     Args:
         email: The buyer's email address.
@@ -421,8 +421,8 @@ def generate_key(email: str, tier: str = 'trial', duration: str = 'lifetime') ->
     # Convert to hex and take first 8 characters for CS-XXXX-XXXX format
     hex_signature = signature_bytes.hex().upper()[:8]
     
-    # Format as CS-XXXX-XXXX
-    license_key = f"CS-{hex_signature[:4]}-{hex_signature[4:8]}"
+    # Format as CS-XXXX-XXXX (CS + 4 hex + dash + 4 hex = 11 chars total)
+    license_key = f"CS-{hex_signature[:4]}-{hex_signature[4:]}"
     
     return license_key, expires_at
 
@@ -538,8 +538,8 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
     if hwid is None:
         hwid = get_hwid()
     
-    # Validate CS-XXXX-XXXX format
-    if not key.startswith('CS-') or len(key) != 11 or key.count('-') != 2:
+    # Validate CS-XXXX-XXXX format (12 chars: CS + dash + 4 hex + dash + 4 hex)
+    if not key.startswith('CS-') or len(key) != 12 or key.count('-') != 2:
         return {
             'valid': False,
             'message': 'Invalid license key format. Expected: CS-XXXX-XXXX'
