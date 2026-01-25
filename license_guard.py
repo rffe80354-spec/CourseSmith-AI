@@ -1,20 +1,24 @@
 """
-License Guard Module - Enterprise DRM Security for Faleovad AI.
+License Guard Module - Enterprise DRM Security for CourseSmith AI.
 Provides enterprise-grade license key generation and validation with:
-- HWID Locking (Hardware ID binding) - Enterprise tier only
+- HWID Locking (Hardware ID binding) - Enterprise tier and above
 - Custom Key Format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE
 - Time-Bombing with NTP verification (anti-tamper)
 - Persistent Session with encrypted tokens
 - Cloud-based license validation with Supabase
-- Dual-tier system: Standard (10 pages) vs Enterprise (300 pages, AI features)
+- Four-tier system with cloud protection
 
 Tiers:
-- Standard (STD): 10 pages, basic features, no HWID binding
-- Enterprise (EXT): 300 pages, HWID binding, DALL-E, quizzes, translation
+- Trial (TRL): 3 days, 10 pages, cloud-protected
+- Standard (STD): 50 pages, cloud-protected, basic features
+- Enterprise (ENT): 300 pages, all AI features, HWID binding, cloud-protected
+- Lifetime (LFT): Enterprise features, no expiration, cloud-protected
 
 Durations:
-- 3-Day Trial: 3 days from activation
+- 3 Days: Trial period
 - 1 Month: 30 days from activation
+- 3 Months: 90 days from activation
+- 6 Months: 180 days from activation
 - 1 Year: 365 days from activation
 - Lifetime: No expiration
 """
@@ -59,15 +63,25 @@ NTP_SERVERS = [
     'time.cloudflare.com'
 ]
 
-# Tier configuration
+# Tier configuration - Four tiers with cloud protection
 TIER_LIMITS = {
-    'standard': {
+    'trial': {
         'max_pages': 10,
         'hwid_required': False,
         'ai_images': False,
         'quizzes': False,
         'translation': False,
-        'custom_branding': False
+        'custom_branding': False,
+        'cloud_protected': True
+    },
+    'standard': {
+        'max_pages': 50,
+        'hwid_required': False,
+        'ai_images': True,
+        'quizzes': False,
+        'translation': False,
+        'custom_branding': False,
+        'cloud_protected': True
     },
     'enterprise': {
         'max_pages': 300,
@@ -75,8 +89,35 @@ TIER_LIMITS = {
         'ai_images': True,
         'quizzes': True,
         'translation': True,
-        'custom_branding': True
+        'custom_branding': True,
+        'cloud_protected': True
+    },
+    'lifetime': {
+        'max_pages': 300,
+        'hwid_required': True,
+        'ai_images': True,
+        'quizzes': True,
+        'translation': True,
+        'custom_branding': True,
+        'cloud_protected': True
     }
+}
+
+# Tier code mapping for license key generation
+TIER_CODE_MAP = {
+    'trial': 'TRL',
+    'standard': 'STD', 
+    'enterprise': 'ENT',
+    'lifetime': 'LFT'
+}
+
+# Tier extraction mapping for license key parsing
+TIER_EXTRACT_MAP = {
+    'TRL': 'trial',
+    'STD': 'standard',
+    'ENT': 'enterprise',
+    'LFT': 'lifetime',
+    'EXT': 'enterprise'  # Legacy support
 }
 
 
@@ -126,12 +167,12 @@ def get_tier_limits(tier: str) -> Dict[str, Any]:
     Get the limits and features for a given license tier.
     
     Args:
-        tier: License tier ('standard' or 'enterprise').
+        tier: License tier ('trial', 'standard', 'enterprise', or 'lifetime').
         
     Returns:
         dict: Tier configuration with limits and features.
     """
-    return TIER_LIMITS.get(tier.lower(), TIER_LIMITS['standard'])
+    return TIER_LIMITS.get(tier.lower() if tier else 'trial', TIER_LIMITS['trial'])
 
 
 def get_hwid() -> str:
@@ -317,7 +358,7 @@ def _calculate_expiration(duration: str) -> Optional[str]:
     Calculate expiration date based on duration.
     
     Args:
-        duration: '3_day', 'lifetime', '1_month', or '1_year'.
+        duration: '3_day', '1_month', '3_month', '6_month', '1_year', or 'lifetime'.
         
     Returns:
         str: ISO format expiration date, or None for lifetime.
@@ -328,37 +369,41 @@ def _calculate_expiration(duration: str) -> Optional[str]:
         return (datetime.now() + timedelta(days=3)).isoformat()
     elif duration == '1_month':
         return (datetime.now() + timedelta(days=30)).isoformat()
+    elif duration == '3_month':
+        return (datetime.now() + timedelta(days=90)).isoformat()
+    elif duration == '6_month':
+        return (datetime.now() + timedelta(days=180)).isoformat()
     elif duration == '1_year':
         return (datetime.now() + timedelta(days=365)).isoformat()
     else:
         return None
 
 
-def generate_key(email: str, tier: str = 'standard', duration: str = 'lifetime') -> Tuple[str, Optional[str]]:
+def generate_key(email: str, tier: str = 'trial', duration: str = 'lifetime') -> Tuple[str, Optional[str]]:
     """
     Generate a license key with the new enterprise format.
     Format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE
     
     Args:
         email: The buyer's email address.
-        tier: The license tier ('standard' or 'enterprise').
-        duration: License duration ('3_day', 'lifetime', '1_month', '1_year').
+        tier: The license tier ('trial', 'standard', 'enterprise', or 'lifetime').
+        duration: License duration ('3_day', '1_month', '3_month', '6_month', '1_year', 'lifetime').
         
     Returns:
         tuple: (license_key, expiration_date_iso) where expiration_date_iso is None for lifetime.
     """
     email = email.strip().lower()
-    tier = tier.lower() if tier else 'standard'
+    tier = tier.lower() if tier else 'trial'
     duration = duration.lower() if duration else 'lifetime'
     
-    # Validate tier - support both 'extended' (old) and 'enterprise' (new)
+    # Validate tier - support legacy naming
     if tier == 'extended':
         tier = 'enterprise'
-    if tier not in ('standard', 'enterprise'):
-        tier = 'standard'
+    if tier not in TIER_LIMITS:
+        tier = 'trial'
     
     # Validate duration
-    if duration not in ('3_day', 'lifetime', '1_month', '1_year'):
+    if duration not in ('3_day', '1_month', '3_month', '6_month', '1_year', 'lifetime'):
         duration = 'lifetime'
     
     # Calculate expiration
@@ -367,8 +412,8 @@ def generate_key(email: str, tier: str = 'standard', duration: str = 'lifetime')
     # Extract email prefix
     email_prefix = _extract_email_prefix(email, 6)
     
-    # Format tier code (EXT for both enterprise and old extended)
-    tier_code = "EXT" if tier in ('enterprise', 'extended') else "STD"
+    # Format tier code using module constant
+    tier_code = TIER_CODE_MAP.get(tier, 'TRL')
     
     # Format expiration code
     exp_code = _format_expiration_code(expires_at)
@@ -410,13 +455,13 @@ def _generate_session_token(email, tier):
 def _extract_tier_from_key(key: str) -> Optional[str]:
     """
     Extract the tier from a license key.
-    Supports both old (STD-/EXT-) and new (PREFIX-STD-/PREFIX-EXT-) formats.
+    Supports multiple formats: PREFIX-TRL/STD/ENT/LFT-...
     
     Args:
         key: The license key.
         
     Returns:
-        str: 'standard' or 'extended', or None if invalid.
+        str: 'trial', 'standard', 'enterprise', 'lifetime', or None if invalid.
     """
     if not key:
         return None
@@ -427,17 +472,11 @@ def _extract_tier_from_key(key: str) -> Optional[str]:
     # New format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE (4 parts)
     if len(parts) >= 4:
         tier_part = parts[1]
-        if tier_part == 'EXT':
-            return 'extended'
-        elif tier_part == 'STD':
-            return 'standard'
+        return TIER_EXTRACT_MAP.get(tier_part, 'trial')
     
     # Old format: TIER-XXXX-XXXX-XXXX (4 parts starting with tier)
     if len(parts) == 4:
-        if parts[0] == 'EXT':
-            return 'extended'
-        elif parts[0] == 'STD':
-            return 'standard'
+        return TIER_EXTRACT_MAP.get(parts[0], 'trial')
     
     return None
 

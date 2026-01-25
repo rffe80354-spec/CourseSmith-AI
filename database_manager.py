@@ -1,7 +1,11 @@
 """
 Database Manager Module - Hybrid SQLite/Supabase License Management.
 Manages license keys with cloud synchronization, HWID bindings, and tier-based features.
-Supports dual-tier system: Standard (10 pages) vs Enterprise (300 pages, HWID, AI features).
+Supports four-tier system with cloud protection:
+- Trial (3 days, 10 pages, cloud-protected)
+- Standard (50 pages, cloud-protected)  
+- Enterprise (300 pages, all AI features, HWID binding, cloud-protected)
+- Lifetime (Enterprise features, no expiration, cloud-protected)
 
 Cloud Features:
 - Supabase integration for remote license validation
@@ -225,8 +229,8 @@ def create_license(email: str, key: str, tier: str, duration: str,
     Args:
         email: Buyer's email address.
         key: Generated license key.
-        tier: License tier ('standard' or 'extended').
-        duration: License duration ('lifetime', '1_month', '1_year').
+        tier: License tier ('trial', 'standard', 'enterprise', or 'lifetime').
+        duration: License duration ('3_day', '1_month', '3_month', '6_month', '1_year', 'lifetime').
         expires_at: Expiration date in ISO format (optional, calculated if None).
         notes: Additional notes about this license (optional).
         
@@ -240,9 +244,14 @@ def create_license(email: str, key: str, tier: str, duration: str,
     if expires_at is None:
         if duration == 'lifetime':
             expires_at = None
-        elif duration == '1_month' or duration == '3_day':
-            days = 3 if duration == '3_day' else 30
-            expires_at = (datetime.now() + timedelta(days=days)).isoformat()
+        elif duration == '3_day':
+            expires_at = (datetime.now() + timedelta(days=3)).isoformat()
+        elif duration == '1_month':
+            expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+        elif duration == '3_month':
+            expires_at = (datetime.now() + timedelta(days=90)).isoformat()
+        elif duration == '6_month':
+            expires_at = (datetime.now() + timedelta(days=180)).isoformat()
         elif duration == '1_year':
             expires_at = (datetime.now() + timedelta(days=365)).isoformat()
         else:

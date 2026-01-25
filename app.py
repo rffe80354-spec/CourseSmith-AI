@@ -173,6 +173,14 @@ class App(ctk.CTk):
         self.geometry("1000x700")
         self.minsize(900, 600)
 
+        # Set window icon if it exists (PyInstaller compatible)
+        icon_path = resource_path("resources/coursesmithai.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.iconbitmap(icon_path)
+            except Exception:
+                pass  # Icon not critical, continue without it
+
         # Initialize project
         self.project = CourseProject()
         
@@ -446,7 +454,14 @@ class App(ctk.CTk):
                 # Continue anyway - validation succeeded
         
         # Show success message
-        tier_label = "Extended" if tier == 'extended' else "Standard"
+        tier_label_map = {
+            'trial': 'Trial',
+            'standard': 'Standard',
+            'enterprise': 'Enterprise',
+            'lifetime': 'Lifetime',
+            'extended': 'Enterprise'  # Legacy support
+        }
+        tier_label = tier_label_map.get(tier, 'Trial')
         expires_msg = ""
         if expires_at:
             try:
@@ -535,7 +550,12 @@ class App(ctk.CTk):
         """Create the header bar with title, tier info, and settings."""
         header_frame = ctk.CTkFrame(self, height=60, corner_radius=0)
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
-        header_frame.grid_columnconfigure(1, weight=1)
+        # Configure grid columns: column 1 (tier label) expands to fill space
+        header_frame.grid_columnconfigure(0, weight=0)  # Title - fixed
+        header_frame.grid_columnconfigure(1, weight=1)  # Tier label - expands
+        header_frame.grid_columnconfigure(2, weight=0)  # Switch Key - fixed
+        header_frame.grid_columnconfigure(3, weight=0)  # Settings - fixed
+        header_frame.grid_columnconfigure(4, weight=0)  # User info - fixed
 
         # Title
         title_label = ctk.CTkLabel(
@@ -545,22 +565,42 @@ class App(ctk.CTk):
         )
         title_label.grid(row=0, column=0, padx=20, pady=15, sticky="w")
 
-        # Tier indicator
-        if self.license_tier == 'extended':
-            tier_label = ctk.CTkLabel(
-                header_frame,
-                text="✓ PRO Features Active",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color="#ffd700",  # Gold color for PRO
-            )
-        else:
-            tier_label = ctk.CTkLabel(
-                header_frame,
-                text="Standard License",
-                font=ctk.CTkFont(size=12),
-                text_color="#888888",
-            )
+        # Tier indicator - Support all 4 tiers
+        tier_display_map = {
+            'trial': ('Trial (10 pages)', '#ff9800'),
+            'standard': ('Standard (50 pages)', '#888888'),
+            'enterprise': ('✓ Enterprise (300 pages)', '#ffd700'),
+            'lifetime': ('✓ Lifetime (Unlimited)', '#00ff00'),
+            'extended': ('✓ Enterprise (300 pages)', '#ffd700')  # Legacy support
+        }
+        
+        tier_text, tier_color = tier_display_map.get(
+            self.license_tier, 
+            ('Trial', '#888888')
+        )
+        
+        tier_label = ctk.CTkLabel(
+            header_frame,
+            text=tier_text,
+            font=ctk.CTkFont(size=12, weight="bold" if self.license_tier in ('enterprise', 'lifetime', 'extended') else "normal"),
+            text_color=tier_color,
+        )
         tier_label.grid(row=0, column=1, padx=10, pady=15, sticky="w")
+
+        # Switch/Reset Key button - subtle secondary button
+        switch_key_btn = ctk.CTkButton(
+            header_frame,
+            text="🔑 Switch Key",
+            font=ctk.CTkFont(size=11),
+            width=95,
+            height=32,
+            fg_color="#444444",
+            hover_color="#555555",
+            border_width=1,
+            border_color="#666666",
+            command=self._switch_license_key,
+        )
+        switch_key_btn.grid(row=0, column=2, padx=10, pady=15, sticky="e")
 
         # Settings button
         settings_btn = ctk.CTkButton(
@@ -573,7 +613,7 @@ class App(ctk.CTk):
             hover_color="#666666",
             command=self._show_settings,
         )
-        settings_btn.grid(row=0, column=2, padx=10, pady=15, sticky="e")
+        settings_btn.grid(row=0, column=3, padx=10, pady=15, sticky="e")
 
         # User info
         if self.licensed_email:
@@ -583,7 +623,44 @@ class App(ctk.CTk):
                 font=ctk.CTkFont(size=12),
                 text_color="#28a745",
             )
-            user_label.grid(row=0, column=3, padx=20, pady=15, sticky="e")
+            user_label.grid(row=0, column=4, padx=20, pady=15, sticky="e")
+
+    def _switch_license_key(self):
+        """
+        Allow user to switch/reset their license key without deleting project data.
+        This enables upgrading from Standard to Enterprise or changing keys.
+        """
+        # Confirm action with user
+        confirm = messagebox.askyesno(
+            "Switch License Key",
+            "This will log you out and allow you to enter a new license key.\n\n"
+            "Your project data will NOT be deleted.\n\n"
+            "Do you want to continue?",
+            parent=self
+        )
+        
+        if not confirm:
+            return
+        
+        # Clear the current session and saved license
+        clear_session()
+        remove_license()
+        
+        # Reset license state
+        self.is_licensed = False
+        self.licensed_email = None
+        self.license_tier = None
+        
+        # Show info message
+        messagebox.showinfo(
+            "License Key Reset",
+            "Your license has been reset.\n\n"
+            "You will now be redirected to the login screen to enter a new key.",
+            parent=self
+        )
+        
+        # Recreate activation UI
+        self._create_activation_ui()
 
     def _show_settings(self):
         """Show the settings dialog for API key configuration."""
