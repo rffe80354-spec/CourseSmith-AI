@@ -189,13 +189,13 @@ def _extract_email_prefix(email: str, length: int = 6) -> str:
         length: Number of characters to extract (default 6).
         
     Returns:
-        str: Email prefix in uppercase.
+        str: Email prefix in uppercase, alphanumeric only.
     """
     prefix = email.split('@')[0]
+    # Remove all non-alphanumeric characters
+    prefix = ''.join(c for c in prefix if c.isalnum())
     # Take first N chars, pad with X if too short
     prefix = prefix[:length].upper().ljust(length, 'X')
-    # Replace non-alphanumeric with X
-    prefix = ''.join(c if c.isalnum() else 'X' for c in prefix)
     return prefix
 
 
