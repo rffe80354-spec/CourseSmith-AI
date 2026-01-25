@@ -24,6 +24,8 @@ Usage:
     python keygen_gui.py
 """
 
+import os
+import sys
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
@@ -31,6 +33,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
+from utils import resource_path
 from license_guard import generate_key, get_hwid
 from database_manager import (
     create_license, get_license_by_key, search_licenses,
@@ -139,6 +142,14 @@ class KeygenApp(ctk.CTk):
         self.title("Faleovad AI Enterprise - License Key Generator")
         self.geometry("900x750")
         self.minsize(800, 650)
+        
+        # Set window icon if it exists (PyInstaller compatible)
+        icon_path = resource_path("resources/admin_keygen.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.iconbitmap(icon_path)
+            except Exception:
+                pass  # Icon not critical, continue without it
         
         # Configure grid
         self.grid_columnconfigure(0, weight=1)

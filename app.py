@@ -173,6 +173,14 @@ class App(ctk.CTk):
         self.geometry("1000x700")
         self.minsize(900, 600)
 
+        # Set window icon if it exists (PyInstaller compatible)
+        icon_path = resource_path("resources/coursesmithai.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.iconbitmap(icon_path)
+            except Exception:
+                pass  # Icon not critical, continue without it
+
         # Initialize project
         self.project = CourseProject()
         
