@@ -3,6 +3,7 @@ PDF Engine Module - Professional PDF creation for Faleovad AI Enterprise.
 Uses ReportLab's Platypus engine for complex layout with headers/footers.
 SECURITY: Requires valid session token to function (anti-tamper protection).
 TIER CHECK: Standard licenses cannot use custom branding (logo/website).
+PAGINATION: Implements smart content distribution with tier-based page limits.
 """
 
 import os
@@ -11,7 +12,7 @@ import tempfile
 import shutil
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
+from reportlab.lib.units import inch, mm
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.platypus import (
     BaseDocTemplate,
@@ -28,6 +29,7 @@ from reportlab.pdfgen import canvas
 
 from utils import resource_path
 from session_manager import is_active, get_tier, SecurityError
+from generator import ContentDistributor, distribute_chapter_content
 
 
 class PDFBuilder:
@@ -42,18 +44,21 @@ class PDFBuilder:
     - Clean typography using Helvetica
     """
 
-    def __init__(self, filename):
+    def __init__(self, filename, tier=None):
         """
         Initialize the PDF builder with document settings.
 
         Args:
             filename: The output PDF filename.
+            tier: License tier for pagination limits (if None, fetched from session).
         """
         self.filename = filename
         self.page_width, self.page_height = letter
-        self.margin = 0.75 * inch
+        self.margin = 20 * mm  # 20mm margins on all sides as per spec
         self.logo_path = None
         self.website_url = ""
+        self.tier = tier if tier is not None else (get_tier() or 'trial')
+        self.distributor = None  # Will be created when needed
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
 
@@ -270,17 +275,14 @@ class PDFBuilder:
         # Page break after cover
         story.append(PageBreak())
 
-    def _parse_markdown_content(self, content):
+    def _parse_markdown_content_with_style(self, content, body_style):
         """
-        Parse markdown content and convert to Paragraph objects.
-        
-        Handles:
-        - # for section headers
-        - ## for subsection headers
-        - Regular paragraphs
+        Parse markdown content with a specific body text style.
+        Allows for per-page font scaling.
         
         Args:
             content: The markdown content string.
+            body_style: The paragraph style to use for body text.
             
         Returns:
             list: List of Paragraph/Spacer objects.
@@ -297,7 +299,7 @@ class PDFBuilder:
                 # Flush current paragraph
                 if current_para:
                     para_text = ' '.join(current_para)
-                    elements.append(Paragraph(para_text, self.styles["CustomBodyText"]))
+                    elements.append(Paragraph(para_text, body_style))
                     current_para = []
                 
                 # Add section header
@@ -308,7 +310,7 @@ class PDFBuilder:
                 # Flush current paragraph
                 if current_para:
                     para_text = ' '.join(current_para)
-                    elements.append(Paragraph(para_text, self.styles["CustomBodyText"]))
+                    elements.append(Paragraph(para_text, body_style))
                     current_para = []
                 
                 # Add main header (less common in chapter content)
@@ -319,7 +321,7 @@ class PDFBuilder:
                 # Empty line - flush paragraph
                 if current_para:
                     para_text = ' '.join(current_para)
-                    elements.append(Paragraph(para_text, self.styles["CustomBodyText"]))
+                    elements.append(Paragraph(para_text, body_style))
                     current_para = []
             else:
                 # Regular text - accumulate
@@ -332,42 +334,74 @@ class PDFBuilder:
         # Flush remaining paragraph
         if current_para:
             para_text = ' '.join(current_para)
-            elements.append(Paragraph(para_text, self.styles["CustomBodyText"]))
+            elements.append(Paragraph(para_text, body_style))
         
         return elements
 
     def _add_chapters(self, project, story):
         """
-        Add chapter content to the document.
+        Add chapter content to the document with smart pagination.
+        Uses generator.py for intelligent content distribution with tier-based limits.
 
         Args:
             project: CourseProject object with outline and chapter content.
             story: The story list to append elements to.
         """
+        # Create distributor if not exists
+        if not self.distributor:
+            self.distributor = ContentDistributor(self.tier)
+        
+        # Use smart content distribution
+        distributed_content = distribute_chapter_content(
+            project.chapters_content, 
+            tier=self.tier
+        )
+        
+        # Track total content to ensure we respect page limits
+        total_pages_used = 0
+        max_pages = self.distributor.max_pages
+        
         for i, chapter_title in enumerate(project.outline, 1):
+            # Check if we've hit the page limit
+            if total_pages_used >= max_pages:
+                break
+            
             # Chapter header
             header_text = f"Chapter {i}: {chapter_title}"
             story.append(Paragraph(header_text, self.styles["ChapterHeader"]))
-
-            # Get chapter content
-            content = project.chapters_content.get(chapter_title, "")
             
-            if content:
-                # Parse and add content with markdown support
-                elements = self._parse_markdown_content(content)
-                story.extend(elements)
+            # Get distributed pages for this chapter
+            chapter_pages = distributed_content.get(chapter_title, [])
             
-            # Page break after each chapter
-            story.append(PageBreak())
+            if chapter_pages:
+                for page_content in chapter_pages:
+                    # Check page limit before adding
+                    if total_pages_used >= max_pages:
+                        break
+                    
+                    # Parse content with standard style
+                    # The distributor already ensures content is <= 1000 chars
+                    elements = self._parse_markdown_content_with_style(
+                        page_content, 
+                        self.styles["CustomBodyText"]
+                    )
+                    
+                    story.extend(elements)
+                    total_pages_used += 1
+            
+            # Page break after each chapter (if not at limit)
+            if total_pages_used < max_pages:
+                story.append(PageBreak())
 
-    def build_pdf(self, project, output_path=None):
+    def build_pdf(self, project, output_path=None, tier=None):
         """
         Build the complete PDF document from a project.
-        Implements Shrink-to-Fit algorithm to respect strict page limits.
+        Implements strict page limits and smart content distribution.
 
         Args:
             project: CourseProject object with all project data.
             output_path: Optional output path (uses self.filename if not provided).
+            tier: License tier for pagination (if None, uses session tier).
 
         Returns:
             str: The path of the generated PDF, or None if unauthorized.
@@ -382,11 +416,18 @@ class PDFBuilder:
         if output_path:
             self.filename = output_path
         
+        # Update tier if provided and recreate distributor
+        if tier:
+            self.tier = tier
+            self.distributor = ContentDistributor(tier)
+        elif not self.distributor:
+            self.distributor = ContentDistributor(self.tier)
+        
         # Get branding options from project
         branding = project.branding
         
         # TIER CHECK: Standard licenses cannot use custom branding
-        current_tier = get_tier()
+        current_tier = self.tier
         if current_tier == 'standard':
             # Force branding to empty for Standard tier
             self.logo_path = ""
@@ -396,16 +437,16 @@ class PDFBuilder:
             self.logo_path = branding.get("logo_path", "")
             self.website_url = branding.get("website_url", "")
         
-        # Get target page count from project settings
+        # Get target page count from project settings (legacy support)
         target_page_count = None
         if hasattr(project, 'ui_settings') and project.ui_settings:
             target_page_count = project.ui_settings.get('target_page_count')
         
-        # If target page count specified, use Shrink-to-Fit algorithm
+        # Use tier-based limits or legacy target page count
         if target_page_count:
             return self._build_pdf_with_page_limit(project, target_page_count)
         else:
-            # Standard build without page limit
+            # Standard build with tier-based pagination
             return self._build_pdf_standard(project)
     
     def _build_pdf_standard(self, project):
@@ -626,7 +667,7 @@ class PDFBuilder:
 
 
 # Legacy function for backward compatibility
-def build_pdf_simple(title, audience, cover_image_path, chapters_data, output_path):
+def build_pdf_simple(title, audience, cover_image_path, chapters_data, output_path, tier=None):
     """
     Simple PDF builder for backward compatibility.
     
@@ -636,6 +677,7 @@ def build_pdf_simple(title, audience, cover_image_path, chapters_data, output_pa
         cover_image_path: Path to cover image.
         chapters_data: List of dicts with 'title' and 'content'.
         output_path: Output PDF path.
+        tier: License tier for pagination limits.
         
     Returns:
         str: Path to generated PDF.
@@ -650,6 +692,6 @@ def build_pdf_simple(title, audience, cover_image_path, chapters_data, output_pa
     for ch in chapters_data:
         project.chapters_content[ch['title']] = ch['content']
     
-    builder = PDFBuilder(output_path)
-    return builder.build_pdf(project)
+    builder = PDFBuilder(output_path, tier=tier)
+    return builder.build_pdf(project, tier=tier)
 
