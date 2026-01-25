@@ -103,6 +103,23 @@ TIER_LIMITS = {
     }
 }
 
+# Tier code mapping for license key generation
+TIER_CODE_MAP = {
+    'trial': 'TRL',
+    'standard': 'STD', 
+    'enterprise': 'ENT',
+    'lifetime': 'LFT'
+}
+
+# Tier extraction mapping for license key parsing
+TIER_EXTRACT_MAP = {
+    'TRL': 'trial',
+    'STD': 'standard',
+    'ENT': 'enterprise',
+    'LFT': 'lifetime',
+    'EXT': 'enterprise'  # Legacy support
+}
+
 
 def get_ntp_time() -> Optional[datetime]:
     """
@@ -155,8 +172,7 @@ def get_tier_limits(tier: str) -> Dict[str, Any]:
     Returns:
         dict: Tier configuration with limits and features.
     """
-    tier_lower = tier.lower() if tier else 'trial'
-    return TIER_LIMITS.get(tier_lower, TIER_LIMITS['trial'])
+    return TIER_LIMITS.get(tier.lower() if tier else 'trial', TIER_LIMITS['trial'])
 
 
 def get_hwid() -> str:
@@ -383,7 +399,7 @@ def generate_key(email: str, tier: str = 'trial', duration: str = 'lifetime') ->
     # Validate tier - support legacy naming
     if tier == 'extended':
         tier = 'enterprise'
-    if tier not in ('trial', 'standard', 'enterprise', 'lifetime'):
+    if tier not in TIER_LIMITS:
         tier = 'trial'
     
     # Validate duration
@@ -396,14 +412,8 @@ def generate_key(email: str, tier: str = 'trial', duration: str = 'lifetime') ->
     # Extract email prefix
     email_prefix = _extract_email_prefix(email, 6)
     
-    # Format tier code
-    tier_code_map = {
-        'trial': 'TRL',
-        'standard': 'STD', 
-        'enterprise': 'ENT',
-        'lifetime': 'LFT'
-    }
-    tier_code = tier_code_map.get(tier, 'TRL')
+    # Format tier code using module constant
+    tier_code = TIER_CODE_MAP.get(tier, 'TRL')
     
     # Format expiration code
     exp_code = _format_expiration_code(expires_at)
@@ -462,25 +472,11 @@ def _extract_tier_from_key(key: str) -> Optional[str]:
     # New format: EMAILPREFIX-TIER-EXPIRATION-SIGNATURE (4 parts)
     if len(parts) >= 4:
         tier_part = parts[1]
-        tier_map = {
-            'TRL': 'trial',
-            'STD': 'standard',
-            'ENT': 'enterprise',
-            'LFT': 'lifetime',
-            'EXT': 'enterprise'  # Legacy support
-        }
-        return tier_map.get(tier_part, 'trial')
+        return TIER_EXTRACT_MAP.get(tier_part, 'trial')
     
     # Old format: TIER-XXXX-XXXX-XXXX (4 parts starting with tier)
     if len(parts) == 4:
-        tier_map_old = {
-            'EXT': 'enterprise',
-            'STD': 'standard',
-            'TRL': 'trial',
-            'ENT': 'enterprise',
-            'LFT': 'lifetime'
-        }
-        return tier_map_old.get(parts[0], 'trial')
+        return TIER_EXTRACT_MAP.get(parts[0], 'trial')
     
     return None
 

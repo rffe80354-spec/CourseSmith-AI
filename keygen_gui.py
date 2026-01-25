@@ -719,7 +719,7 @@ class KeygenApp(ctk.CTk):
             messagebox.showinfo(
                 "Success",
                 f"License key generated and saved to database!\n"
-                f"Synced to Supabase cloud.\n\n"
+                f"Cloud sync enabled.\n\n"
                 f"Email: {email}\n"
                 f"Tier: {tier_name}\n"
                 f"Duration: {duration_name}{expires_msg}\n"
