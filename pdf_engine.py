@@ -59,6 +59,7 @@ class PDFBuilder:
         self.website_url = ""
         self.tier = tier if tier is not None else (get_tier() or 'trial')
         self.distributor = None  # Will be created when needed
+        self.custom_images = []  # List of custom image paths to embed
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
 
@@ -400,10 +401,64 @@ class PDFBuilder:
         
         return elements
 
+    def _create_chapter_image(self, image_path):
+        """
+        Create an Image element for embedding at the top of a chapter.
+        Handles scaling, aspect ratio preservation, and error handling.
+        
+        Args:
+            image_path: Absolute path to the image file.
+            
+        Returns:
+            Image: ReportLab Image object, or None if image cannot be loaded.
+        """
+        if not image_path or not os.path.exists(image_path):
+            print(f"Warning: Image not found, skipping: {image_path}")
+            return None
+        
+        # Validate image file extension
+        valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')
+        if not image_path.lower().endswith(valid_extensions):
+            print(f"Warning: Unsupported image format, skipping: {image_path}")
+            return None
+        
+        try:
+            # Create Image object
+            img = Image(image_path)
+            
+            # Calculate available page width (minus margins)
+            available_width = self.page_width - (2 * self.margin)
+            
+            # Get original aspect ratio
+            aspect_ratio = img.imageHeight / float(img.imageWidth)
+            
+            # Scale to fit page width while maintaining aspect ratio
+            img_width = available_width
+            img_height = img_width * aspect_ratio
+            
+            # Limit maximum height to prevent images from being too tall
+            max_height = 4 * inch
+            if img_height > max_height:
+                img_height = max_height
+                img_width = img_height / aspect_ratio
+            
+            # Set the dimensions
+            img.drawWidth = img_width
+            img.drawHeight = img_height
+            img.hAlign = "CENTER"
+            
+            return img
+            
+        except Exception as e:
+            # Log error but don't crash - skip this image
+            print(f"Error loading image {image_path}: {str(e)}")
+            return None
+
     def _add_chapters(self, project, story):
         """
         Add chapter content to the document with smart pagination.
         Uses generator.py for intelligent content distribution with tier-based limits.
+        Embeds custom images at the top of chapters.
 
         Args:
             project: CourseProject object with outline and chapter content.
@@ -432,6 +487,16 @@ class PDFBuilder:
             header_text = f"Chapter {i}: {chapter_title}"
             story.append(Paragraph(header_text, self.styles["ChapterHeader"]))
             
+            # Embed custom image at the top of this chapter (if available)
+            # Distribute images across chapters: first image -> first chapter, etc.
+            chapter_index = i - 1  # 0-based index
+            if chapter_index < len(self.custom_images):
+                image_path = self.custom_images[chapter_index]
+                image_element = self._create_chapter_image(image_path)
+                if image_element:
+                    story.append(image_element)
+                    story.append(Spacer(1, 0.2 * inch))  # Small spacer after image
+            
             # Get distributed pages for this chapter
             chapter_pages = distributed_content.get(chapter_title, [])
             
@@ -455,7 +520,7 @@ class PDFBuilder:
             if total_pages_used < max_pages:
                 story.append(PageBreak())
 
-    def build_pdf(self, project, output_path=None, tier=None):
+    def build_pdf(self, project, output_path=None, tier=None, custom_images=None):
         """
         Build the complete PDF document from a project.
         Implements strict page limits and smart content distribution.
@@ -464,6 +529,7 @@ class PDFBuilder:
             project: CourseProject object with all project data.
             output_path: Optional output path (uses self.filename if not provided).
             tier: License tier for pagination (if None, uses session tier).
+            custom_images: Optional list of image file paths to embed at chapter tops.
 
         Returns:
             str: The path of the generated PDF, or None if unauthorized.
@@ -477,6 +543,17 @@ class PDFBuilder:
         
         if output_path:
             self.filename = output_path
+        
+        # Store custom images (convert to absolute paths for safety)
+        self.custom_images = []
+        if custom_images:
+            for img_path in custom_images:
+                if img_path:
+                    abs_path = os.path.abspath(img_path)
+                    if os.path.exists(abs_path):
+                        self.custom_images.append(abs_path)
+                    else:
+                        print(f"Warning: Image not found, skipping: {img_path}")
         
         # Update tier if provided and recreate distributor
         if tier:
