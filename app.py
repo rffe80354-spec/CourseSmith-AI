@@ -3,17 +3,25 @@ CourseSmith AI Enterprise - Main Application GUI.
 A commercial desktop tool to generate educational PDF books using AI with DRM protection.
 Uses session token system for anti-tamper protection.
 Features tiered licensing: Standard ($59) vs Extended ($249).
+
+Enterprise Features:
+- Splash screen with loading animation
+- Persistent login with encrypted session storage
+- HWID binding for hardware-locked licenses
+- Expiration date checking
+- Animated UI transitions
 """
 
 import os
 import re
 import threading
+import time
 from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, Menu
 
 from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, get_underlying_tk_widget
-from license_guard import validate_license
+from license_guard import validate_license, load_license, save_license, remove_license, get_hwid
 from session_manager import set_session, set_token, is_active, get_tier, is_extended, clear_session
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator, AIWorkerBase
@@ -23,6 +31,113 @@ from pdf_engine import PDFBuilder
 # Configure appearance
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
+
+
+class SplashScreen(ctk.CTkToplevel):
+    """Splash screen with loading animation for main application."""
+    
+    def __init__(self, parent):
+        """Initialize splash screen."""
+        super().__init__(parent)
+        
+        # Configure window
+        self.title("")
+        self.geometry("600x400")
+        self.resizable(False, False)
+        
+        # Remove window decorations
+        self.overrideredirect(True)
+        
+        # Center on screen
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() // 2) - (600 // 2)
+        y = (self.winfo_screenheight() // 2) - (400 // 2)
+        self.geometry(f"600x400+{x}+{y}")
+        
+        # Create UI
+        self._create_ui()
+        
+        # Make sure it's on top
+        self.lift()
+        self.focus_force()
+        
+    def _create_ui(self):
+        """Create splash screen UI."""
+        # Main frame with depth and shadow effect
+        main_frame = ctk.CTkFrame(
+            self, 
+            corner_radius=25, 
+            border_width=3, 
+            border_color=("#1f6aa5", "#3b8ed0"),
+            fg_color=("#2b2b2b", "#1a1a1a")
+        )
+        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
+        
+        # Logo/Icon
+        logo_label = ctk.CTkLabel(
+            main_frame,
+            text="📚",
+            font=ctk.CTkFont(size=100)
+        )
+        logo_label.pack(pady=(60, 10))
+        
+        # App name
+        app_name_label = ctk.CTkLabel(
+            main_frame,
+            text="CourseSmith AI Enterprise",
+            font=ctk.CTkFont(size=32, weight="bold"),
+            text_color=("#1f6aa5", "#3b8ed0")
+        )
+        app_name_label.pack(pady=(0, 5))
+        
+        # Subtitle
+        subtitle_label = ctk.CTkLabel(
+            main_frame,
+            text="Professional PDF Course Generator",
+            font=ctk.CTkFont(size=16),
+            text_color=("gray60", "gray50")
+        )
+        subtitle_label.pack(pady=(0, 50))
+        
+        # Progress bar with animation
+        self.progress = ctk.CTkProgressBar(
+            main_frame,
+            width=400,
+            height=18,
+            corner_radius=10,
+            mode="indeterminate",
+            progress_color=("#1f6aa5", "#3b8ed0")
+        )
+        self.progress.pack(pady=(0, 15))
+        self.progress.start()
+        
+        # Status label
+        self.status_label = ctk.CTkLabel(
+            main_frame,
+            text="Initializing...",
+            font=ctk.CTkFont(size=13),
+            text_color=("gray60", "gray50")
+        )
+        self.status_label.pack(pady=(0, 40))
+        
+        # Version info
+        version_label = ctk.CTkLabel(
+            main_frame,
+            text="v2.0 Enterprise Edition",
+            font=ctk.CTkFont(size=10),
+            text_color=("gray40", "gray30")
+        )
+        version_label.pack(pady=(0, 20))
+    
+    def update_status(self, text):
+        """Update status message."""
+        self.status_label.configure(text=text)
+        self.update()
+    
+    def close_splash(self):
+        """Close splash screen with fade effect."""
+        self.progress.stop()
+        self.destroy()
 
 
 def bind_clipboard_menu(widget):
@@ -76,20 +191,88 @@ class App(ctk.CTk):
         # Bind global keyboard shortcuts for clipboard operations
         self._bind_global_shortcuts()
 
-        # Check license status
-        self._check_license()
+        # Hide main window initially
+        self.withdraw()
 
-    def _check_license(self):
-        """Initialize the application to require fresh authentication.
+        # Show splash screen and check license
+        self._show_splash()
+
+    def _show_splash(self):
+        """Show splash screen with loading animation."""
+        splash = SplashScreen(self)
         
-        Security: Always requires fresh login. No persistent sessions.
-        The user must enter their email and license key every time the app starts.
+        def load_app():
+            """Simulate loading and check license."""
+            time.sleep(0.3)
+            splash.update_status("Loading license system...")
+            time.sleep(0.3)
+            splash.update_status("Checking saved session...")
+            time.sleep(0.3)
+            
+            # Check for saved license
+            has_session = self._check_license_silent()
+            
+            if has_session:
+                splash.update_status("Restoring session...")
+                time.sleep(0.3)
+            else:
+                splash.update_status("No saved session found...")
+                time.sleep(0.3)
+            
+            splash.update_status("Loading UI components...")
+            time.sleep(0.3)
+            splash.update_status("Ready!")
+            time.sleep(0.2)
+            
+            # Close splash and show main window
+            self.after(0, lambda: self._finish_loading(splash, has_session))
+        
+        # Run loading in thread
+        thread = threading.Thread(target=load_app, daemon=True)
+        thread.start()
+    
+    def _finish_loading(self, splash, has_session):
+        """Finish loading and show appropriate screen."""
+        splash.close_splash()
+        self.deiconify()
+        
+        # Center window
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() // 2) - (1000 // 2)
+        y = (self.winfo_screenheight() // 2) - (700 // 2)
+        self.geometry(f"1000x700+{x}+{y}")
+        
+        if has_session:
+            # Show main UI directly
+            self._create_main_ui()
+        else:
+            # Show login screen
+            self._create_activation_ui()
+
+    def _check_license_silent(self):
         """
-        # Security: Always start with no session - require fresh login every time
+        Check for saved license session silently (no UI).
+        Returns True if valid session found, False otherwise.
+        """
+        try:
+            # Try to load saved session
+            token, email, tier, expires_at = load_license()
+            
+            if token and email and tier:
+                # Valid session found
+                set_session(token, email, tier)
+                self.is_licensed = True
+                self.licensed_email = email
+                self.license_tier = tier
+                return True
+        except Exception as e:
+            print(f"Failed to load saved session: {e}")
+        
+        # No valid session
         self.is_licensed = False
         self.license_tier = None
         clear_session()
-        self._create_activation_ui()
+        return False
 
     def _create_activation_ui(self):
         """Create the license activation screen with modern, professional design."""
@@ -97,9 +280,15 @@ class App(ctk.CTk):
         for widget in self.winfo_children():
             widget.destroy()
 
-        # Main activation frame - centered with modern styling
-        self.activation_frame = ctk.CTkFrame(self, corner_radius=20, border_width=2, border_color=("#3b8ed0", "#1f6aa5"))
-        self.activation_frame.grid(row=0, column=0, padx=100, pady=100, sticky="nsew")
+        # Main activation frame - centered with modern styling and depth
+        self.activation_frame = ctk.CTkFrame(
+            self, 
+            corner_radius=20, 
+            border_width=3, 
+            border_color=("#3b8ed0", "#1f6aa5"),
+            fg_color=("#2b2b2b", "#1a1a1a")
+        )
+        self.activation_frame.grid(row=0, column=0, padx=100, pady=80, sticky="nsew")
         self.activation_frame.grid_columnconfigure(0, weight=1)
 
         # Logo/Title with enhanced styling
@@ -115,7 +304,7 @@ class App(ctk.CTk):
             self.activation_frame,
             text="Professional PDF Course Generator",
             font=ctk.CTkFont(size=14),
-            text_color="gray",
+            text_color=("gray60", "gray50"),
         )
         subtitle_label.grid(row=1, column=0, padx=40, pady=(0, 5))
         
@@ -157,15 +346,26 @@ class App(ctk.CTk):
 
         self.key_entry = ctk.CTkEntry(
             self.activation_frame,
-            placeholder_text="XXXX-XXXX-XXXX-XXXX",
+            placeholder_text="XXXXXX-XXX-XXXXXXXX-XXXXXXXX",
             width=420,
             height=50,
             font=ctk.CTkFont(size=14),
             border_width=2,
             corner_radius=10,
         )
-        self.key_entry.grid(row=6, column=0, padx=40, pady=(0, 35))
+        self.key_entry.grid(row=6, column=0, padx=40, pady=(0, 20))
         bind_clipboard_menu(self.key_entry)
+
+        # Remember me checkbox
+        self.remember_var = ctk.BooleanVar(value=True)
+        remember_checkbox = ctk.CTkCheckBox(
+            self.activation_frame,
+            text="Remember me on this computer",
+            variable=self.remember_var,
+            font=ctk.CTkFont(size=12),
+            corner_radius=5
+        )
+        remember_checkbox.grid(row=7, column=0, padx=40, pady=(0, 20))
 
         # Activate button with enhanced styling
         self.activate_btn = ctk.CTkButton(
@@ -180,10 +380,10 @@ class App(ctk.CTk):
             border_width=0,
             command=self._on_activate_click,
         )
-        self.activate_btn.grid(row=7, column=0, padx=40, pady=(10, 50))
+        self.activate_btn.grid(row=8, column=0, padx=40, pady=(10, 50))
 
     def _on_activate_click(self):
-        """Handle license activation."""
+        """Handle license activation with enterprise features."""
         email = self.email_entry.get().strip()
         key = self.key_entry.get().strip()
 
@@ -195,32 +395,79 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "Please enter your license key.")
             return
 
-        # Validate the license and get session info
-        result = validate_license(email, key)
+        # Validate the license with new enterprise validation
+        result = validate_license(email, key, check_expiration=True)
         
-        if result and result.get('valid'):
-            # Set the session with token, email, and tier for anti-tamper protection
-            # Security: Session is volatile only - no persistence to disk
-            tier = result.get('tier', 'standard')
-            set_session(result['token'], email, tier)
-            self.is_licensed = True
-            self.licensed_email = email
-            self.license_tier = tier
+        if not result or not result.get('valid'):
+            # Show appropriate error message
+            error_msg = result.get('message', 'Invalid license key or email.') if result else 'Invalid license key or email.'
             
-            tier_label = "Extended" if tier == 'extended' else "Standard"
-            messagebox.showinfo(
-                "Success",
-                f"License activated successfully!\n\n"
-                f"Tier: {tier_label}\n\n"
-                f"Welcome to Faleovad AI Enterprise.",
-            )
-            self._create_main_ui()
+            # Check if expired
+            if result and result.get('expired'):
+                expires_at = result.get('expires_at')
+                if expires_at:
+                    try:
+                        exp_date = datetime.fromisoformat(expires_at).strftime('%Y-%m-%d')
+                        error_msg = f"License Expired\n\nYour license expired on {exp_date}.\nPlease contact support to renew your license."
+                    except:
+                        error_msg = "License Expired\n\nYour license has expired.\nPlease contact support to renew your license."
+                else:
+                    error_msg = "License Expired\n\nYour license has expired.\nPlease contact support to renew your license."
+            
+            messagebox.showerror("License Validation Failed", error_msg)
+            return
+        
+        # Valid license - extract info
+        tier = result.get('tier', 'standard')
+        token = result.get('token')
+        expires_at = result.get('expires_at')
+        
+        # Set the session
+        set_session(token, email, tier)
+        self.is_licensed = True
+        self.licensed_email = email
+        self.license_tier = tier
+        
+        # Save session if "Remember me" is checked
+        remember_me = self.remember_var.get()
+        if remember_me:
+            try:
+                save_license(email, key, tier, expires_at)
+            except Exception as e:
+                print(f"Warning: Failed to save session: {e}")
+                # Continue anyway - validation succeeded
+        
+        # Show success message
+        tier_label = "Extended" if tier == 'extended' else "Standard"
+        expires_msg = ""
+        if expires_at:
+            try:
+                exp_date = datetime.fromisoformat(expires_at).strftime('%Y-%m-%d')
+                expires_msg = f"\nExpires: {exp_date}"
+            except:
+                expires_msg = ""
         else:
-            messagebox.showerror(
-                "Invalid License",
-                "The license key is not valid for this email address.\n\n"
-                "Please check your email and key, or contact support.",
-            )
+            expires_msg = "\nExpires: Never (Lifetime)"
+        
+        # Get HWID for display
+        hwid = get_hwid()
+        
+        messagebox.showinfo(
+            "Success",
+            f"License activated successfully!\n\n"
+            f"Tier: {tier_label}{expires_msg}\n"
+            f"Hardware ID: {hwid[:16]}...\n\n"
+            f"Welcome to CourseSmith AI Enterprise!",
+        )
+        
+        # Transition to main UI with fade effect
+        self._transition_to_main_ui()
+    
+    def _transition_to_main_ui(self):
+        """Transition from login to main UI with animation."""
+        # Simple fade - destroy activation UI and create main UI
+        # In a more advanced version, you could implement actual fade effects
+        self._create_main_ui()
 
     def _create_main_ui(self):
         """Create the main application UI with tabs."""
