@@ -91,7 +91,7 @@ def check_remote_ban():
                     if current_date > expiration_date:
                         messagebox.showerror(
                             "Subscription Expired",
-                            "Subscription expired. Please renew on Whop."
+                            "Your subscription has expired. Please renew it on Whop to continue using CourseSmith AI."
                         )
                         sys.exit()
                 except Exception:
