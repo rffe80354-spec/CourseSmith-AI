@@ -257,6 +257,22 @@ class LicenseManagerApp(ctk.CTk):
         )
         self.max_devices_entry.grid(row=3, column=1, padx=5, pady=10, sticky="w")
         
+        # Quantity Input (for bulk generation)
+        quantity_label = ctk.CTkLabel(
+            form_frame,
+            text="Quantity:",
+            font=ctk.CTkFont(size=12)
+        )
+        quantity_label.grid(row=4, column=0, padx=(10, 5), pady=10, sticky="e")
+        
+        self.quantity_entry = ctk.CTkEntry(
+            form_frame,
+            width=100,
+            placeholder_text="1"
+        )
+        self.quantity_entry.insert(0, "1")
+        self.quantity_entry.grid(row=4, column=1, padx=5, pady=10, sticky="w")
+        
         # Initialize with Free Trial defaults
         self._on_tier_changed("Free Trial")
         
@@ -272,6 +288,19 @@ class LicenseManagerApp(ctk.CTk):
             hover_color=("#248a5c", "#248a5c")
         )
         self.generate_btn.grid(row=3, column=2, columnspan=2, padx=20, pady=10)
+        
+        # Bulk Generate Button
+        self.bulk_generate_btn = ctk.CTkButton(
+            form_frame,
+            text="📦 Bulk Generate to .txt",
+            command=self._bulk_generate_and_save_to_file,
+            width=200,
+            height=35,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=("#3b8ed0", "#3b8ed0"),
+            hover_color=("#1f6aa5", "#1f6aa5")
+        )
+        self.bulk_generate_btn.grid(row=4, column=2, columnspan=2, padx=20, pady=10)
         
         # Table Frame
         table_frame = ctk.CTkFrame(self)
@@ -619,6 +648,124 @@ class LicenseManagerApp(ctk.CTk):
             )
             self.status_label.configure(text=f"✗ Failed to generate license")
         finally:
+            self.generate_btn.configure(state="normal")
+    
+    def _bulk_generate_and_save_to_file(self):
+        """Generate multiple license keys and save them to a text file."""
+        # Get input values
+        email = self.email_entry.get().strip()
+        tier = self.tier_dropdown.get()
+        
+        # Get manual override values from entry fields
+        duration_str = self.duration_entry.get().strip()
+        page_limit_str = self.page_limit_entry.get().strip()
+        max_devices_str = self.max_devices_entry.get().strip()
+        quantity_str = self.quantity_entry.get().strip()
+        
+        # Validate email (optional for bulk generation)
+        if not email:
+            email = "bulk@generated.com"  # Default email for bulk generation
+        
+        # Validate tier selection
+        if tier not in TIER_CONFIG:
+            messagebox.showerror("Validation Error", "Please select a valid license tier.")
+            return
+        
+        # Validate and parse manual input values
+        duration_days = self._validate_positive_integer(duration_str, "duration")
+        if duration_days is None:
+            return
+        
+        page_limit = self._validate_positive_integer(page_limit_str, "page limit")
+        if page_limit is None:
+            return
+        
+        max_devices = self._validate_positive_integer(max_devices_str, "max devices")
+        if max_devices is None:
+            return
+        
+        # Validate quantity
+        quantity = self._validate_positive_integer(quantity_str, "quantity")
+        if quantity is None:
+            return
+        
+        try:
+            # Disable buttons during generation
+            self.bulk_generate_btn.configure(state="disabled")
+            self.generate_btn.configure(state="disabled")
+            self.status_label.configure(text=f"Generating {quantity} licenses...")
+            
+            generated_keys = []
+            
+            # Loop to generate 'quantity' number of keys
+            for i in range(quantity):
+                # Generate a secure license key using secrets module
+                # Format: CS-[32 random hex characters]
+                license_key = f"CS-{secrets.token_hex(16)}"
+                
+                # Calculate valid_until based on manual duration input
+                valid_until = datetime.now(timezone.utc) + timedelta(days=duration_days)
+                valid_until_iso = valid_until.isoformat()
+                
+                # Get current timestamp for created_at
+                created_at = datetime.now(timezone.utc).isoformat()
+                
+                # Prepare license data for insertion
+                license_data = {
+                    'email': email,
+                    'license_key': license_key,
+                    'tier': tier,
+                    'page_limit': page_limit,
+                    'valid_until': valid_until_iso,
+                    'created_at': created_at,
+                    'max_devices': max_devices,
+                    'used_hwids': []  # Initialize as empty list
+                }
+                
+                # Insert EACH key into Supabase immediately
+                response = self.supabase.table("licenses").insert(license_data).execute()
+                
+                # Collect generated key
+                generated_keys.append(license_key)
+                
+                # Update status
+                self.status_label.configure(text=f"Generated {i+1}/{quantity} licenses...")
+                self.update()
+            
+            # Generate filename: keys_[TIER]_[DATE].txt
+            current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
+            tier_clean = tier.replace(" ", "_")
+            filename = f"keys_{tier_clean}_{current_date}.txt"
+            
+            # Save keys to file (one key per line)
+            with open(filename, 'w') as f:
+                for key in generated_keys:
+                    f.write(f"{key}\n")
+            
+            # Show success message
+            messagebox.showinfo(
+                "Success",
+                f"Generated {quantity} keys and saved to {filename}\n\n"
+                f"Tier: {tier}\n"
+                f"Duration: {duration_days} days\n"
+                f"Page Limit: {page_limit}\n"
+                f"Max Devices: {max_devices}\n\n"
+                f"File location: {os.path.abspath(filename)}"
+            )
+            
+            self.status_label.configure(text=f"✓ Generated {quantity} keys → {filename}")
+            
+            # Refresh the list
+            self.refresh_licenses()
+            
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"Failed to generate licenses:\n{str(e)}\n\nPlease check Supabase configuration and table schema."
+            )
+            self.status_label.configure(text=f"✗ Failed to generate licenses")
+        finally:
+            self.bulk_generate_btn.configure(state="normal")
             self.generate_btn.configure(state="normal")
     
     def refresh_licenses(self):
