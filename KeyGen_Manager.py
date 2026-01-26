@@ -315,21 +315,22 @@ class LicenseManagerApp(ctk.CTk):
         if not license_data:
             return
         
-        # Calculate expiration date (30 days from now)
-        expiration_date = datetime.now() + timedelta(days=30)
+        # Calculate expiration date (30 days from now in UTC)
+        from datetime import timezone
+        expiration_date = datetime.now(timezone.utc) + timedelta(days=30)
         expiration_iso = expiration_date.isoformat()
         
         # Confirm action
         confirm = messagebox.askyesno(
             "Set Expiration Date",
-            f"Set expiration date for {license_data['email']}?\n\nKey: {license_data['key']}\n\nExpires: {expiration_date.strftime('%Y-%m-%d %H:%M')}\n\n(+30 days from now)"
+            f"Set expiration date for {license_data['email']}?\n\nKey: {license_data['key']}\n\nExpires: {expiration_date.strftime('%Y-%m-%d %H:%M')} UTC\n\n(+30 days from now)"
         )
         
         if confirm:
             try:
                 # Update in Supabase
                 self.supabase.table("licenses").update({"valid_until": expiration_iso}).eq("id", license_data["id"]).execute()
-                messagebox.showinfo("Success", f"Expiration date set to {expiration_date.strftime('%Y-%m-%d %H:%M')}")
+                messagebox.showinfo("Success", f"Expiration date set to {expiration_date.strftime('%Y-%m-%d %H:%M')} UTC")
                 self.status_label.configure(text=f"✓ Expiration set for: {license_data['email']}")
                 self.refresh_licenses()
             except Exception as e:
