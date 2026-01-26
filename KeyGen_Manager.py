@@ -499,7 +499,7 @@ class LicenseManagerApp(ctk.CTk):
             field_name: The name of the field (for error messages)
             
         Returns:
-            The integer value if valid, None otherwise
+            The integer value if valid, None if invalid (displays error dialog)
         """
         try:
             value = int(value_str)
@@ -588,14 +588,16 @@ class LicenseManagerApp(ctk.CTk):
             
             # Show success message (truncate key at 35 chars for display readability)
             key_display = license_key if len(license_key) <= 35 else license_key[:35] + "..."
+            duration_label = f"{duration_days} day" if duration_days == 1 else f"{duration_days} days"
+            device_label = f"{max_devices} device" if max_devices == 1 else f"{max_devices} devices"
             messagebox.showinfo(
                 "Success",
                 f"License generated successfully!\n\n"
                 f"Email: {email}\n"
                 f"Tier: {tier}\n"
-                f"Duration: {duration_days} days\n"
+                f"Duration: {duration_label}\n"
                 f"Page Limit: {page_limit}\n"
-                f"Max Devices: {max_devices}\n"
+                f"Max Devices: {device_label}\n"
                 f"Valid Until: {valid_until.strftime('%Y-%m-%d %H:%M')} UTC\n"
                 f"License Key: {key_display}\n\n"
                 f"The full license key has been copied to clipboard."
