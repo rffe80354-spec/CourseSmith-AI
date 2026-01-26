@@ -59,8 +59,8 @@ def check_remote_ban():
         # Connect to Supabase
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Query licenses table for current HWID
-        response = supabase.table("licenses").select("*").eq("hwid", hwid).execute()
+        # Query licenses table for current HWID (only fetch is_banned field)
+        response = supabase.table("licenses").select("is_banned").eq("hwid", hwid).execute()
         
         # Check if HWID exists and is banned
         if response.data and len(response.data) > 0:
@@ -68,15 +68,7 @@ def check_remote_ban():
             
             # Check if license is banned
             if license_record.get("is_banned") is True:
-                # Hide any existing windows
-                try:
-                    import tkinter as tk
-                    root = tk.Tk()
-                    root.withdraw()
-                except Exception:
-                    pass
-                
-                # Show error message
+                # Show error message (messagebox works without creating root window)
                 messagebox.showerror(
                     "Access Denied",
                     "Access Denied. License Revoked."
