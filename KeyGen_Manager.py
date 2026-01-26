@@ -22,10 +22,11 @@ Supabase Connection:
 
 import os
 import sys
+import re
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
 
@@ -52,8 +53,14 @@ class LicenseManagerApp(ctk.CTk):
         
         # Window configuration
         self.title("CourseSmith AI - License Manager (Admin Panel)")
-        self.geometry("1200x700")
-        self.minsize(1000, 600)
+        self.geometry("1200x750")
+        self.minsize(1000, 650)
+        
+        # Set icon
+        try:
+            self.iconbitmap("resources/admin_keygen.ico")
+        except Exception as e:
+            print(f"Warning: Could not load icon: {e}")
         
         # Set appearance
         ctk.set_appearance_mode("Dark")
@@ -140,6 +147,62 @@ class LicenseManagerApp(ctk.CTk):
             font=ctk.CTkFont(size=12, weight="bold")
         )
         self.count_label.pack(side="right", padx=5)
+        
+        # Add License Form Frame
+        form_frame = ctk.CTkFrame(self)
+        form_frame.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # Form Title
+        form_title = ctk.CTkLabel(
+            form_frame,
+            text="➕ Add New License",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=("#1f6aa5", "#3b8ed0")
+        )
+        form_title.grid(row=0, column=0, columnspan=4, pady=(10, 15), sticky="w", padx=10)
+        
+        # Email Input
+        email_label = ctk.CTkLabel(
+            form_frame,
+            text="Email:",
+            font=ctk.CTkFont(size=12)
+        )
+        email_label.grid(row=1, column=0, padx=(10, 5), pady=10, sticky="e")
+        
+        self.email_entry = ctk.CTkEntry(
+            form_frame,
+            width=250,
+            placeholder_text="user@example.com"
+        )
+        self.email_entry.grid(row=1, column=1, padx=5, pady=10, sticky="w")
+        
+        # Duration Input
+        duration_label = ctk.CTkLabel(
+            form_frame,
+            text="Duration (days):",
+            font=ctk.CTkFont(size=12)
+        )
+        duration_label.grid(row=1, column=2, padx=(20, 5), pady=10, sticky="e")
+        
+        self.duration_entry = ctk.CTkEntry(
+            form_frame,
+            width=120,
+            placeholder_text="30"
+        )
+        self.duration_entry.grid(row=1, column=3, padx=5, pady=10, sticky="w")
+        
+        # Generate Button
+        self.generate_btn = ctk.CTkButton(
+            form_frame,
+            text="🔑 Generate & Add to Database",
+            command=self._generate_and_add_license,
+            width=250,
+            height=35,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=("#2fa572", "#2fa572"),
+            hover_color=("#248a5c", "#248a5c")
+        )
+        self.generate_btn.grid(row=1, column=4, padx=20, pady=10)
         
         # Table Frame
         table_frame = ctk.CTkFrame(self)
@@ -277,7 +340,8 @@ class LicenseManagerApp(ctk.CTk):
         license_data = {
             "id": values[0],
             "email": values[1],
-            "key": values[2],
+            "key": values[2],  # This will work for both 'key' and 'license_key'
+            "license_key": values[2],  # Add for compatibility
             "hwid": values[3],
             "tier": values[4],
             "duration": values[5],
@@ -439,6 +503,101 @@ class LicenseManagerApp(ctk.CTk):
         if self._update_ban_status(license_data["id"], license_data["email"], new_status):
             self.refresh_licenses()
     
+    def _generate_and_add_license(self):
+        """Generate a new license key and add it to the database."""
+        # Get input values
+        email = self.email_entry.get().strip()
+        duration_str = self.duration_entry.get().strip()
+        
+        # Validate email
+        if not email:
+            messagebox.showerror("Validation Error", "Please enter an email address.")
+            return
+        
+        # Simple email validation pattern
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            messagebox.showerror("Validation Error", "Please enter a valid email address.")
+            return
+        
+        # Validate duration
+        try:
+            duration_days = int(duration_str)
+            if duration_days <= 0:
+                raise ValueError("Duration must be positive")
+        except ValueError:
+            messagebox.showerror("Validation Error", "Please enter a valid duration (positive integer).")
+            return
+        
+        # Check if license_guard is available
+        if not LICENSE_GUARD_AVAILABLE:
+            messagebox.showerror(
+                "Error",
+                "License generation is not available.\nlicense_guard module not found."
+            )
+            return
+        
+        try:
+            # Disable button during generation
+            self.generate_btn.configure(state="disabled")
+            self.status_label.configure(text="Generating license...")
+            
+            # Generate license key using license_guard
+            # Note: We use 'trial' tier and calculate custom expiration based on user input
+            license_key, _ = generate_key(email, tier='trial', duration='lifetime')
+            
+            # Calculate valid_until based on duration_days (overrides generate_key's expiration)
+            valid_until = datetime.now(timezone.utc) + timedelta(days=duration_days)
+            valid_until_iso = valid_until.isoformat()
+            
+            # Insert into Supabase with new schema columns
+            license_data = {
+                'email': email,
+                'license_key': license_key,  # Using 'license_key' column
+                'hwid': None,  # No HWID initially
+                'is_banned': False,  # Not banned by default
+                'valid_until': valid_until_iso,  # Expiration date
+                'whop_user_id': None,  # No Whop user ID initially
+                'tier': 'trial',  # Default tier
+                'duration': f"{duration_days}_days",  # Duration as string
+                'created_at': datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Insert into Supabase
+            response = self.supabase.table("licenses").insert(license_data).execute()
+            
+            # Clear input fields
+            self.email_entry.delete(0, 'end')
+            self.duration_entry.delete(0, 'end')
+            
+            # Show success message
+            messagebox.showinfo(
+                "Success",
+                f"License generated successfully!\n\n"
+                f"Email: {email}\n"
+                f"License Key: {license_key}\n"
+                f"Valid Until: {valid_until.strftime('%Y-%m-%d %H:%M')} UTC\n\n"
+                f"The license key has been copied to clipboard."
+            )
+            
+            # Copy key to clipboard
+            self.clipboard_clear()
+            self.clipboard_append(license_key)
+            
+            self.status_label.configure(text=f"✓ License created: {license_key}")
+            
+            # Refresh the list
+            self.refresh_licenses()
+            
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"Failed to generate license:\n{str(e)}\n\nPlease check Supabase configuration and table schema."
+            )
+            self.status_label.configure(text=f"✗ Failed to generate license")
+        finally:
+            self.generate_btn.configure(state="normal")
+    
     def refresh_licenses(self):
         """Refresh the license list from Supabase."""
         self.status_label.configure(text="Loading licenses...")
@@ -481,7 +640,8 @@ class LicenseManagerApp(ctk.CTk):
             # Format data for display
             license_id = license_data.get("id", "")
             email = license_data.get("email", "N/A")
-            key = license_data.get("key", "N/A")
+            # Try both 'license_key' and 'key' columns for compatibility
+            key = license_data.get("license_key") or license_data.get("key", "N/A")
             hwid = license_data.get("hwid", "N/A")
             tier = license_data.get("tier", "N/A")
             duration = license_data.get("duration", "N/A")
@@ -496,8 +656,8 @@ class LicenseManagerApp(ctk.CTk):
                 except:
                     pass
             
-            # Get subscription_id
-            subscription_id = license_data.get("subscription_id", "N/A")
+            # Get subscription_id or whop_user_id
+            subscription_id = license_data.get("subscription_id") or license_data.get("whop_user_id", "N/A")
             
             # Format created_at timestamp
             created_at = license_data.get("created_at", "N/A")
