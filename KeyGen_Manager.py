@@ -44,20 +44,20 @@ TIER_CONFIG = {
         "page_limit": 10,
         "max_devices": 1
     },
-    "Standard": {
-        "days": 30,
-        "page_limit": 50,
+    "Weekly Pass": {
+        "days": 7,
+        "page_limit": 30,
         "max_devices": 1
     },
-    "Extended": {
+    "Standard": {
         "days": 30,
-        "page_limit": 100,
-        "max_devices": 2
+        "page_limit": 150,
+        "max_devices": 1
     },
     "Lifetime": {
-        "days": 36135,  # 99 years (99 * 365.25 accounting for leap years)
+        "days": 36500,  # 100 years
         "page_limit": 999999,
-        "max_devices": 5
+        "max_devices": 1
     }
 }
 
@@ -205,12 +205,42 @@ class LicenseManagerApp(ctk.CTk):
         self.tier_dropdown = ctk.CTkComboBox(
             form_frame,
             width=150,
-            values=["Free Trial", "Standard", "Extended", "Lifetime"],
+            values=["Free Trial", "Weekly Pass", "Standard", "Lifetime"],
             state="readonly",
             command=self._on_tier_changed
         )
         self.tier_dropdown.set("Free Trial")  # Default selection
         self.tier_dropdown.grid(row=1, column=3, padx=5, pady=10, sticky="w")
+        
+        # Duration (Days) Input
+        duration_label = ctk.CTkLabel(
+            form_frame,
+            text="Duration (Days):",
+            font=ctk.CTkFont(size=12)
+        )
+        duration_label.grid(row=2, column=0, padx=(10, 5), pady=10, sticky="e")
+        
+        self.duration_entry = ctk.CTkEntry(
+            form_frame,
+            width=100,
+            placeholder_text="Days"
+        )
+        self.duration_entry.grid(row=2, column=1, padx=5, pady=10, sticky="w")
+        
+        # Page Limit Input
+        page_limit_label = ctk.CTkLabel(
+            form_frame,
+            text="Page Limit:",
+            font=ctk.CTkFont(size=12)
+        )
+        page_limit_label.grid(row=2, column=2, padx=(20, 5), pady=10, sticky="e")
+        
+        self.page_limit_entry = ctk.CTkEntry(
+            form_frame,
+            width=100,
+            placeholder_text="Pages"
+        )
+        self.page_limit_entry.grid(row=2, column=3, padx=5, pady=10, sticky="w")
         
         # Max Devices Input
         max_devices_label = ctk.CTkLabel(
@@ -218,27 +248,17 @@ class LicenseManagerApp(ctk.CTk):
             text="Max Devices:",
             font=ctk.CTkFont(size=12)
         )
-        max_devices_label.grid(row=2, column=0, padx=(10, 5), pady=10, sticky="e")
+        max_devices_label.grid(row=3, column=0, padx=(10, 5), pady=10, sticky="e")
         
-        self.max_devices_slider = ctk.CTkSlider(
+        self.max_devices_entry = ctk.CTkEntry(
             form_frame,
-            from_=1,
-            to=10,
-            number_of_steps=9,
-            width=200
+            width=100,
+            placeholder_text="Devices"
         )
-        self.max_devices_slider.set(1)  # Default to 1 device
-        self.max_devices_slider.grid(row=2, column=1, padx=5, pady=10, sticky="w")
+        self.max_devices_entry.grid(row=3, column=1, padx=5, pady=10, sticky="w")
         
-        self.max_devices_value_label = ctk.CTkLabel(
-            form_frame,
-            text="1",
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        self.max_devices_value_label.grid(row=2, column=2, padx=(5, 20), pady=10, sticky="w")
-        
-        # Bind slider change to update label
-        self.max_devices_slider.configure(command=self._on_max_devices_changed)
+        # Initialize with Free Trial defaults
+        self._on_tier_changed("Free Trial")
         
         # Generate Button
         self.generate_btn = ctk.CTkButton(
@@ -251,7 +271,7 @@ class LicenseManagerApp(ctk.CTk):
             fg_color=("#2fa572", "#2fa572"),
             hover_color=("#248a5c", "#248a5c")
         )
-        self.generate_btn.grid(row=2, column=4, padx=20, pady=10)
+        self.generate_btn.grid(row=3, column=2, columnspan=2, padx=20, pady=10)
         
         # Table Frame
         table_frame = ctk.CTkFrame(self)
@@ -357,16 +377,21 @@ class LicenseManagerApp(ctk.CTk):
         self.bind("<Button-1>", lambda e: self.context_menu.place_forget())
     
     def _on_tier_changed(self, tier: str):
-        """Handle tier dropdown change - update max_devices to tier default."""
+        """Handle tier dropdown change - update all entry fields with tier defaults."""
         if tier in TIER_CONFIG:
-            default_devices = TIER_CONFIG[tier].get("max_devices", 1)
-            self.max_devices_slider.set(default_devices)
-            self.max_devices_value_label.configure(text=str(default_devices))
-    
-    def _on_max_devices_changed(self, value):
-        """Handle max devices slider change - update label."""
-        int_value = int(round(value))
-        self.max_devices_value_label.configure(text=str(int_value))
+            tier_settings = TIER_CONFIG[tier]
+            
+            # Clear and populate Duration entry
+            self.duration_entry.delete(0, 'end')
+            self.duration_entry.insert(0, str(tier_settings["days"]))
+            
+            # Clear and populate Page Limit entry
+            self.page_limit_entry.delete(0, 'end')
+            self.page_limit_entry.insert(0, str(tier_settings["page_limit"]))
+            
+            # Clear and populate Max Devices entry
+            self.max_devices_entry.delete(0, 'end')
+            self.max_devices_entry.insert(0, str(tier_settings["max_devices"]))
     
     def _show_context_menu(self, event):
         """Show context menu at cursor position."""
@@ -467,11 +492,15 @@ class LicenseManagerApp(ctk.CTk):
         self.context_menu.place_forget()
     
     def _generate_and_add_license(self):
-        """Generate a new license key and add it to the database with tier-based logic."""
+        """Generate a new license key and add it to the database with manual override support."""
         # Get input values
         email = self.email_entry.get().strip()
         tier = self.tier_dropdown.get()
-        max_devices = int(round(self.max_devices_slider.get()))
+        
+        # Get manual override values from entry fields
+        duration_str = self.duration_entry.get().strip()
+        page_limit_str = self.page_limit_entry.get().strip()
+        max_devices_str = self.max_devices_entry.get().strip()
         
         # Validate email
         if not email:
@@ -489,6 +518,31 @@ class LicenseManagerApp(ctk.CTk):
             messagebox.showerror("Validation Error", "Please select a valid license tier.")
             return
         
+        # Validate and parse manual input values
+        try:
+            duration_days = int(duration_str)
+            if duration_days <= 0:
+                raise ValueError("Duration must be positive")
+        except (ValueError, TypeError):
+            messagebox.showerror("Validation Error", "Please enter a valid duration (positive integer).")
+            return
+        
+        try:
+            page_limit = int(page_limit_str)
+            if page_limit <= 0:
+                raise ValueError("Page limit must be positive")
+        except (ValueError, TypeError):
+            messagebox.showerror("Validation Error", "Please enter a valid page limit (positive integer).")
+            return
+        
+        try:
+            max_devices = int(max_devices_str)
+            if max_devices <= 0:
+                raise ValueError("Max devices must be positive")
+        except (ValueError, TypeError):
+            messagebox.showerror("Validation Error", "Please enter a valid max devices (positive integer).")
+            return
+        
         try:
             # Disable button during generation
             self.generate_btn.configure(state="disabled")
@@ -498,13 +552,8 @@ class LicenseManagerApp(ctk.CTk):
             # Format: CS-[32 random hex characters]
             license_key = f"CS-{secrets.token_hex(16)}"
             
-            # Get tier configuration
-            tier_settings = TIER_CONFIG[tier]
-            days = tier_settings["days"]
-            page_limit = tier_settings["page_limit"]
-            
-            # Calculate valid_until based on tier
-            valid_until = datetime.now(timezone.utc) + timedelta(days=days)
+            # Calculate valid_until based on manual duration input
+            valid_until = datetime.now(timezone.utc) + timedelta(days=duration_days)
             valid_until_iso = valid_until.isoformat()
             
             # Get current timestamp for created_at
@@ -528,7 +577,7 @@ class LicenseManagerApp(ctk.CTk):
             # Clear input fields
             self.email_entry.delete(0, 'end')
             self.tier_dropdown.set("Free Trial")  # Reset to default
-            self._on_tier_changed("Free Trial")  # Reset max_devices slider
+            self._on_tier_changed("Free Trial")  # Reset all entry fields to defaults
             
             # Show success message (truncate key at 35 chars for display readability)
             key_display = license_key if len(license_key) <= 35 else license_key[:35] + "..."
@@ -537,6 +586,7 @@ class LicenseManagerApp(ctk.CTk):
                 f"License generated successfully!\n\n"
                 f"Email: {email}\n"
                 f"Tier: {tier}\n"
+                f"Duration: {duration_days} days\n"
                 f"Page Limit: {page_limit}\n"
                 f"Max Devices: {max_devices}\n"
                 f"Valid Until: {valid_until.strftime('%Y-%m-%d %H:%M')} UTC\n"
