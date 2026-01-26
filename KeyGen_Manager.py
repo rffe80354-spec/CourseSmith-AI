@@ -23,6 +23,7 @@ Supabase Connection:
 import os
 import sys
 import re
+import json
 import secrets
 import customtkinter as ctk
 from tkinter import ttk, messagebox
@@ -40,19 +41,23 @@ SUPABASE_KEY = "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR"
 TIER_CONFIG = {
     "Free Trial": {
         "days": 3,
-        "page_limit": 10
+        "page_limit": 10,
+        "max_devices": 1
     },
     "Standard": {
         "days": 30,
-        "page_limit": 50
+        "page_limit": 50,
+        "max_devices": 1
     },
     "Extended": {
         "days": 30,
-        "page_limit": 100
+        "page_limit": 100,
+        "max_devices": 2
     },
     "Lifetime": {
         "days": 36135,  # 99 years (99 * 365.25 accounting for leap years)
-        "page_limit": 999999
+        "page_limit": 999999,
+        "max_devices": 5
     }
 }
 
@@ -201,10 +206,39 @@ class LicenseManagerApp(ctk.CTk):
             form_frame,
             width=150,
             values=["Free Trial", "Standard", "Extended", "Lifetime"],
-            state="readonly"
+            state="readonly",
+            command=self._on_tier_changed
         )
         self.tier_dropdown.set("Free Trial")  # Default selection
         self.tier_dropdown.grid(row=1, column=3, padx=5, pady=10, sticky="w")
+        
+        # Max Devices Input
+        max_devices_label = ctk.CTkLabel(
+            form_frame,
+            text="Max Devices:",
+            font=ctk.CTkFont(size=12)
+        )
+        max_devices_label.grid(row=2, column=0, padx=(10, 5), pady=10, sticky="e")
+        
+        self.max_devices_slider = ctk.CTkSlider(
+            form_frame,
+            from_=1,
+            to=10,
+            number_of_steps=9,
+            width=200
+        )
+        self.max_devices_slider.set(1)  # Default to 1 device
+        self.max_devices_slider.grid(row=2, column=1, padx=5, pady=10, sticky="w")
+        
+        self.max_devices_value_label = ctk.CTkLabel(
+            form_frame,
+            text="1",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        self.max_devices_value_label.grid(row=2, column=2, padx=(5, 20), pady=10, sticky="w")
+        
+        # Bind slider change to update label
+        self.max_devices_slider.configure(command=self._on_max_devices_changed)
         
         # Generate Button
         self.generate_btn = ctk.CTkButton(
@@ -217,7 +251,7 @@ class LicenseManagerApp(ctk.CTk):
             fg_color=("#2fa572", "#2fa572"),
             hover_color=("#248a5c", "#248a5c")
         )
-        self.generate_btn.grid(row=1, column=4, padx=20, pady=10)
+        self.generate_btn.grid(row=2, column=4, padx=20, pady=10)
         
         # Table Frame
         table_frame = ctk.CTkFrame(self)
@@ -257,7 +291,7 @@ class LicenseManagerApp(ctk.CTk):
         # Create Treeview
         self.tree = ttk.Treeview(
             tree_container,
-            columns=("id", "email", "key", "tier", "limit", "valid_until", "created_at"),
+            columns=("id", "email", "key", "tier", "limit", "max_devices", "valid_until", "created_at"),
             show="headings",
             yscrollcommand=vsb.set,
             xscrollcommand=hsb.set
@@ -270,12 +304,13 @@ class LicenseManagerApp(ctk.CTk):
         # Define columns
         columns_config = [
             ("id", "ID", 60),
-            ("email", "Email", 200),
+            ("email", "Email", 180),
             ("key", "License Key", 180),
-            ("tier", "Tier", 120),
-            ("limit", "Page Limit", 100),
-            ("valid_until", "Valid Until", 150),
-            ("created_at", "Created", 150)
+            ("tier", "Tier", 100),
+            ("limit", "Page Limit", 90),
+            ("max_devices", "Max Devices", 90),
+            ("valid_until", "Valid Until", 140),
+            ("created_at", "Created", 140)
         ]
         
         for col, heading, width in columns_config:
@@ -321,6 +356,18 @@ class LicenseManagerApp(ctk.CTk):
         # Hide menu when clicking elsewhere
         self.bind("<Button-1>", lambda e: self.context_menu.place_forget())
     
+    def _on_tier_changed(self, tier: str):
+        """Handle tier dropdown change - update max_devices to tier default."""
+        if tier in TIER_CONFIG:
+            default_devices = TIER_CONFIG[tier].get("max_devices", 1)
+            self.max_devices_slider.set(default_devices)
+            self.max_devices_value_label.configure(text=str(default_devices))
+    
+    def _on_max_devices_changed(self, value):
+        """Handle max devices slider change - update label."""
+        int_value = int(round(value))
+        self.max_devices_value_label.configure(text=str(int_value))
+    
     def _show_context_menu(self, event):
         """Show context menu at cursor position."""
         # Select item under cursor
@@ -350,8 +397,9 @@ class LicenseManagerApp(ctk.CTk):
             "key": values[2],  # Alias for compatibility
             "tier": values[3],
             "page_limit": values[4],
-            "valid_until": values[5],
-            "created_at": values[6]
+            "max_devices": values[5],
+            "valid_until": values[6],
+            "created_at": values[7]
         }
         
         return license_data
@@ -423,6 +471,7 @@ class LicenseManagerApp(ctk.CTk):
         # Get input values
         email = self.email_entry.get().strip()
         tier = self.tier_dropdown.get()
+        max_devices = int(round(self.max_devices_slider.get()))
         
         # Validate email
         if not email:
@@ -461,14 +510,16 @@ class LicenseManagerApp(ctk.CTk):
             # Get current timestamp for created_at
             created_at = datetime.now(timezone.utc).isoformat()
             
-            # Prepare license data for insertion (new schema - NO duration column)
+            # Prepare license data for insertion (new schema with max_devices and used_hwids)
             license_data = {
                 'email': email,
                 'license_key': license_key,
                 'tier': tier,
                 'page_limit': page_limit,
                 'valid_until': valid_until_iso,
-                'created_at': created_at
+                'created_at': created_at,
+                'max_devices': max_devices,
+                'used_hwids': []  # Initialize as empty list
             }
             
             # Insert into Supabase
@@ -477,6 +528,7 @@ class LicenseManagerApp(ctk.CTk):
             # Clear input fields
             self.email_entry.delete(0, 'end')
             self.tier_dropdown.set("Free Trial")  # Reset to default
+            self._on_tier_changed("Free Trial")  # Reset max_devices slider
             
             # Show success message (truncate key at 35 chars for display readability)
             key_display = license_key if len(license_key) <= 35 else license_key[:35] + "..."
@@ -486,6 +538,7 @@ class LicenseManagerApp(ctk.CTk):
                 f"Email: {email}\n"
                 f"Tier: {tier}\n"
                 f"Page Limit: {page_limit}\n"
+                f"Max Devices: {max_devices}\n"
                 f"Valid Until: {valid_until.strftime('%Y-%m-%d %H:%M')} UTC\n"
                 f"License Key: {key_display}\n\n"
                 f"The full license key has been copied to clipboard."
@@ -555,6 +608,7 @@ class LicenseManagerApp(ctk.CTk):
             key = license_data.get("license_key") or license_data.get("key", "N/A")
             tier = license_data.get("tier", "N/A")
             page_limit = license_data.get("page_limit", "N/A")
+            max_devices = license_data.get("max_devices", "N/A")
             
             # Format valid_until timestamp
             valid_until = license_data.get("valid_until", "N/A")
@@ -578,7 +632,7 @@ class LicenseManagerApp(ctk.CTk):
             self.tree.insert(
                 "",
                 "end",
-                values=(license_id, email, key, tier, page_limit, valid_until, created_at)
+                values=(license_id, email, key, tier, page_limit, max_devices, valid_until, created_at)
             )
         
         # Update count
