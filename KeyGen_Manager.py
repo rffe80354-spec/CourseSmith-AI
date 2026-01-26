@@ -22,10 +22,11 @@ Supabase Connection:
 
 import os
 import sys
+import re
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
 
@@ -513,7 +514,9 @@ class LicenseManagerApp(ctk.CTk):
             messagebox.showerror("Validation Error", "Please enter an email address.")
             return
         
-        if "@" not in email or "." not in email:
+        # Simple email validation pattern
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
             messagebox.showerror("Validation Error", "Please enter a valid email address.")
             return
         
@@ -540,11 +543,10 @@ class LicenseManagerApp(ctk.CTk):
             self.status_label.configure(text="Generating license...")
             
             # Generate license key using license_guard
-            # For duration mapping, use 'trial' tier with custom expiration
-            license_key, expires_at_iso = generate_key(email, tier='trial', duration='lifetime')
+            # Note: We use 'trial' tier and calculate custom expiration based on user input
+            license_key, _ = generate_key(email, tier='trial', duration='lifetime')
             
-            # Calculate valid_until based on duration_days
-            from datetime import timezone
+            # Calculate valid_until based on duration_days (overrides generate_key's expiration)
             valid_until = datetime.now(timezone.utc) + timedelta(days=duration_days)
             valid_until_iso = valid_until.isoformat()
             
