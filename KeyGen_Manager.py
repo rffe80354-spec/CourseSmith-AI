@@ -725,6 +725,10 @@ class LicenseManagerApp(ctk.CTk):
                 # Insert EACH key into Supabase immediately
                 response = self.supabase.table("licenses").insert(license_data).execute()
                 
+                # Verify insertion was successful
+                if not response.data:
+                    raise Exception(f"Failed to insert key {i+1}/{quantity} into database")
+                
                 # Collect generated key
                 generated_keys.append(license_key)
                 
@@ -738,9 +742,12 @@ class LicenseManagerApp(ctk.CTk):
             filename = f"keys_{tier_clean}_{current_date}.txt"
             
             # Save keys to file (one key per line)
-            with open(filename, 'w') as f:
-                for key in generated_keys:
-                    f.write(f"{key}\n")
+            try:
+                with open(filename, 'w') as f:
+                    for key in generated_keys:
+                        f.write(f"{key}\n")
+            except IOError as e:
+                raise Exception(f"Failed to write keys to file: {str(e)}")
             
             # Show success message
             messagebox.showinfo(
