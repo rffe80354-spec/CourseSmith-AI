@@ -278,7 +278,7 @@ class LicenseManagerApp(ctk.CTk):
             "hwid": values[3],
             "tier": values[4],
             "duration": values[5],
-            "is_banned": values[6] == "Yes",
+            "is_banned": str(values[6]).lower() == "yes",  # Robust boolean conversion
             "created_at": values[7]
         }
         
@@ -304,6 +304,27 @@ class LicenseManagerApp(ctk.CTk):
             self.status_label.configure(text=f"✓ Key copied: {key}")
             self.context_menu.place_forget()
     
+    def _update_ban_status(self, license_id: str, email: str, is_banned: bool) -> bool:
+        """
+        Update the ban status of a license in Supabase.
+        
+        Args:
+            license_id: The ID of the license to update
+            email: The email associated with the license (for status message)
+            is_banned: True to ban, False to unban
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            self.supabase.table("licenses").update({"is_banned": is_banned}).eq("id", license_id).execute()
+            action = "banned" if is_banned else "unbanned"
+            self.status_label.configure(text=f"✓ {action.capitalize()}: {email}")
+            return True
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update ban status:\n{str(e)}")
+            return False
+    
     def _ban_license(self):
         """Ban the selected license."""
         license_data = self._get_selected_license()
@@ -321,14 +342,9 @@ class LicenseManagerApp(ctk.CTk):
         )
         
         if confirm:
-            try:
-                # Update in Supabase
-                self.supabase.table("licenses").update({"is_banned": True}).eq("id", license_data["id"]).execute()
+            if self._update_ban_status(license_data["id"], license_data["email"], True):
                 messagebox.showinfo("Success", "License banned successfully.")
-                self.status_label.configure(text=f"✓ Banned: {license_data['email']}")
                 self.refresh_licenses()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to ban license:\n{str(e)}")
         
         self.context_menu.place_forget()
     
@@ -349,14 +365,9 @@ class LicenseManagerApp(ctk.CTk):
         )
         
         if confirm:
-            try:
-                # Update in Supabase
-                self.supabase.table("licenses").update({"is_banned": False}).eq("id", license_data["id"]).execute()
+            if self._update_ban_status(license_data["id"], license_data["email"], False):
                 messagebox.showinfo("Success", "License unbanned successfully.")
-                self.status_label.configure(text=f"✓ Unbanned: {license_data['email']}")
                 self.refresh_licenses()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to unban license:\n{str(e)}")
         
         self.context_menu.place_forget()
     
@@ -390,14 +401,9 @@ class LicenseManagerApp(ctk.CTk):
         if not license_data:
             return
         
-        try:
-            new_status = not license_data["is_banned"]
-            self.supabase.table("licenses").update({"is_banned": new_status}).eq("id", license_data["id"]).execute()
-            action = "banned" if new_status else "unbanned"
-            self.status_label.configure(text=f"✓ License {action}")
+        new_status = not license_data["is_banned"]
+        if self._update_ban_status(license_data["id"], license_data["email"], new_status):
             self.refresh_licenses()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to toggle ban status:\n{str(e)}")
     
     def refresh_licenses(self):
         """Refresh the license list from Supabase."""
