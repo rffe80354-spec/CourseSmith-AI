@@ -65,32 +65,32 @@ def check_remote_ban():
         # Get current hardware ID
         current_hwid = get_hwid()
         
+        if not current_hwid or current_hwid == "UNKNOWN_ID":
+            # Cannot validate without valid HWID - allow offline use
+            return
+        
         # Connect to Supabase
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Query licenses table for current HWID in used_hwids array
-        # We need to check all licenses that contain this HWID OR have room for it
-        response = supabase.table("licenses").select("*").execute()
+        # Query licenses table - search for licenses containing this HWID in used_hwids
+        # Note: In production, this should use a more efficient query with JSONB operators
+        # For now, we fetch licenses and check in Python
+        response = supabase.table("licenses").select("*").limit(100).execute()
         
-        # Find license that matches this HWID or can accept it
+        # Find license that matches this HWID
         license_record = None
         for record in response.data if response.data else []:
             # Parse used_hwids (JSONB array)
-            used_hwids = record.get("used_hwids", [])
-            if used_hwids is None:
-                used_hwids = []
+            used_hwids = _parse_hwids_array(record.get("used_hwids"))
             
             # Check if current HWID is already registered
             if current_hwid in used_hwids:
                 license_record = record
                 break
         
-        # If no license found with this HWID, check if any license can accept a new device
-        # This allows first-time activation with just a license key
+        # If no license found with this HWID, allow app to continue
+        # (First-time activation handled by license_guard.py)
         if license_record is None:
-            # No license found with this HWID - user needs to enter license key
-            # This is handled by the license_guard.py module during first run
-            # For now, we just allow the app to continue (offline mode)
             return
         
         # Check if license is banned
@@ -125,6 +125,28 @@ def check_remote_ban():
         pass
 
 
+def _parse_hwids_array(hwids_value) -> list:
+    """
+    Helper function to safely parse used_hwids JSONB array.
+    
+    Args:
+        hwids_value: The value from the database (could be list, None, or string)
+        
+    Returns:
+        list: Parsed list of HWIDs, or empty list if None/invalid
+    """
+    if hwids_value is None:
+        return []
+    if isinstance(hwids_value, list):
+        return hwids_value
+    if isinstance(hwids_value, str):
+        try:
+            return json.loads(hwids_value)
+        except:
+            return []
+    return []
+
+
 def validate_license_key(license_key: str) -> dict:
     """
     Validate a license key and register the current device if authorized.
@@ -140,6 +162,13 @@ def validate_license_key(license_key: str) -> dict:
     try:
         # Get current hardware ID
         current_hwid = get_hwid()
+        
+        if not current_hwid or current_hwid == "UNKNOWN_ID":
+            return {
+                'valid': False,
+                'message': 'Unable to identify device hardware ID.',
+                'license_data': None
+            }
         
         # Connect to Supabase
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -182,10 +211,7 @@ def validate_license_key(license_key: str) -> dict:
                 pass
         
         # Parse used_hwids (JSONB array)
-        used_hwids = license_record.get("used_hwids", [])
-        if used_hwids is None:
-            used_hwids = []
-        
+        used_hwids = _parse_hwids_array(license_record.get("used_hwids"))
         max_devices = license_record.get("max_devices", 1)
         
         # Check if current HWID is already registered

@@ -551,6 +551,13 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
     if hwid is None:
         hwid = get_hwid()
     
+    # Validate HWID exists
+    if not hwid or hwid == "UNKNOWN_ID":
+        return {
+            'valid': False,
+            'message': 'Unable to identify device hardware ID.'
+        }
+    
     # Validate CS-XXXX-XXXX format using constants
     if not key.startswith(KEY_PREFIX) or len(key) != KEY_FORMAT_LENGTH or key.count('-') != KEY_DASH_COUNT:
         return {
@@ -567,13 +574,19 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
     
     # Use Supabase for validation (cloud-first approach)
     try:
-        # Import Supabase at function level to avoid circular imports
+        # Import Supabase client
         from supabase import create_client
         import os
         
-        # Get Supabase credentials
-        supabase_url = os.getenv("SUPABASE_URL", "https://spfwfyjpexktgnusgyib.supabase.co")
-        supabase_key = os.getenv("SUPABASE_KEY", "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR")
+        # Get Supabase credentials from environment
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        
+        # Fallback to hardcoded values if not in environment (for compatibility)
+        if not supabase_url:
+            supabase_url = "https://spfwfyjpexktgnusgyib.supabase.co"
+        if not supabase_key:
+            supabase_key = "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR"
         
         # Connect to Supabase
         supabase = create_client(supabase_url, supabase_key)
@@ -638,10 +651,7 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
                 pass
         
         # Multi-device validation logic
-        used_hwids = license_data.get("used_hwids", [])
-        if used_hwids is None:
-            used_hwids = []
-        
+        used_hwids = _parse_hwids_list(license_data.get("used_hwids"))
         max_devices = license_data.get("max_devices", 1)
         
         # Check if current HWID is already registered
@@ -773,6 +783,29 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
                 'valid': False,
                 'message': f'License validation failed: {str(e)}'
             }
+
+
+def _parse_hwids_list(hwids_value) -> list:
+    """
+    Helper function to safely parse used_hwids JSONB array.
+    
+    Args:
+        hwids_value: The value from the database (could be list, None, or string)
+        
+    Returns:
+        list: Parsed list of HWIDs, or empty list if None/invalid
+    """
+    if hwids_value is None:
+        return []
+    if isinstance(hwids_value, list):
+        return hwids_value
+    if isinstance(hwids_value, str):
+        try:
+            import json
+            return json.loads(hwids_value)
+        except:
+            return []
+    return []
 
 
 def check_hwid_binding(key: str, hwid: Optional[str] = None) -> Tuple[bool, Optional[str]]:
