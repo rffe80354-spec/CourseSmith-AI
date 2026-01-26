@@ -55,7 +55,7 @@ TIER_CONFIG = {
         "max_devices": 1
     },
     "Lifetime": {
-        "days": 36500,  # 100 years
+        "days": 36500,  # ~100 years (36500 days)
         "page_limit": 999999,
         "max_devices": 1
     }
@@ -491,6 +491,25 @@ class LicenseManagerApp(ctk.CTk):
         
         self.context_menu.place_forget()
     
+    def _validate_positive_integer(self, value_str: str, field_name: str) -> Optional[int]:
+        """Validate that a string represents a positive integer.
+        
+        Args:
+            value_str: The string to validate
+            field_name: The name of the field (for error messages)
+            
+        Returns:
+            The integer value if valid, None otherwise
+        """
+        try:
+            value = int(value_str)
+            if value <= 0:
+                raise ValueError(f"{field_name} must be positive")
+            return value
+        except (ValueError, TypeError):
+            messagebox.showerror("Validation Error", f"Please enter a valid {field_name} (positive integer).")
+            return None
+    
     def _generate_and_add_license(self):
         """Generate a new license key and add it to the database with manual override support."""
         # Get input values
@@ -519,28 +538,16 @@ class LicenseManagerApp(ctk.CTk):
             return
         
         # Validate and parse manual input values
-        try:
-            duration_days = int(duration_str)
-            if duration_days <= 0:
-                raise ValueError("Duration must be positive")
-        except (ValueError, TypeError):
-            messagebox.showerror("Validation Error", "Please enter a valid duration (positive integer).")
+        duration_days = self._validate_positive_integer(duration_str, "duration")
+        if duration_days is None:
             return
         
-        try:
-            page_limit = int(page_limit_str)
-            if page_limit <= 0:
-                raise ValueError("Page limit must be positive")
-        except (ValueError, TypeError):
-            messagebox.showerror("Validation Error", "Please enter a valid page limit (positive integer).")
+        page_limit = self._validate_positive_integer(page_limit_str, "page limit")
+        if page_limit is None:
             return
         
-        try:
-            max_devices = int(max_devices_str)
-            if max_devices <= 0:
-                raise ValueError("Max devices must be positive")
-        except (ValueError, TypeError):
-            messagebox.showerror("Validation Error", "Please enter a valid max devices (positive integer).")
+        max_devices = self._validate_positive_integer(max_devices_str, "max devices")
+        if max_devices is None:
             return
         
         try:
