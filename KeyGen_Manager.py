@@ -23,13 +23,13 @@ Supabase Connection:
 import os
 import sys
 import re
+import secrets
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
-from cryptography.fernet import Fernet
 
 
 # Supabase configuration
@@ -51,7 +51,7 @@ TIER_CONFIG = {
         "page_limit": 100
     },
     "Lifetime": {
-        "days": 36135,  # 99 years
+        "days": 36135,  # 99 years (99 * 365.25 accounting for leap years)
         "page_limit": 999999
     }
 }
@@ -445,8 +445,9 @@ class LicenseManagerApp(ctk.CTk):
             self.generate_btn.configure(state="disabled")
             self.status_label.configure(text="Generating license...")
             
-            # Generate a secure Fernet key
-            license_key = Fernet.generate_key().decode('utf-8')
+            # Generate a secure license key using secrets module
+            # Format: CS-[32 random hex characters]
+            license_key = f"CS-{secrets.token_hex(16)}"
             
             # Get tier configuration
             tier_settings = TIER_CONFIG[tier]
@@ -477,7 +478,8 @@ class LicenseManagerApp(ctk.CTk):
             self.email_entry.delete(0, 'end')
             self.tier_dropdown.set("Free Trial")  # Reset to default
             
-            # Show success message
+            # Show success message (truncate key at 35 chars for display readability)
+            key_display = license_key if len(license_key) <= 35 else license_key[:35] + "..."
             messagebox.showinfo(
                 "Success",
                 f"License generated successfully!\n\n"
@@ -485,8 +487,8 @@ class LicenseManagerApp(ctk.CTk):
                 f"Tier: {tier}\n"
                 f"Page Limit: {page_limit}\n"
                 f"Valid Until: {valid_until.strftime('%Y-%m-%d %H:%M')} UTC\n"
-                f"License Key: {license_key[:40]}...\n\n"
-                f"The license key has been copied to clipboard."
+                f"License Key: {key_display}\n\n"
+                f"The full license key has been copied to clipboard."
             )
             
             # Copy key to clipboard
@@ -565,7 +567,7 @@ class LicenseManagerApp(ctk.CTk):
             
             # Format created_at timestamp
             created_at = license_data.get("created_at", "N/A")
-            if created_at and created_at != "N/A":
+            if created_at not in (None, "", "N/A"):
                 try:
                     dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                     created_at = dt.strftime("%Y-%m-%d %H:%M")
