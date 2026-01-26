@@ -25,7 +25,7 @@ import sys
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
 
@@ -179,7 +179,7 @@ class LicenseManagerApp(ctk.CTk):
         # Create Treeview
         self.tree = ttk.Treeview(
             tree_container,
-            columns=("id", "email", "key", "hwid", "tier", "duration", "is_banned", "created_at"),
+            columns=("id", "email", "key", "hwid", "tier", "duration", "is_banned", "valid_until", "subscription_id", "created_at"),
             show="headings",
             yscrollcommand=vsb.set,
             xscrollcommand=hsb.set
@@ -192,13 +192,15 @@ class LicenseManagerApp(ctk.CTk):
         # Define columns
         columns_config = [
             ("id", "ID", 60),
-            ("email", "Email", 200),
-            ("key", "License Key", 180),
-            ("hwid", "HWID", 150),
-            ("tier", "Tier", 100),
-            ("duration", "Duration", 100),
-            ("is_banned", "Banned", 80),
-            ("created_at", "Created", 150)
+            ("email", "Email", 180),
+            ("key", "License Key", 150),
+            ("hwid", "HWID", 130),
+            ("tier", "Tier", 80),
+            ("duration", "Duration", 90),
+            ("is_banned", "Banned", 70),
+            ("valid_until", "Expires", 140),
+            ("subscription_id", "Sub ID", 100),
+            ("created_at", "Created", 130)
         ]
         
         for col, heading, width in columns_config:
@@ -228,6 +230,7 @@ class LicenseManagerApp(ctk.CTk):
         menu_items = [
             ("📋 Copy HWID", self._copy_hwid),
             ("🔑 Copy Key", self._copy_key),
+            ("📅 Set Expiration (+30 days)", self._set_expiration_30days),
             ("🚫 Ban License", self._ban_license),
             ("✅ Unban License", self._unban_license),
             ("❌ Delete License", self._delete_license),
@@ -279,7 +282,9 @@ class LicenseManagerApp(ctk.CTk):
             "tier": values[4],
             "duration": values[5],
             "is_banned": str(values[6]).lower() == "yes",  # Robust boolean conversion
-            "created_at": values[7]
+            "valid_until": values[7],
+            "subscription_id": values[8],
+            "created_at": values[9]
         }
         
         return license_data
@@ -303,6 +308,34 @@ class LicenseManagerApp(ctk.CTk):
             self.clipboard_append(key)
             self.status_label.configure(text=f"✓ Key copied: {key}")
             self.context_menu.place_forget()
+    
+    def _set_expiration_30days(self):
+        """Set expiration date to +30 days from now for the selected license."""
+        license_data = self._get_selected_license()
+        if not license_data:
+            return
+        
+        # Calculate expiration date (30 days from now)
+        expiration_date = datetime.now() + timedelta(days=30)
+        expiration_iso = expiration_date.isoformat()
+        
+        # Confirm action
+        confirm = messagebox.askyesno(
+            "Set Expiration Date",
+            f"Set expiration date for {license_data['email']}?\n\nKey: {license_data['key']}\n\nExpires: {expiration_date.strftime('%Y-%m-%d %H:%M')}\n\n(+30 days from now)"
+        )
+        
+        if confirm:
+            try:
+                # Update in Supabase
+                self.supabase.table("licenses").update({"valid_until": expiration_iso}).eq("id", license_data["id"]).execute()
+                messagebox.showinfo("Success", f"Expiration date set to {expiration_date.strftime('%Y-%m-%d %H:%M')}")
+                self.status_label.configure(text=f"✓ Expiration set for: {license_data['email']}")
+                self.refresh_licenses()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to set expiration date:\n{str(e)}")
+        
+        self.context_menu.place_forget()
     
     def _update_ban_status(self, license_id: str, email: str, is_banned: bool) -> bool:
         """
@@ -452,9 +485,21 @@ class LicenseManagerApp(ctk.CTk):
             tier = license_data.get("tier", "N/A")
             duration = license_data.get("duration", "N/A")
             is_banned = "Yes" if license_data.get("is_banned", False) else "No"
-            created_at = license_data.get("created_at", "N/A")
+            
+            # Format valid_until timestamp
+            valid_until = license_data.get("valid_until", "N/A")
+            if valid_until and valid_until != "N/A":
+                try:
+                    dt = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                    valid_until = dt.strftime("%Y-%m-%d %H:%M")
+                except:
+                    pass
+            
+            # Get subscription_id
+            subscription_id = license_data.get("subscription_id", "N/A")
             
             # Format created_at timestamp
+            created_at = license_data.get("created_at", "N/A")
             if created_at != "N/A":
                 try:
                     dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
@@ -466,7 +511,7 @@ class LicenseManagerApp(ctk.CTk):
             self.tree.insert(
                 "",
                 "end",
-                values=(license_id, email, key, hwid, tier, duration, is_banned, created_at)
+                values=(license_id, email, key, hwid, tier, duration, is_banned, valid_until, subscription_id, created_at)
             )
         
         # Update count

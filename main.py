@@ -6,6 +6,7 @@ A commercial desktop application to generate educational PDF books using AI with
 import os
 import sys
 import subprocess
+from datetime import datetime, timezone
 import customtkinter as ctk
 from tkinter import messagebox
 from dotenv import load_dotenv
@@ -49,7 +50,8 @@ def get_hwid():
 def check_remote_ban():
     """
     Check if the current HWID is banned in the remote Supabase database.
-    If banned, show error message and exit the application.
+    Also check if the license has expired.
+    If banned or expired, show error message and exit the application.
     Allows offline usage by catching connection errors.
     """
     try:
@@ -59,10 +61,10 @@ def check_remote_ban():
         # Connect to Supabase
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Query licenses table for current HWID (only fetch is_banned field)
-        response = supabase.table("licenses").select("is_banned").eq("hwid", hwid).execute()
+        # Query licenses table for current HWID (fetch is_banned and valid_until fields)
+        response = supabase.table("licenses").select("is_banned, valid_until").eq("hwid", hwid).execute()
         
-        # Check if HWID exists and is banned
+        # Check if HWID exists
         if response.data and len(response.data) > 0:
             license_record = response.data[0]
             
@@ -76,8 +78,27 @@ def check_remote_ban():
                 
                 # Exit immediately
                 sys.exit()
+            
+            # Check if license has expired
+            valid_until = license_record.get("valid_until")
+            if valid_until:
+                try:
+                    # Parse the expiration date
+                    expiration_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                    current_date = datetime.now(timezone.utc)
+                    
+                    # Check if expired
+                    if current_date > expiration_date:
+                        messagebox.showerror(
+                            "Subscription Expired",
+                            "Subscription expired. Please renew on Whop."
+                        )
+                        sys.exit()
+                except Exception:
+                    # If date parsing fails, allow access (fail-open for this check)
+                    pass
         
-        # If HWID not found or not banned, allow app to continue
+        # If HWID not found or not banned/expired, allow app to continue
     except Exception:
         # Allow offline usage - if connection fails, don't block the app
         pass
