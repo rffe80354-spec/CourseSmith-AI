@@ -230,7 +230,7 @@ class LicenseManagerApp(ctk.CTk):
         menu_items = [
             ("📋 Copy HWID", self._copy_hwid),
             ("🔑 Copy Key", self._copy_key),
-            ("📅 Set Expiration (+30 days)", self._set_expiration_30days),
+            ("📅 Extend +30 Days", self._set_expiration_30days),
             ("🚫 Ban License", self._ban_license),
             ("✅ Unban License", self._unban_license),
             ("❌ Delete License", self._delete_license),
