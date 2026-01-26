@@ -2,7 +2,7 @@
 License Guard Module - Enterprise DRM Security for CourseSmith AI.
 Provides enterprise-grade license key generation and validation with:
 - HWID Locking (Hardware ID binding) - Enterprise tier and above
-- Custom Key Format: CS-XXXX-XXXX (12 characters, 8 hex digits)
+- Custom Key Format: CS-[hex string] (supports both legacy CS-XXXX-XXXX and new long format)
 - Time-Bombing with NTP verification (anti-tamper)
 - Persistent Session with encrypted tokens
 - Cloud-based license validation with Supabase
@@ -517,12 +517,13 @@ def _parse_key_components(key: str) -> Optional[Dict[str, str]]:
 def validate_license(email: str, key: str, hwid: Optional[str] = None, 
                     check_expiration: bool = True) -> Optional[Dict[str, Any]]:
     """
-    Validate a license key in CS-XXXX-XXXX format with multi-device support.
+    Validate a license key with multi-device support.
+    Supports both legacy format (CS-XXXX-XXXX) and new long format (CS-[32 hex chars]).
     Supports all tiers: Trial, Standard, Enterprise, Lifetime.
     
     Args:
         email: The user's email address.
-        key: The license key to validate (CS-XXXX-XXXX format).
+        key: The license key to validate (CS- prefix followed by alphanumeric characters).
         hwid: Hardware ID to check (optional, auto-detected if None).
         check_expiration: Whether to check expiration date (default True).
         
@@ -545,7 +546,7 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
         }
     
     email = email.strip().lower()
-    key = key.strip().upper()
+    key = key.strip()
     
     # Get current HWID if not provided
     if hwid is None:
@@ -558,11 +559,32 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
             'message': 'Unable to identify device hardware ID.'
         }
     
-    # Validate CS-XXXX-XXXX format using constants
-    if not key.startswith(KEY_PREFIX) or len(key) != KEY_FORMAT_LENGTH or key.count('-') != KEY_DASH_COUNT:
+    # Validate license key format - support both old (CS-XXXX-XXXX) and new (CS-[32 hex chars]) formats
+    # Old format: CS-XXXX-XXXX (9 chars after CS-: XXXX-XXXX)
+    # New format: CS- followed by at least 10 alphanumeric characters (e.g., CS-78e6005d77...)
+    if not key.startswith(KEY_PREFIX):
         return {
             'valid': False,
-            'message': f'Invalid license key format. Expected: {KEY_PREFIX}XXXX-XXXX'
+            'message': f'Invalid license key format. Must start with {KEY_PREFIX}'
+        }
+    
+    # Extract the part after "CS-"
+    key_body = key[len(KEY_PREFIX):]
+    
+    # Check minimum length (at least 8 characters after CS- to support old format)
+    if len(key_body) < 8:
+        return {
+            'valid': False,
+            'message': 'Invalid license key format. Key is too short.'
+        }
+    
+    # Validate characters are alphanumeric (allow both old format XXXX-XXXX and new format hex)
+    # Remove dashes for validation
+    key_chars = key_body.replace('-', '')
+    if not key_chars.isalnum():
+        return {
+            'valid': False,
+            'message': 'Invalid license key format. Contains invalid characters.'
         }
     
     # Check if database is available
