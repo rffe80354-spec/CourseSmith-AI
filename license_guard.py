@@ -517,7 +517,7 @@ def _parse_key_components(key: str) -> Optional[Dict[str, str]]:
 def validate_license(email: str, key: str, hwid: Optional[str] = None, 
                     check_expiration: bool = True) -> Optional[Dict[str, Any]]:
     """
-    Validate a license key in CS-XXXX-XXXX format against database records.
+    Validate a license key in CS-XXXX-XXXX format with multi-device support.
     Supports all tiers: Trial, Standard, Enterprise, Lifetime.
     
     Args:
@@ -551,6 +551,13 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
     if hwid is None:
         hwid = get_hwid()
     
+    # Validate HWID exists
+    if not hwid or hwid == "UNKNOWN_ID":
+        return {
+            'valid': False,
+            'message': 'Unable to identify device hardware ID.'
+        }
+    
     # Validate CS-XXXX-XXXX format using constants
     if not key.startswith(KEY_PREFIX) or len(key) != KEY_FORMAT_LENGTH or key.count('-') != KEY_DASH_COUNT:
         return {
@@ -565,16 +572,36 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
             'message': 'License validation unavailable. Database module not loaded.'
         }
     
-    # Look up the license in the database
+    # Use Supabase for validation (cloud-first approach)
     try:
-        # Check cloud first, then local database
-        license_data = get_license_by_key(key, check_cloud=True)
+        # Import Supabase client
+        from supabase import create_client
+        import os
         
-        if not license_data:
+        # Get Supabase credentials from environment
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        
+        # Fallback to hardcoded values if not in environment (for compatibility)
+        if not supabase_url:
+            supabase_url = "https://spfwfyjpexktgnusgyib.supabase.co"
+        if not supabase_key:
+            supabase_key = "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR"
+        
+        # Connect to Supabase
+        supabase = create_client(supabase_url, supabase_key)
+        
+        # Query licenses table for the provided license key
+        response = supabase.table("licenses").select("*").eq("license_key", key).execute()
+        
+        # Check if license key exists
+        if not response.data or len(response.data) == 0:
             return {
                 'valid': False,
                 'message': 'License key not found in database.'
             }
+        
+        license_data = response.data[0]
         
         # Verify email matches
         if license_data.get('email', '').lower() != email:
@@ -584,7 +611,7 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
             }
         
         # Check if license is banned
-        if license_data.get('status') == 'Banned':
+        if license_data.get('is_banned') is True:
             return {
                 'valid': False,
                 'tier': license_data.get('tier', 'trial'),
@@ -592,22 +619,30 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
             }
         
         # Get tier and expiration
-        tier = license_data.get('tier', 'trial').lower()
-        expires_at = license_data.get('expires_at')
+        tier = license_data.get('tier', 'Free Trial')
+        # Map tier names to internal format
+        tier_map = {
+            'Free Trial': 'trial',
+            'Standard': 'standard',
+            'Extended': 'enterprise',
+            'Lifetime': 'lifetime'
+        }
+        tier_internal = tier_map.get(tier, 'trial')
         
-        # Check expiration using NTP time for tamper protection (especially for Trial tier)
+        # Check expiration using valid_until field
+        expires_at = license_data.get('valid_until')
         expired = False
         if expires_at and check_expiration:
             try:
-                expires_at_dt = datetime.fromisoformat(expires_at)
-                # Use NTP time if available for anti-tamper (critical for Trial tier)
+                expires_at_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                # Use NTP time if available for anti-tamper
                 current_time = get_reliable_time()
                 if current_time > expires_at_dt:
                     expired = True
                     return {
                         'valid': False,
                         'expired': True,
-                        'tier': tier,
+                        'tier': tier_internal,
                         'expires_at': expires_at,
                         'message': f'License expired on {expires_at_dt.strftime("%Y-%m-%d")}.'
                     }
@@ -615,48 +650,162 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
                 # Invalid date format, treat as not expired
                 pass
         
-        # Get tier limits (includes max_pages)
-        tier_limits = get_tier_limits(tier)
+        # Multi-device validation logic
+        used_hwids = _parse_hwids_list(license_data.get("used_hwids"))
+        max_devices = license_data.get("max_devices", 1)
         
-        # Check HWID binding for tiers that require it (Enterprise and Lifetime)
-        hwid_match = True
-        if tier_limits['hwid_required']:
-            stored_hwid = license_data.get('hwid')
-            if stored_hwid:
-                # HWID already bound, verify match
-                if stored_hwid != hwid:
-                    return {
-                        'valid': False,
-                        'tier': tier,
-                        'message': 'License is bound to a different machine. Contact support to transfer.'
-                    }
+        # Check if current HWID is already registered
+        if hwid in used_hwids:
+            # Already activated on this device - allow access
+            pass
+        else:
+            # Check if there's room for a new device
+            if len(used_hwids) < max_devices:
+                # Add current HWID to the list
+                used_hwids.append(hwid)
+                
+                # Update Supabase with new HWID
+                supabase.table("licenses").update({
+                    "used_hwids": used_hwids
+                }).eq("license_key", key).execute()
             else:
-                # First activation - bind HWID
-                try:
-                    update_hwid(key, hwid)
-                except Exception as e:
-                    print(f"Warning: Failed to bind HWID: {e}")
+                # Device limit reached
+                return {
+                    'valid': False,
+                    'tier': tier_internal,
+                    'message': f'Device Limit Reached. Max: {max_devices}. This license is already activated on {max_devices} device(s).'
+                }
+        
+        # Get tier limits (includes max_pages)
+        tier_limits = get_tier_limits(tier_internal)
         
         # Valid! Generate session token
-        token = _generate_session_token(email, tier)
+        token = _generate_session_token(email, tier_internal)
         
         return {
             'valid': True,
-            'tier': tier,
+            'tier': tier_internal,
             'token': token,
             'expires_at': expires_at,
             'expired': False,
-            'hwid_match': hwid_match,
+            'hwid_match': True,
             'tier_limits': tier_limits,
             'message': 'License activated successfully.'
         }
         
     except Exception as e:
         print(f"License validation error: {e}")
-        return {
-            'valid': False,
-            'message': f'License validation failed: {str(e)}'
-        }
+        # Fallback to local database if Supabase fails
+        try:
+            # Look up the license in the local database
+            license_data = get_license_by_key(key, check_cloud=False)
+            
+            if not license_data:
+                return {
+                    'valid': False,
+                    'message': 'License key not found in database.'
+                }
+            
+            # Verify email matches
+            if license_data.get('email', '').lower() != email:
+                return {
+                    'valid': False,
+                    'message': 'License key does not match the provided email address.'
+                }
+            
+            # Check if license is banned
+            if license_data.get('status') == 'Banned':
+                return {
+                    'valid': False,
+                    'tier': license_data.get('tier', 'trial'),
+                    'message': 'License has been revoked. Contact support.'
+                }
+            
+            # Get tier and expiration
+            tier = license_data.get('tier', 'trial').lower()
+            expires_at = license_data.get('expires_at')
+            
+            # Check expiration
+            expired = False
+            if expires_at and check_expiration:
+                try:
+                    expires_at_dt = datetime.fromisoformat(expires_at)
+                    current_time = get_reliable_time()
+                    if current_time > expires_at_dt:
+                        expired = True
+                        return {
+                            'valid': False,
+                            'expired': True,
+                            'tier': tier,
+                            'expires_at': expires_at,
+                            'message': f'License expired on {expires_at_dt.strftime("%Y-%m-%d")}.'
+                        }
+                except (ValueError, TypeError):
+                    pass
+            
+            # Get tier limits
+            tier_limits = get_tier_limits(tier)
+            
+            # Check HWID binding for tiers that require it
+            hwid_match = True
+            if tier_limits['hwid_required']:
+                stored_hwid = license_data.get('hwid')
+                if stored_hwid:
+                    if stored_hwid != hwid:
+                        return {
+                            'valid': False,
+                            'tier': tier,
+                            'message': 'License is bound to a different machine. Contact support to transfer.'
+                        }
+                else:
+                    # First activation - bind HWID
+                    try:
+                        update_hwid(key, hwid)
+                    except Exception as e:
+                        print(f"Warning: Failed to bind HWID: {e}")
+            
+            # Valid! Generate session token
+            token = _generate_session_token(email, tier)
+            
+            return {
+                'valid': True,
+                'tier': tier,
+                'token': token,
+                'expires_at': expires_at,
+                'expired': False,
+                'hwid_match': hwid_match,
+                'tier_limits': tier_limits,
+                'message': 'License activated successfully (offline mode).'
+            }
+        except Exception as e2:
+            print(f"Local license validation error: {e2}")
+            return {
+                'valid': False,
+                'message': f'License validation failed: {str(e)}'
+            }
+
+
+def _parse_hwids_list(hwids_value) -> list:
+    """
+    Helper function to safely parse used_hwids JSONB array.
+    
+    Args:
+        hwids_value: The value from the database (could be list, None, or string)
+        
+    Returns:
+        list: Parsed list of HWIDs, or empty list if None/invalid
+    """
+    if hwids_value is None:
+        return []
+    if isinstance(hwids_value, list):
+        return hwids_value
+    if isinstance(hwids_value, str):
+        try:
+            import json
+            return json.loads(hwids_value)
+        except:
+            return []
+    return []
 
 
 def check_hwid_binding(key: str, hwid: Optional[str] = None) -> Tuple[bool, Optional[str]]:

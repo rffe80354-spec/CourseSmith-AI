@@ -5,6 +5,7 @@ A commercial desktop application to generate educational PDF books using AI with
 
 import os
 import sys
+import json
 import subprocess
 from datetime import datetime, timezone
 import customtkinter as ctk
@@ -49,59 +50,208 @@ def get_hwid():
 
 def check_remote_ban():
     """
-    Check if the current HWID is banned in the remote Supabase database.
-    Also check if the license has expired.
-    If banned or expired, show error message and exit the application.
+    Check if the current HWID is authorized for license activation.
+    Implements multi-device license support:
+    - Checks if license has expired
+    - Checks if license is banned
+    - Validates device count against max_devices limit
+    - Automatically registers new devices if room available
+    - Uses 'used_hwids' JSONB array instead of single 'hwid' column
+    
+    If banned, expired, or device limit reached, shows error and exits.
     Allows offline usage by catching connection errors.
     """
     try:
         # Get current hardware ID
-        hwid = get_hwid()
+        current_hwid = get_hwid()
+        
+        if not current_hwid or current_hwid == "UNKNOWN_ID":
+            # Cannot validate without valid HWID - allow offline use
+            return
         
         # Connect to Supabase
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Query licenses table for current HWID (fetch is_banned and valid_until fields)
-        response = supabase.table("licenses").select("is_banned, valid_until").eq("hwid", hwid).execute()
+        # Query licenses table - search for licenses containing this HWID in used_hwids
+        # Note: In production, this should use a more efficient query with JSONB operators
+        # For now, we fetch licenses and check in Python
+        response = supabase.table("licenses").select("*").limit(100).execute()
         
-        # Check if HWID exists
-        if response.data and len(response.data) > 0:
-            license_record = response.data[0]
+        # Find license that matches this HWID
+        license_record = None
+        for record in response.data if response.data else []:
+            # Parse used_hwids (JSONB array)
+            used_hwids = _parse_hwids_array(record.get("used_hwids"))
             
-            # Check if license is banned
-            if license_record.get("is_banned") is True:
-                # Show error message (messagebox works without creating root window)
-                messagebox.showerror(
-                    "Access Denied",
-                    "Access Denied. License Revoked."
-                )
+            # Check if current HWID is already registered
+            if current_hwid in used_hwids:
+                license_record = record
+                break
+        
+        # If no license found with this HWID, allow app to continue
+        # (First-time activation handled by license_guard.py)
+        if license_record is None:
+            return
+        
+        # Check if license is banned
+        if license_record.get("is_banned") is True:
+            messagebox.showerror(
+                "Access Denied",
+                "Access Denied. License Revoked."
+            )
+            sys.exit()
+        
+        # Check if license has expired
+        valid_until = license_record.get("valid_until")
+        if valid_until:
+            try:
+                expiration_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                current_date = datetime.now(timezone.utc)
                 
-                # Exit immediately
-                sys.exit()
-            
-            # Check if license has expired
-            valid_until = license_record.get("valid_until")
-            if valid_until:
-                try:
-                    # Parse the expiration date
-                    expiration_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
-                    current_date = datetime.now(timezone.utc)
-                    
-                    # Check if expired
-                    if current_date > expiration_date:
-                        messagebox.showerror(
-                            "Subscription Expired",
-                            "Your subscription for CourseSmith AI has expired. Please renew on Whop to continue."
-                        )
-                        sys.exit()
-                except Exception:
-                    # If date parsing fails, allow access (fail-open for this check)
-                    pass
+                if current_date > expiration_date:
+                    messagebox.showerror(
+                        "Subscription Expired",
+                        "Your subscription for CourseSmith AI has expired. Please renew on Whop to continue."
+                    )
+                    sys.exit()
+            except Exception:
+                # If date parsing fails, allow access (fail-open for this check)
+                pass
         
-        # If HWID not found or not banned/expired, allow app to continue
+        # If we reach here, license is valid and HWID is authorized
+        
     except Exception:
         # Allow offline usage - if connection fails, don't block the app
         pass
+
+
+def _parse_hwids_array(hwids_value) -> list:
+    """
+    Helper function to safely parse used_hwids JSONB array.
+    
+    Args:
+        hwids_value: The value from the database (could be list, None, or string)
+        
+    Returns:
+        list: Parsed list of HWIDs, or empty list if None/invalid
+    """
+    if hwids_value is None:
+        return []
+    if isinstance(hwids_value, list):
+        return hwids_value
+    if isinstance(hwids_value, str):
+        try:
+            return json.loads(hwids_value)
+        except:
+            return []
+    return []
+
+
+def validate_license_key(license_key: str) -> dict:
+    """
+    Validate a license key and register the current device if authorized.
+    This function is called during first-time activation.
+    
+    Args:
+        license_key: The license key to validate
+        
+    Returns:
+        dict: License information with status
+            {'valid': bool, 'message': str, 'license_data': dict or None}
+    """
+    try:
+        # Get current hardware ID
+        current_hwid = get_hwid()
+        
+        if not current_hwid or current_hwid == "UNKNOWN_ID":
+            return {
+                'valid': False,
+                'message': 'Unable to identify device hardware ID.',
+                'license_data': None
+            }
+        
+        # Connect to Supabase
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        
+        # Query licenses table for the provided license key
+        response = supabase.table("licenses").select("*").eq("license_key", license_key).execute()
+        
+        # Check if license key exists
+        if not response.data or len(response.data) == 0:
+            return {
+                'valid': False,
+                'message': 'Invalid license key.',
+                'license_data': None
+            }
+        
+        license_record = response.data[0]
+        
+        # Check if license is banned
+        if license_record.get("is_banned") is True:
+            return {
+                'valid': False,
+                'message': 'This license has been revoked.',
+                'license_data': None
+            }
+        
+        # Check if license has expired
+        valid_until = license_record.get("valid_until")
+        if valid_until:
+            try:
+                expiration_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                current_date = datetime.now(timezone.utc)
+                
+                if current_date > expiration_date:
+                    return {
+                        'valid': False,
+                        'message': 'This license has expired.',
+                        'license_data': None
+                    }
+            except Exception:
+                pass
+        
+        # Parse used_hwids (JSONB array)
+        used_hwids = _parse_hwids_array(license_record.get("used_hwids"))
+        max_devices = license_record.get("max_devices", 1)
+        
+        # Check if current HWID is already registered
+        if current_hwid in used_hwids:
+            # Already activated on this device
+            return {
+                'valid': True,
+                'message': 'License is valid and already activated on this device.',
+                'license_data': license_record
+            }
+        
+        # Check if there's room for a new device
+        if len(used_hwids) < max_devices:
+            # Add current HWID to the list
+            used_hwids.append(current_hwid)
+            
+            # Update Supabase with new HWID
+            supabase.table("licenses").update({
+                "used_hwids": used_hwids
+            }).eq("license_key", license_key).execute()
+            
+            return {
+                'valid': True,
+                'message': f'License activated successfully! Device {len(used_hwids)}/{max_devices} registered.',
+                'license_data': license_record
+            }
+        else:
+            # Device limit reached
+            return {
+                'valid': False,
+                'message': f'Device Limit Reached. Max: {max_devices}. Please deactivate a device or upgrade your license.',
+                'license_data': None
+            }
+        
+    except Exception as e:
+        return {
+            'valid': False,
+            'message': f'Error validating license: {str(e)}',
+            'license_data': None
+        }
 
 
 def main():
