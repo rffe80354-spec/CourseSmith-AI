@@ -83,3 +83,6 @@ test_custom_images.py
 validate_changes.py
 screenshot_*.png
 app_backup.py
+test_keygen_ui.py
+keygen_ui_screenshot.png
+keys_*.txt
