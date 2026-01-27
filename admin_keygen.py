@@ -826,18 +826,24 @@ class AdminKeygenApp(ctk.CTk):
         )
         textbox.insert("1.0", text)
         # Note: NOT setting to disabled to allow text selection
-        # Text is effectively read-only due to no modification bindings
+        # Text is effectively read-only due to blocking insert/delete operations
         
-        # Add right-click context menu for copy functionality
-        # Only copy and select-all will work (paste is ignored for read-only)
-        add_context_menu(textbox)
-        
-        # Prevent text modification while allowing selection
+        # Prevent text modification while allowing selection and clipboard operations
         def block_modification(event):
-            return "break"
+            # Allow clipboard shortcuts to pass through
+            if event.keysym in ['c', 'C', 'v', 'V', 'a', 'A'] and (event.state & 0x4):  # Ctrl key
+                return None  # Let the binding continue
+            # Block all other key presses that would modify content
+            if event.char or event.keysym in ['BackSpace', 'Delete', 'Return', 'Tab']:
+                return "break"
+            return None
         
         tk_widget = textbox._textbox if hasattr(textbox, '_textbox') else textbox
         tk_widget.bind("<Key>", block_modification)
+        
+        # Add right-click context menu for copy functionality AFTER blocking modifications
+        # This ensures shortcuts are bound after the blocking handler
+        add_context_menu(textbox)
         
         return textbox
     
