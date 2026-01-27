@@ -43,14 +43,20 @@ except ImportError:
 
 # Supabase configuration - Use same credentials as main.py
 # For security, credentials should be loaded from environment variables
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://spfwfyjpexktgnusgyib.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Fallback values for development only - DO NOT USE IN PRODUCTION
+if not SUPABASE_URL:
+    SUPABASE_URL = "https://spfwfyjpexktgnusgyib.supabase.co"
+if not SUPABASE_KEY:
+    SUPABASE_KEY = "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR"
 
 # Suppress stdout/stderr for --noconsole mode with log file fallback
 if hasattr(sys, 'frozen'):
     # Redirect to log file instead of complete suppression for debugging
     try:
-        log_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'FaleovadAI', 'logs')
+        log_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'CourseSmithAI', 'logs')
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, f'admin_keygen_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
         sys.stdout = open(log_file, 'w', encoding='utf-8')
@@ -129,6 +135,7 @@ class AdminKeygenApp(ctk.CTk):
         self.filtered_licenses = []  # Store filtered licenses for search
         self.is_loading = False  # Track loading state
         self.search_thread = None  # Track search thread
+        self._search_after_id = None  # Track scheduled search callbacks
         
         # Create UI
         self._create_ui()
@@ -256,7 +263,7 @@ class AdminKeygenApp(ctk.CTk):
         
         duration_help = ctk.CTkLabel(
             input_scroll,
-            text="Enter days (3, 30, 90, 180, 365) or 'lifetime'",
+            text="Enter days (3, 30, 90, 180, 365) or 'lifetime' (case-insensitive)",
             font=ctk.CTkFont(size=11),
             text_color=COLORS['text_dim']
         )
@@ -464,12 +471,12 @@ class AdminKeygenApp(ctk.CTk):
         
     def _on_search_keypress(self, event):
         """Handle search keypress with debouncing."""
-        # Cancel previous search thread if still running
-        if self.search_thread and self.search_thread.is_alive():
-            return
+        # Cancel previous scheduled search if any
+        if hasattr(self, '_search_after_id') and self._search_after_id:
+            self.after_cancel(self._search_after_id)
         
-        # Start new search after short delay (debouncing)
-        self.after(300, self._perform_search)
+        # Schedule new search after short delay (debouncing)
+        self._search_after_id = self.after(300, self._perform_search)
     
     def _perform_search(self):
         """Perform search in a background thread to avoid UI freezing."""
@@ -490,35 +497,24 @@ class AdminKeygenApp(ctk.CTk):
     
     def _search_licenses(self, search_term):
         """Search licenses by Email, HWID, License Key, or Creation Date (runs in background thread)."""
+        # Create a local copy to avoid race conditions
+        licenses_to_search = list(self.all_licenses)
         filtered = []
         
-        for license_record in self.all_licenses:
+        for license_record in licenses_to_search:
             email = str(license_record.get('email', '')).lower()
             key = str(license_record.get('license_key', '')).lower()
             created = str(license_record.get('created_at', '')).lower()
             used_hwids = license_record.get('used_hwids', [])
             
-            # Check if search term matches any field
-            matches = False
-            
-            # Email match
-            if search_term in email:
-                matches = True
-            
-            # License key match
-            if search_term in key:
-                matches = True
-            
-            # Creation date match (supports YYYY-MM-DD format)
-            if search_term in created:
-                matches = True
-            
-            # HWID match (check all HWIDs in the array)
-            if isinstance(used_hwids, list):
-                for hwid in used_hwids:
-                    if search_term in str(hwid).lower():
-                        matches = True
-                        break
+            # Check if search term matches any field (using any() for efficiency)
+            matches = any([
+                search_term in email,
+                search_term in key,
+                search_term in created,
+                (isinstance(used_hwids, list) and 
+                 any(search_term in str(hwid).lower() for hwid in used_hwids))
+            ])
             
             if matches:
                 filtered.append(license_record)
@@ -583,6 +579,13 @@ class AdminKeygenApp(ctk.CTk):
                 duration_code = '1_year'
             else:
                 duration_code = 'lifetime'
+        else:
+            # Invalid input - show warning and default to lifetime
+            messagebox.showwarning(
+                "Invalid Duration",
+                f"'{duration_input}' is not a valid duration. Defaulting to 'lifetime'.\n\n"
+                "Valid inputs: 3, 30, 90, 180, 365, or 'lifetime'"
+            )
         
         # Get tier
         tier = self.tier_var.get()

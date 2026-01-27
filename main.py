@@ -20,7 +20,7 @@ from supabase import create_client, Client
 if hasattr(sys, 'frozen'):
     # Redirect to log file instead of complete suppression for debugging
     try:
-        log_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'FaleovadAI', 'logs')
+        log_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'CourseSmithAI', 'logs')
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, f'coursesmith_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
         sys.stdout = open(log_file, 'w', encoding='utf-8')
@@ -32,8 +32,15 @@ if hasattr(sys, 'frozen'):
 
 
 # Supabase configuration for remote kill switch
-SUPABASE_URL = "https://spfwfyjpexktgnusgyib.supabase.co"
-SUPABASE_KEY = "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR"
+# Load from environment variables for security
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Fallback values for development only - DO NOT USE IN PRODUCTION
+if not SUPABASE_URL:
+    SUPABASE_URL = "https://spfwfyjpexktgnusgyib.supabase.co"
+if not SUPABASE_KEY:
+    SUPABASE_KEY = "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR"
 
 
 # Enterprise color scheme
@@ -101,9 +108,8 @@ def check_remote_ban():
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         
         # Query licenses table - search for licenses containing this HWID in used_hwids
-        # Note: In production, this should use a more efficient query with JSONB operators
-        # For now, we fetch licenses and check in Python
-        response = supabase.table("licenses").select("*").limit(100).execute()
+        # Remove limit to check all licenses for this HWID
+        response = supabase.table("licenses").select("*").execute()
         
         # Find license that matches this HWID
         license_record = None
@@ -142,9 +148,14 @@ def check_remote_ban():
                         "Your subscription for CourseSmith AI has expired. Please renew on Whop to continue."
                     )
                     sys.exit()
-            except Exception:
-                # If date parsing fails, allow access (fail-open for this check)
-                pass
+            except Exception as e:
+                # If date parsing fails, fail closed for security
+                print(f"Error: Invalid expiration date format: {e}")
+                messagebox.showerror(
+                    "License Error",
+                    "Invalid license expiration date. Please contact support."
+                )
+                sys.exit()
         
         # If we reach here, license is valid and HWID is authorized
         
@@ -364,9 +375,10 @@ class EnterpriseApp(ctk.CTk):
                 
                 if current_date > expiration_date:
                     return False
-            except Exception:
-                # If date parsing fails, allow access (fail-open)
-                pass
+            except Exception as e:
+                # If date parsing fails, fail closed for security
+                print(f"Warning: Failed to parse expiration date: {e}")
+                return False
         
         return True
     
@@ -978,7 +990,7 @@ class EnterpriseApp(ctk.CTk):
     
     def _update_progress_animation(self, value):
         """Update progress bar animation."""
-        if self.progress_animation_running:
+        if self.progress_animation_running and self.winfo_exists():
             # Increment progress
             value = min(value + 0.01, 0.95)  # Max at 95% until complete
             self.progress_bar.set(value)
@@ -1007,11 +1019,12 @@ class EnterpriseApp(ctk.CTk):
         self._stop_progress_animation()
         
         # Show completion for a moment
-        self.after(1000, lambda: [
-            self.progress_frame.pack_forget(),
-            self.generate_btn.configure(state="normal"),
+        def complete_generation():
+            self.progress_frame.pack_forget()
+            self.generate_btn.configure(state="normal")
             messagebox.showinfo("Success", "Course generated successfully!")
-        ])
+        
+        self.after(1000, complete_generation)
     
     def _clear_instruction(self):
         """Clear the instruction textbox."""
