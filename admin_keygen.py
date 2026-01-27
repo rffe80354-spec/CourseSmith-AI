@@ -119,21 +119,6 @@ class AdminKeygenApp(ctk.CTk):
         self.minsize(1280, 720)
         self.resizable(True, True)
         
-        # Maximize window (cross-platform compatible)
-        try:
-            # Try Windows-specific zoomed state
-            self.state('zoomed')
-        except:
-            # Fallback for other platforms
-            try:
-                # Try macOS
-                self.attributes('-zoomed', True)
-            except:
-                # Fallback: set large geometry
-                screen_width = self.winfo_screenwidth()
-                screen_height = self.winfo_screenheight()
-                self.geometry(f"{screen_width}x{screen_height}+0+0")
-        
         # Set appearance
         self.configure(fg_color=COLORS['background'])
         
@@ -163,6 +148,29 @@ class AdminKeygenApp(ctk.CTk):
         
         # Load all licenses on startup (non-blocking)
         self.after(500, self._load_all_licenses_async)
+        
+        # Finalize window setup after UI is created (prevents recursion issues)
+        self.after(200, self._finalize_init)
+    
+    def _finalize_init(self):
+        """
+        Finalize window initialization by maximizing the window.
+        Called via self.after() to prevent recursion issues with scrollbar calculations.
+        """
+        # Maximize window (cross-platform compatible)
+        try:
+            # Try Windows-specific zoomed state
+            self.state('zoomed')
+        except:
+            # Fallback for other platforms
+            try:
+                # Try macOS
+                self.attributes('-zoomed', True)
+            except:
+                # Fallback: set large geometry
+                screen_width = self.winfo_screenwidth()
+                screen_height = self.winfo_screenheight()
+                self.geometry(f"{screen_width}x{screen_height}+0+0")
         
     def _create_ui(self):
         """Create the main UI with Global Key Explorer and Search."""
@@ -198,7 +206,7 @@ class AdminKeygenApp(ctk.CTk):
         subtitle_label.pack(pady=(0, 15))
         
         # Scrollable input section
-        input_scroll = ctk.CTkScrollableFrame(left_column, corner_radius=8, fg_color="transparent")
+        input_scroll = ctk.CTkScrollableFrame(left_column, corner_radius=0, fg_color="transparent")
         input_scroll.pack(fill="both", expand=True, pady=(0, 10))
         
         # Email input
@@ -478,7 +486,7 @@ class AdminKeygenApp(ctk.CTk):
         # Global Key Explorer with grid weight configuration for proper expansion
         self.explorer_frame = ctk.CTkScrollableFrame(
             right_column,
-            corner_radius=8,
+            corner_radius=0,
             fg_color=COLORS['background'],
             border_color=COLORS['accent'],
             border_width=2
@@ -788,8 +796,8 @@ class AdminKeygenApp(ctk.CTk):
             height=45
         )
         header_frame.pack(fill="x", pady=(0, 10), padx=2)
-        header_frame.grid_columnconfigure(0, weight=2)  # Email
-        header_frame.grid_columnconfigure(1, weight=2)  # Key
+        header_frame.grid_columnconfigure(0, weight=2, minsize=200)  # Email - with minsize
+        header_frame.grid_columnconfigure(1, weight=2, minsize=300)  # Key - with minsize
         header_frame.grid_columnconfigure(2, weight=1)  # Tier
         header_frame.grid_columnconfigure(3, weight=1)  # Devices
         header_frame.grid_columnconfigure(4, weight=1)  # Created
@@ -809,10 +817,6 @@ class AdminKeygenApp(ctk.CTk):
         # Create row for each license
         for idx, license_record in enumerate(licenses):
             self._create_license_row(license_record, idx)
-        
-        # Force canvas update to prevent floating text during scrolling
-        # This ensures all widgets are properly positioned before scrolling begins
-        self.explorer_frame.update_idletasks()
     
     def _create_selectable_text_widget(self, parent, text, font, text_color, row_color, width=None, height=25):
         """
@@ -903,8 +907,8 @@ class AdminKeygenApp(ctk.CTk):
             height=50
         )
         row_frame.pack(fill="x", pady=3, padx=2)
-        row_frame.grid_columnconfigure(0, weight=2)
-        row_frame.grid_columnconfigure(1, weight=2)
+        row_frame.grid_columnconfigure(0, weight=2, minsize=200)  # Email - with minsize
+        row_frame.grid_columnconfigure(1, weight=2, minsize=300)  # Key - with minsize
         row_frame.grid_columnconfigure(2, weight=1)
         row_frame.grid_columnconfigure(3, weight=1)
         row_frame.grid_columnconfigure(4, weight=1)

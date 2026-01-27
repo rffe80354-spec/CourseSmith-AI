@@ -56,31 +56,49 @@ COLORS = {
 
 def get_hwid():
     """
-    Get the Windows Hardware ID (UUID) using wmic command.
+    Get the Windows Hardware ID (UUID) using wmic command with robust fallback.
     
     Returns:
         str: The hardware UUID or "UNKNOWN_ID" if an error occurs.
     """
     try:
-        # Execute wmic command to get system UUID
-        result = subprocess.run(
-            ["wmic", "csproduct", "get", "uuid"],
-            capture_output=True,
-            text=True,
+        # Primary method: Get system UUID using wmic csproduct
+        result = subprocess.check_output(
+            'wmic csproduct get uuid',
+            shell=True,
             timeout=5
-        )
+        ).decode()
         
-        if result.returncode == 0:
-            # Parse output - UUID is on second line
-            lines = result.stdout.strip().split('\n')
-            if len(lines) >= 2:
-                uuid = lines[1].strip()
-                if uuid and uuid != "UUID":
-                    return uuid
+        # Parse output - UUID is on second line
+        lines = result.strip().split('\n')
+        if len(lines) >= 2:
+            uuid = lines[1].strip()
+            if uuid and uuid != "UUID" and uuid != "":
+                return uuid
         
-        return "UNKNOWN_ID"
-    except Exception:
-        return "UNKNOWN_ID"
+    except Exception as e:
+        print(f"Primary HWID method failed: {e}")
+    
+    # Fallback method: Try disk drive serial number
+    try:
+        result = subprocess.check_output(
+            'wmic diskdrive get serialnumber',
+            shell=True,
+            timeout=5
+        ).decode()
+        
+        # Parse output - Serial number is on second line
+        lines = result.strip().split('\n')
+        if len(lines) >= 2:
+            serial = lines[1].strip()
+            if serial and serial != "SerialNumber" and serial != "":
+                return serial
+                
+    except Exception as e:
+        print(f"Fallback HWID method failed: {e}")
+    
+    # If both methods fail, return UNKNOWN_ID
+    return "UNKNOWN_ID"
 
 
 def check_remote_ban():
