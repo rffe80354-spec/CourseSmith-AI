@@ -1,30 +1,33 @@
 #!/usr/bin/env python3
 """
-Admin Key Generator - Full License Management Suite for Faleovad AI Enterprise.
+Admin Key Generator - Full License Management Suite for CourseSmith AI Enterprise.
 GUI-based version for PyInstaller --noconsole mode compatibility.
 
 This script is for the SELLER only to generate tiered license keys for buyers.
 
 Tiers:
-- Standard ($59): Basic features, no custom branding
-- Extended ($249): Full features, custom logo and website support
+- Standard: Basic features, no custom branding
+- Extended: Full features, custom branding support
+- Professional: Premium features with priority support
 
 Features:
-- GUI Mode: Enter buyer email to instantly generate Standard license
-- God Mode: Enter the master password to access tier selection
+- Direct access to all features (no God Mode required)
+- Powerful Search: Filter licenses by Email, HWID, License Key, or Creation Date
 - Supabase Integration: Automatically syncs keys to cloud database
-- Global Key Explorer: View ALL licenses from database
-- Device Limit Control: Set max devices per license
+- Global Key Explorer: View ALL licenses from database with real-time search
+- Full License Control: Duration (Days), Tier Selection, Device Limits
+- Clipboard Support: Full Copy/Paste functionality for all fields
 """
 
 import sys
 import os
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 import customtkinter as ctk
 from tkinter import messagebox
 from license_guard import generate_key
-from utils import resource_path
+from utils import resource_path, add_context_menu, bind_paste_shortcut
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -57,8 +60,26 @@ if hasattr(sys, 'frozen'):
         sys.stdout = None
         sys.stderr = None
 
-# God Mode secret trigger - DO NOT SHARE
-GOD_MODE_CODE = "A543278.B543278.Z12345_Faleovad2009"
+
+# Midnight Forge color scheme (matching main.py)
+COLORS = {
+    'background': '#0B0E14',
+    'sidebar': '#151921',
+    'accent': '#7F5AF0',
+    'accent_hover': '#9D7BF5',
+    'text': '#E0E0E0',
+    'text_dim': '#808080'
+}
+
+# Duration mapping for days to duration strings
+DURATION_MAP = {
+    '3': '3_day',
+    '30': '1_month',
+    '90': '3_month',
+    '180': '6_month',
+    '365': '1_year',
+    'lifetime': 'lifetime'
+}
 
 
 def get_supabase_client():
@@ -72,6 +93,7 @@ def get_supabase_client():
         return None
 
 
+
 class AdminKeygenApp(ctk.CTk):
     """Admin Keygen GUI Application with Full License Management."""
     
@@ -81,14 +103,17 @@ class AdminKeygenApp(ctk.CTk):
         
         # Configure window - larger for Global Key Explorer
         self.title("CourseSmith License Management Suite")
-        self.geometry("1400x800")
+        self.geometry("1600x900")
         self.resizable(True, True)
         
         # Center window on screen
         self.update_idletasks()
-        x = (self.winfo_screenwidth() // 2) - (1400 // 2)
-        y = (self.winfo_screenheight() // 2) - (800 // 2)
-        self.geometry(f"1400x800+{x}+{y}")
+        x = (self.winfo_screenwidth() // 2) - (1600 // 2)
+        y = (self.winfo_screenheight() // 2) - (900 // 2)
+        self.geometry(f"1600x900+{x}+{y}")
+        
+        # Set appearance
+        self.configure(fg_color=COLORS['background'])
         
         # Set icon if available
         try:
@@ -99,10 +124,11 @@ class AdminKeygenApp(ctk.CTk):
             pass
         
         # State
-        self.god_mode = False
         self.last_license_key = None
         self.all_licenses = []  # Store all licenses for global view
+        self.filtered_licenses = []  # Store filtered licenses for search
         self.is_loading = False  # Track loading state
+        self.search_thread = None  # Track search thread
         
         # Create UI
         self._create_ui()
@@ -111,37 +137,37 @@ class AdminKeygenApp(ctk.CTk):
         self.after(500, self._load_all_licenses_async)
         
     def _create_ui(self):
-        """Create the main UI with Global Key Explorer."""
-        # Main container with three sections
-        main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        """Create the main UI with Global Key Explorer and Search."""
+        # Main container with two columns
+        main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        main_frame.grid_columnconfigure(0, weight=0, minsize=380)  # Generator column (fixed)
+        main_frame.grid_columnconfigure(0, weight=0, minsize=450)  # Generator column (fixed)
         main_frame.grid_columnconfigure(1, weight=1)  # Global Explorer (expandable)
         main_frame.grid_rowconfigure(0, weight=1)
         
         # Left column - Key Generator
-        left_column = ctk.CTkFrame(main_frame, corner_radius=10, fg_color=("#2b2b2b", "#1a1a1a"))
-        left_column.grid(row=0, column=0, padx=(0, 10), sticky="nsew")
+        left_column = ctk.CTkFrame(main_frame, corner_radius=10, fg_color=COLORS['sidebar'])
+        left_column.grid(row=0, column=0, padx=(0, 15), sticky="nsew")
         
         # Header
-        header_frame = ctk.CTkFrame(left_column, corner_radius=10, fg_color=("#1a1a1a", "#0d0d0d"))
+        header_frame = ctk.CTkFrame(left_column, corner_radius=10, fg_color=COLORS['background'])
         header_frame.pack(fill="x", pady=(0, 15))
         
         title_label = ctk.CTkLabel(
             header_frame,
             text="🔑 License Generator",
-            font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=("#7F5AF0", "#9D7BF5")
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=COLORS['accent']
         )
-        title_label.pack(pady=12)
+        title_label.pack(pady=15)
         
         subtitle_label = ctk.CTkLabel(
             header_frame,
             text="Vendor Tool - DO NOT DISTRIBUTE",
-            font=ctk.CTkFont(size=11),
-            text_color=("gray60", "gray50")
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text_dim']
         )
-        subtitle_label.pack(pady=(0, 12))
+        subtitle_label.pack(pady=(0, 15))
         
         # Scrollable input section
         input_scroll = ctk.CTkScrollableFrame(left_column, corner_radius=8, fg_color="transparent")
@@ -151,159 +177,257 @@ class AdminKeygenApp(ctk.CTk):
         email_label = ctk.CTkLabel(
             input_scroll,
             text="Buyer Email:",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=("#E0E0E0", "#E0E0E0")
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
         )
-        email_label.pack(pady=(10, 5), padx=15, anchor="w")
+        email_label.pack(pady=(15, 5), padx=20, anchor="w")
         
         self.email_entry = ctk.CTkEntry(
             input_scroll,
-            placeholder_text="buyer@example.com or God Mode Code",
-            font=ctk.CTkFont(size=11),
-            height=32,
-            fg_color=("#0B0E14", "#0B0E14"),
-            border_color=("#7F5AF0", "#9D7BF5")
+            placeholder_text="buyer@example.com",
+            font=ctk.CTkFont(size=12),
+            height=38,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
         )
-        self.email_entry.pack(fill="x", padx=15, pady=(0, 10))
+        self.email_entry.pack(fill="x", padx=20, pady=(0, 15))
         self.email_entry.bind("<Return>", lambda e: self._on_generate())
         
-        # Device Limit input (NEW)
+        # Add clipboard support
+        add_context_menu(self.email_entry)
+        bind_paste_shortcut(self.email_entry)
+        
+        # Tier selection (now always visible - no God Mode)
+        tier_label = ctk.CTkLabel(
+            input_scroll,
+            text="License Tier:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        )
+        tier_label.pack(pady=(5, 5), padx=20, anchor="w")
+        
+        self.tier_var = ctk.StringVar(value="standard")
+        
+        tier_options = ctk.CTkFrame(input_scroll, fg_color="transparent")
+        tier_options.pack(fill="x", padx=20, pady=(0, 15))
+        
+        tier_radio1 = ctk.CTkRadioButton(
+            tier_options,
+            text="Standard - Basic Features",
+            variable=self.tier_var,
+            value="standard",
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover']
+        )
+        tier_radio1.pack(anchor="w", pady=4)
+        
+        tier_radio2 = ctk.CTkRadioButton(
+            tier_options,
+            text="Extended - Full Branding",
+            variable=self.tier_var,
+            value="extended",
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover']
+        )
+        tier_radio2.pack(anchor="w", pady=4)
+        
+        tier_radio3 = ctk.CTkRadioButton(
+            tier_options,
+            text="Professional - Premium Support",
+            variable=self.tier_var,
+            value="professional",
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover']
+        )
+        tier_radio3.pack(anchor="w", pady=4)
+        
+        # Duration input (NEW)
+        duration_label = ctk.CTkLabel(
+            input_scroll,
+            text="Duration (Days):",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        )
+        duration_label.pack(pady=(5, 5), padx=20, anchor="w")
+        
+        duration_help = ctk.CTkLabel(
+            input_scroll,
+            text="Enter days (3, 30, 90, 180, 365) or 'lifetime'",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_dim']
+        )
+        duration_help.pack(pady=(0, 5), padx=20, anchor="w")
+        
+        self.duration_entry = ctk.CTkEntry(
+            input_scroll,
+            placeholder_text="lifetime",
+            font=ctk.CTkFont(size=12),
+            height=38,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
+        )
+        self.duration_entry.pack(fill="x", padx=20, pady=(0, 15))
+        self.duration_entry.insert(0, "lifetime")
+        
+        # Add clipboard support
+        add_context_menu(self.duration_entry)
+        bind_paste_shortcut(self.duration_entry)
+        
+        # Device Limit input
         device_label = ctk.CTkLabel(
             input_scroll,
-            text="Device Limit (Max HWIDs):",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=("#E0E0E0", "#E0E0E0")
+            text="Max Devices (HWID Limit):",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
         )
-        device_label.pack(pady=(5, 5), padx=15, anchor="w")
+        device_label.pack(pady=(5, 5), padx=20, anchor="w")
         
         device_help = ctk.CTkLabel(
             input_scroll,
             text="Number of devices that can use this license",
-            font=ctk.CTkFont(size=10),
-            text_color=("gray60", "gray50")
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_dim']
         )
-        device_help.pack(pady=(0, 5), padx=15, anchor="w")
+        device_help.pack(pady=(0, 5), padx=20, anchor="w")
         
         self.device_limit_entry = ctk.CTkEntry(
             input_scroll,
             placeholder_text="3",
-            font=ctk.CTkFont(size=11),
-            height=32,
-            width=100,
-            fg_color=("#0B0E14", "#0B0E14"),
-            border_color=("#7F5AF0", "#9D7BF5")
+            font=ctk.CTkFont(size=12),
+            height=38,
+            width=120,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
         )
-        self.device_limit_entry.pack(padx=15, pady=(0, 10), anchor="w")
-        self.device_limit_entry.insert(0, "3")  # Default value
+        self.device_limit_entry.pack(padx=20, pady=(0, 15), anchor="w")
+        self.device_limit_entry.insert(0, "3")
         
-        # Tier selection (initially hidden)
-        self.tier_frame = ctk.CTkFrame(input_scroll, corner_radius=8, fg_color="transparent")
-        self.tier_frame.pack(fill="x", padx=15, pady=(5, 10))
-        
-        tier_label = ctk.CTkLabel(
-            self.tier_frame,
-            text="License Tier (God Mode):",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=("#FF6600", "#FF8800")
-        )
-        tier_label.pack(pady=(0, 8), anchor="w")
-        
-        self.tier_var = ctk.StringVar(value="standard")
-        
-        tier_radio1 = ctk.CTkRadioButton(
-            self.tier_frame,
-            text="Standard ($59) - Basic Features",
-            variable=self.tier_var,
-            value="standard",
-            font=ctk.CTkFont(size=11),
-            fg_color=("#7F5AF0", "#9D7BF5"),
-            hover_color=("#9D7BF5", "#7F5AF0")
-        )
-        tier_radio1.pack(anchor="w", pady=3)
-        
-        tier_radio2 = ctk.CTkRadioButton(
-            self.tier_frame,
-            text="Extended ($249) - Full Branding",
-            variable=self.tier_var,
-            value="extended",
-            font=ctk.CTkFont(size=11),
-            fg_color=("#7F5AF0", "#9D7BF5"),
-            hover_color=("#9D7BF5", "#7F5AF0")
-        )
-        tier_radio2.pack(anchor="w", pady=3)
-        
-        # Hide tier selection initially
-        self.tier_frame.pack_forget()
+        # Add clipboard support
+        add_context_menu(self.device_limit_entry)
+        bind_paste_shortcut(self.device_limit_entry)
         
         # Generate button
         self.generate_btn = ctk.CTkButton(
             input_scroll,
             text="⚡ Generate License Key",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            height=38,
-            fg_color=("#7F5AF0", "#9D7BF5"),
-            hover_color=("#9D7BF5", "#7F5AF0"),
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=45,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
             command=self._on_generate
         )
-        self.generate_btn.pack(fill="x", padx=15, pady=(0, 12))
+        self.generate_btn.pack(fill="x", padx=20, pady=(5, 15))
         
         # Output textbox
         output_label = ctk.CTkLabel(
             input_scroll,
             text="Generated License:",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=("#E0E0E0", "#E0E0E0")
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
         )
-        output_label.pack(pady=(8, 5), padx=15, anchor="w")
+        output_label.pack(pady=(10, 5), padx=20, anchor="w")
         
         self.output_text = ctk.CTkTextbox(
             input_scroll,
-            font=ctk.CTkFont(family="Courier New", size=10),
+            font=ctk.CTkFont(family="Courier New", size=11),
             wrap="word",
             state="disabled",
-            height=110,
-            fg_color=("#0B0E14", "#0B0E14"),
-            border_color=("#7F5AF0", "#9D7BF5")
+            height=120,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
         )
-        self.output_text.pack(fill="x", padx=15, pady=(0, 8))
+        self.output_text.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # Add clipboard support
+        add_context_menu(self.output_text)
+        bind_paste_shortcut(self.output_text)
         
         # Copy button
         self.copy_btn = ctk.CTkButton(
             input_scroll,
             text="📋 Copy License Key",
-            font=ctk.CTkFont(size=11),
-            height=28,
-            fg_color=("#151921", "#151921"),
-            hover_color=("#7F5AF0", "#9D7BF5"),
+            font=ctk.CTkFont(size=12),
+            height=35,
+            fg_color=COLORS['sidebar'],
+            hover_color=COLORS['accent'],
             command=self._on_copy,
             state="disabled"
         )
-        self.copy_btn.pack(fill="x", padx=15, pady=(0, 12))
+        self.copy_btn.pack(fill="x", padx=20, pady=(0, 15))
         
         # Status bar
         self.status_label = ctk.CTkLabel(
             left_column,
             text="Ready",
-            font=ctk.CTkFont(size=10),
-            text_color=("gray60", "gray50")
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_dim']
         )
-        self.status_label.pack(pady=(5, 10))
+        self.status_label.pack(pady=(5, 15))
         
-        # Right column - Global Key Explorer
-        right_column = ctk.CTkFrame(main_frame, corner_radius=10, fg_color=("#2b2b2b", "#1a1a1a"))
-        right_column.grid(row=0, column=1, padx=(10, 0), sticky="nsew")
+        # Right column - Global Key Explorer with Search
+        right_column = ctk.CTkFrame(main_frame, corner_radius=10, fg_color=COLORS['sidebar'])
+        right_column.grid(row=0, column=1, padx=(15, 0), sticky="nsew")
         
         # Explorer Header
-        explorer_header = ctk.CTkFrame(right_column, corner_radius=10, fg_color=("#1a1a1a", "#0d0d0d"))
-        explorer_header.pack(fill="x", pady=(0, 10))
+        explorer_header = ctk.CTkFrame(right_column, corner_radius=10, fg_color=COLORS['background'])
+        explorer_header.pack(fill="x", pady=(0, 15))
         
         explorer_title = ctk.CTkLabel(
             explorer_header,
             text="🌐 Global Key Explorer",
-            font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=("#7F5AF0", "#9D7BF5")
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=COLORS['accent']
         )
-        explorer_title.pack(pady=12)
+        explorer_title.pack(pady=15)
+        
+        # Search Bar (NEW - POWERFUL SEARCH)
+        search_frame = ctk.CTkFrame(right_column, corner_radius=8, fg_color=COLORS['background'])
+        search_frame.pack(fill="x", padx=15, pady=(0, 10))
+        
+        search_label = ctk.CTkLabel(
+            search_frame,
+            text="🔍 Search:",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS['text']
+        )
+        search_label.pack(side="left", padx=(15, 10), pady=12)
+        
+        self.search_entry = ctk.CTkEntry(
+            search_frame,
+            placeholder_text="Search by Email, HWID, License Key, or Creation Date (YYYY-MM-DD)",
+            font=ctk.CTkFont(size=12),
+            height=38,
+            fg_color=COLORS['sidebar'],
+            border_color=COLORS['accent'],
+            border_width=2
+        )
+        self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=12)
+        
+        # Add clipboard support for search
+        add_context_menu(self.search_entry)
+        bind_paste_shortcut(self.search_entry)
+        
+        # Bind real-time search (with debouncing)
+        self.search_entry.bind("<KeyRelease>", self._on_search_keypress)
+        
+        search_btn = ctk.CTkButton(
+            search_frame,
+            text="Search",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            width=100,
+            height=38,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=self._perform_search
+        )
+        search_btn.pack(side="left", padx=(0, 15), pady=12)
         
         # Control buttons
         control_frame = ctk.CTkFrame(right_column, corner_radius=8, fg_color="transparent")
@@ -312,19 +436,19 @@ class AdminKeygenApp(ctk.CTk):
         self.refresh_db_btn = ctk.CTkButton(
             control_frame,
             text="🔄 Refresh Database",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            height=35,
-            fg_color=("#7F5AF0", "#9D7BF5"),
-            hover_color=("#9D7BF5", "#7F5AF0"),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=40,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
             command=self._load_all_licenses_async
         )
-        self.refresh_db_btn.pack(side="left", padx=(0, 5))
+        self.refresh_db_btn.pack(side="left", padx=(0, 10))
         
         self.loading_label = ctk.CTkLabel(
             control_frame,
             text="",
-            font=ctk.CTkFont(size=11),
-            text_color=("#7F5AF0", "#9D7BF5")
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['accent']
         )
         self.loading_label.pack(side="left", padx=(10, 0))
         
@@ -332,33 +456,96 @@ class AdminKeygenApp(ctk.CTk):
         self.explorer_frame = ctk.CTkScrollableFrame(
             right_column,
             corner_radius=8,
-            fg_color=("#151921", "#151921"),
-            border_color=("#7F5AF0", "#9D7BF5"),
-            border_width=1
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
         )
         self.explorer_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
         
+    def _on_search_keypress(self, event):
+        """Handle search keypress with debouncing."""
+        # Cancel previous search thread if still running
+        if self.search_thread and self.search_thread.is_alive():
+            return
+        
+        # Start new search after short delay (debouncing)
+        self.after(300, self._perform_search)
+    
+    def _perform_search(self):
+        """Perform search in a background thread to avoid UI freezing."""
+        search_term = self.search_entry.get().strip().lower()
+        
+        if not search_term:
+            # If search is empty, show all licenses
+            self.filtered_licenses = self.all_licenses.copy()
+            self._display_licenses(self.filtered_licenses)
+            return
+        
+        # Run search in background thread
+        if self.search_thread and self.search_thread.is_alive():
+            return  # Prevent multiple simultaneous searches
+        
+        self.search_thread = threading.Thread(target=self._search_licenses, args=(search_term,), daemon=True)
+        self.search_thread.start()
+    
+    def _search_licenses(self, search_term):
+        """Search licenses by Email, HWID, License Key, or Creation Date (runs in background thread)."""
+        filtered = []
+        
+        for license_record in self.all_licenses:
+            email = str(license_record.get('email', '')).lower()
+            key = str(license_record.get('license_key', '')).lower()
+            created = str(license_record.get('created_at', '')).lower()
+            used_hwids = license_record.get('used_hwids', [])
+            
+            # Check if search term matches any field
+            matches = False
+            
+            # Email match
+            if search_term in email:
+                matches = True
+            
+            # License key match
+            if search_term in key:
+                matches = True
+            
+            # Creation date match (supports YYYY-MM-DD format)
+            if search_term in created:
+                matches = True
+            
+            # HWID match (check all HWIDs in the array)
+            if isinstance(used_hwids, list):
+                for hwid in used_hwids:
+                    if search_term in str(hwid).lower():
+                        matches = True
+                        break
+            
+            if matches:
+                filtered.append(license_record)
+        
+        self.filtered_licenses = filtered
+        
+        # Update UI on main thread
+        self.after(0, lambda: self._display_licenses(self.filtered_licenses))
+        self.after(0, lambda: self._update_search_status(len(filtered)))
+    
+    def _update_search_status(self, count):
+        """Update search status label."""
+        search_term = self.search_entry.get().strip()
+        if search_term:
+            self.loading_label.configure(text=f"✓ Found {count} match(es)")
+        else:
+            self.loading_label.configure(text=f"✓ Loaded {len(self.all_licenses)} license(s)")
+    
     def _on_generate(self):
         """Handle generate button click with Supabase sync."""
         email_input = self.email_entry.get().strip()
+        duration_input = self.duration_entry.get().strip().lower()
         device_limit_input = self.device_limit_entry.get().strip()
         
         if not email_input:
-            messagebox.showerror("Error", "Please enter a buyer email or God Mode code.")
+            messagebox.showerror("Error", "Please enter a buyer email.")
             return
-        
-        # Check for God Mode trigger
-        if email_input == GOD_MODE_CODE:
-            if not self.god_mode:
-                self.god_mode = True
-                self.tier_frame.pack(fill="x", padx=15, pady=(5, 10), before=self.generate_btn)
-                self.status_label.configure(text="⚡ GOD MODE ACTIVATED ⚡", text_color=("#ff6600", "#ff8800"))
-                messagebox.showinfo("God Mode", "God Mode Activated! You can now select license tiers.")
-                self.email_entry.delete(0, "end")
-                return
-            else:
-                messagebox.showwarning("God Mode", "God Mode is already active.")
-                return
         
         # Validate email
         import re
@@ -377,26 +564,44 @@ class AdminKeygenApp(ctk.CTk):
             messagebox.showerror("Error", "Device limit must be a valid number.")
             return
         
-        # Get tier (standard by default, or selected tier in god mode)
-        tier = self.tier_var.get() if self.god_mode else 'standard'
+        # Parse duration input
+        duration_code = 'lifetime'
+        if duration_input in DURATION_MAP:
+            duration_code = DURATION_MAP[duration_input]
+        elif duration_input.isdigit():
+            days = int(duration_input)
+            # Map custom days to closest duration
+            if days <= 3:
+                duration_code = '3_day'
+            elif days <= 30:
+                duration_code = '1_month'
+            elif days <= 90:
+                duration_code = '3_month'
+            elif days <= 180:
+                duration_code = '6_month'
+            elif days <= 365:
+                duration_code = '1_year'
+            else:
+                duration_code = 'lifetime'
+        
+        # Get tier
+        tier = self.tier_var.get()
         
         # Generate license key using the actual generate_key function
         try:
-            # Default to lifetime duration
-            duration = 'lifetime'
-            license_key, expires_at = generate_key(email_input, tier, duration)
+            license_key, expires_at = generate_key(email_input, tier, duration_code)
             
             # Sync to Supabase database with device limit
             sync_success = self._sync_to_supabase(email_input, license_key, tier, expires_at, device_limit)
             
             # Display the license
-            self._display_license(email_input, tier, license_key, device_limit, sync_success)
+            self._display_license(email_input, tier, license_key, device_limit, duration_input, sync_success)
             
             # Update status
             sync_status = "✓ Synced to Supabase" if sync_success else "⚠ Local only (Supabase unavailable)"
             self.status_label.configure(
                 text=f"License generated for {email_input} - {sync_status}",
-                text_color=("#1f6aa5", "#3b8ed0")
+                text_color=COLORS['accent']
             )
             
             # Refresh global explorer after generation (only if sync was successful)
@@ -405,7 +610,7 @@ class AdminKeygenApp(ctk.CTk):
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to generate license: {str(e)}")
-            self.status_label.configure(text="Generation failed", text_color=("red", "red"))
+            self.status_label.configure(text="Generation failed", text_color="red")
     
     def _sync_to_supabase(self, email, license_key, tier, expires_at, device_limit=3):
         """
@@ -442,7 +647,7 @@ class AdminKeygenApp(ctk.CTk):
             license_data = {
                 'license_key': license_key,
                 'email': email,
-                'tier': tier,  # Ensure tier is correctly set (standard or extended)
+                'tier': tier,  # Ensure tier is correctly set
                 'valid_until': expires_at,
                 'is_banned': False,
                 'used_hwids': [],  # Empty array for new licenses
@@ -500,10 +705,12 @@ class AdminKeygenApp(ctk.CTk):
             
             if response.data:
                 self.all_licenses = response.data
+                self.filtered_licenses = self.all_licenses.copy()
                 # Update UI on main thread
-                self.after(0, lambda: self._display_all_licenses())
+                self.after(0, lambda: self._display_licenses(self.filtered_licenses))
             else:
                 self.all_licenses = []
+                self.filtered_licenses = []
                 self.after(0, lambda: self._display_error("No licenses found in database."))
             
         except Exception as e:
@@ -517,7 +724,7 @@ class AdminKeygenApp(ctk.CTk):
     def _finish_loading(self):
         """Clean up after loading completes."""
         self.is_loading = False
-        self.loading_label.configure(text="")
+        self.loading_label.configure(text=f"✓ Loaded {len(self.all_licenses)} license(s)")
         self.refresh_db_btn.configure(state="normal")
     
     def _display_error(self, message):
@@ -529,52 +736,57 @@ class AdminKeygenApp(ctk.CTk):
         error_label = ctk.CTkLabel(
             self.explorer_frame,
             text=message,
-            font=ctk.CTkFont(size=12),
-            text_color=("gray60", "gray50")
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS['text_dim']
         )
         error_label.pack(pady=50)
     
-    def _display_all_licenses(self):
-        """Display all licenses in the Global Key Explorer."""
+    def _display_licenses(self, licenses):
+        """Display licenses in the Global Key Explorer."""
         # Clear existing widgets
         for widget in self.explorer_frame.winfo_children():
             widget.destroy()
         
-        if not self.all_licenses:
-            self._display_error("No licenses found in database.")
+        if not licenses:
+            self._display_error("No licenses match your search criteria.")
             return
         
         # Update loading label with count
-        count = len(self.all_licenses)
-        self.loading_label.configure(text=f"✓ Loaded {count} license(s)")
+        count = len(licenses)
+        search_term = self.search_entry.get().strip()
+        if search_term:
+            self.loading_label.configure(text=f"✓ Found {count} match(es)")
+        else:
+            self.loading_label.configure(text=f"✓ Loaded {count} license(s)")
         
         # Create header row
         header_frame = ctk.CTkFrame(
             self.explorer_frame,
             corner_radius=6,
-            fg_color=("#7F5AF0", "#9D7BF5"),
-            height=40
+            fg_color=COLORS['accent'],
+            height=45
         )
-        header_frame.pack(fill="x", pady=(0, 8), padx=2)
+        header_frame.pack(fill="x", pady=(0, 10), padx=2)
         header_frame.grid_columnconfigure(0, weight=2)  # Email
         header_frame.grid_columnconfigure(1, weight=2)  # Key
         header_frame.grid_columnconfigure(2, weight=1)  # Tier
         header_frame.grid_columnconfigure(3, weight=1)  # Devices
         header_frame.grid_columnconfigure(4, weight=1)  # Created
-        header_frame.grid_columnconfigure(5, weight=0)  # Actions
+        header_frame.grid_columnconfigure(5, weight=1)  # HWIDs
+        header_frame.grid_columnconfigure(6, weight=0)  # Actions
         
-        headers = ["Email", "License Key", "Tier", "Devices", "Created", ""]
+        headers = ["Email", "License Key", "Tier", "Devices", "Created", "HWIDs", "Actions"]
         for idx, header_text in enumerate(headers):
             header_label = ctk.CTkLabel(
                 header_frame,
                 text=header_text,
-                font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=("#0B0E14", "#0B0E14")
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS['background']
             )
-            header_label.grid(row=0, column=idx, padx=8, pady=8, sticky="w")
+            header_label.grid(row=0, column=idx, padx=10, pady=10, sticky="w")
         
         # Create row for each license
-        for idx, license_record in enumerate(self.all_licenses):
+        for idx, license_record in enumerate(licenses):
             self._create_license_row(license_record, idx)
     
     def _create_license_row(self, license_record, idx):
@@ -598,116 +810,166 @@ class AdminKeygenApp(ctk.CTk):
         # Determine device usage
         if isinstance(used_hwids, list):
             device_usage = f"{len(used_hwids)}/{max_devices}"
+            hwid_preview = ', '.join(used_hwids[:2]) if used_hwids else 'None'
+            if len(used_hwids) > 2:
+                hwid_preview += "..."
         else:
             device_usage = f"0/{max_devices}"
+            hwid_preview = 'None'
         
         # Row background (alternating)
-        row_color = ("#1a1a1a", "#1a1a1a") if idx % 2 == 0 else ("#0d0d0d", "#0d0d0d")
+        row_color = COLORS['sidebar'] if idx % 2 == 0 else COLORS['background']
         
         row_frame = ctk.CTkFrame(
             self.explorer_frame,
             corner_radius=6,
             fg_color=row_color,
-            height=45
+            height=50
         )
-        row_frame.pack(fill="x", pady=2, padx=2)
+        row_frame.pack(fill="x", pady=3, padx=2)
         row_frame.grid_columnconfigure(0, weight=2)
         row_frame.grid_columnconfigure(1, weight=2)
         row_frame.grid_columnconfigure(2, weight=1)
         row_frame.grid_columnconfigure(3, weight=1)
         row_frame.grid_columnconfigure(4, weight=1)
-        row_frame.grid_columnconfigure(5, weight=0)
+        row_frame.grid_columnconfigure(5, weight=1)
+        row_frame.grid_columnconfigure(6, weight=0)
         
         # Email
         email_label = ctk.CTkLabel(
             row_frame,
-            text=email[:30] + "..." if len(email) > 30 else email,
-            font=ctk.CTkFont(size=10),
-            text_color=("#E0E0E0", "#E0E0E0"),
+            text=email[:35] + "..." if len(email) > 35 else email,
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text'],
             anchor="w"
         )
-        email_label.grid(row=0, column=0, padx=8, pady=8, sticky="w")
+        email_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
         
         # License Key
         key_label = ctk.CTkLabel(
             row_frame,
             text=key,
-            font=ctk.CTkFont(family="Courier New", size=10),
-            text_color=("#7F5AF0", "#9D7BF5"),
+            font=ctk.CTkFont(family="Courier New", size=11),
+            text_color=COLORS['accent'],
             anchor="w"
         )
-        key_label.grid(row=0, column=1, padx=8, pady=8, sticky="w")
+        key_label.grid(row=0, column=1, padx=10, pady=10, sticky="w")
         
         # Tier
-        tier_color = ("#FFD700", "#FFD700") if tier == "extended" else ("#A0A0A0", "#A0A0A0")
+        tier_color = "#FFD700" if tier == "professional" else ("#FFA500" if tier == "extended" else "#A0A0A0")
         tier_label = ctk.CTkLabel(
             row_frame,
-            text=tier.upper(),
-            font=ctk.CTkFont(size=10, weight="bold"),
+            text=tier.upper() if tier != 'N/A' else tier,
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=tier_color,
             anchor="w"
         )
-        tier_label.grid(row=0, column=2, padx=8, pady=8, sticky="w")
+        tier_label.grid(row=0, column=2, padx=10, pady=10, sticky="w")
         
         # Device usage
         device_label = ctk.CTkLabel(
             row_frame,
             text=device_usage,
-            font=ctk.CTkFont(size=10),
-            text_color=("#E0E0E0", "#E0E0E0"),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text'],
             anchor="w"
         )
-        device_label.grid(row=0, column=3, padx=8, pady=8, sticky="w")
+        device_label.grid(row=0, column=3, padx=10, pady=10, sticky="w")
         
         # Created date
         date_label = ctk.CTkLabel(
             row_frame,
             text=created,
-            font=ctk.CTkFont(size=9),
-            text_color=("gray60", "gray50"),
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS['text_dim'],
             anchor="w"
         )
-        date_label.grid(row=0, column=4, padx=8, pady=8, sticky="w")
+        date_label.grid(row=0, column=4, padx=10, pady=10, sticky="w")
         
-        # Copy button
-        copy_btn = ctk.CTkButton(
+        # HWIDs preview
+        hwid_label = ctk.CTkLabel(
             row_frame,
-            text="📋 Copy",
+            text=hwid_preview,
             font=ctk.CTkFont(size=9),
-            width=70,
-            height=26,
-            fg_color=("#7F5AF0", "#9D7BF5"),
-            hover_color=("#9D7BF5", "#7F5AF0"),
-            command=lambda k=key: self._copy_key_from_explorer(k)
+            text_color=COLORS['text_dim'],
+            anchor="w"
         )
-        copy_btn.grid(row=0, column=5, padx=8, pady=8)
+        hwid_label.grid(row=0, column=5, padx=10, pady=10, sticky="w")
+        
+        # Action buttons frame
+        action_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
+        action_frame.grid(row=0, column=6, padx=10, pady=10)
+        
+        # Copy Email button
+        copy_email_btn = ctk.CTkButton(
+            action_frame,
+            text="📧",
+            font=ctk.CTkFont(size=10),
+            width=35,
+            height=30,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=lambda e=email: self._copy_to_clipboard(e, "Email")
+        )
+        copy_email_btn.pack(side="left", padx=2)
+        
+        # Copy Key button
+        copy_key_btn = ctk.CTkButton(
+            action_frame,
+            text="🔑",
+            font=ctk.CTkFont(size=10),
+            width=35,
+            height=30,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=lambda k=key: self._copy_to_clipboard(k, "License Key")
+        )
+        copy_key_btn.pack(side="left", padx=2)
+        
+        # Copy HWID button (copy first HWID if available)
+        if used_hwids and len(used_hwids) > 0:
+            copy_hwid_btn = ctk.CTkButton(
+                action_frame,
+                text="💻",
+                font=ctk.CTkFont(size=10),
+                width=35,
+                height=30,
+                fg_color=COLORS['accent'],
+                hover_color=COLORS['accent_hover'],
+                command=lambda h=used_hwids[0]: self._copy_to_clipboard(h, "HWID")
+            )
+            copy_hwid_btn.pack(side="left", padx=2)
     
-    def _copy_key_from_explorer(self, key):
-        """Copy a license key from the explorer to clipboard."""
+    def _copy_to_clipboard(self, text, label):
+        """Copy text to clipboard with feedback."""
         self.clipboard_clear()
-        self.clipboard_append(key)
-        self.loading_label.configure(text=f"✓ Copied: {key}")
+        self.clipboard_append(text)
+        self.loading_label.configure(text=f"✓ Copied {label}: {text[:30]}...")
         # Clear message after 3 seconds
-        self.after(3000, lambda: self.loading_label.configure(text=f"✓ Loaded {len(self.all_licenses)} license(s)"))
+        self.after(3000, lambda: self.loading_label.configure(
+            text=f"✓ Loaded {len(self.all_licenses)} license(s)" if not self.search_entry.get().strip()
+            else f"✓ Found {len(self.filtered_licenses)} match(es)"
+        ))
     
-    def _display_license(self, email, tier, license_key, device_limit, sync_success):
+    def _display_license(self, email, tier, license_key, device_limit, duration, sync_success):
         """Display the generated license."""
-        tier_label = "Extended ($249)" if tier == 'extended' else "Standard ($59)"
+        tier_label = tier.capitalize()
         sync_status = "✓ Synced to Supabase" if sync_success else "⚠ Local only"
         
         output = f"""
-{'=' * 60}
+{'=' * 65}
 ✓ License Generated Successfully!
-{'=' * 60}
+{'=' * 65}
 
 Email:         {email}
 Tier:          {tier_label}
+Duration:      {duration}
 Key:           {license_key}
 Device Limit:  {device_limit} device(s)
 Status:        {sync_status}
 
 Send this key to the buyer for activation.
-{'=' * 60}
+{'=' * 65}
 """
         
         self.output_text.configure(state="normal")
@@ -720,11 +982,11 @@ Send this key to the buyer for activation.
     
     def _on_copy(self):
         """Copy the license key to clipboard."""
-        if hasattr(self, 'last_license_key'):
+        if hasattr(self, 'last_license_key') and self.last_license_key:
             self.clipboard_clear()
             self.clipboard_append(self.last_license_key)
             messagebox.showinfo("Copied", "License key copied to clipboard!")
-            self.status_label.configure(text="License key copied to clipboard", text_color=("#1f6aa5", "#3b8ed0"))
+            self.status_label.configure(text="License key copied to clipboard", text_color=COLORS['accent'])
 
 
 def main():
