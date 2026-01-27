@@ -26,45 +26,62 @@ class AIGenerator:
 
     def generate_outline(self, topic, audience):
         """
-        Generate a table of contents with 5 chapter titles.
+        Generate a table of contents with 10-12 chapter titles.
 
         Args:
             topic: The main topic for the course.
             audience: The target audience description.
 
         Returns:
-            list: A list of 5 chapter title strings.
+            list: A list of 10-12 chapter title strings.
 
         Raises:
             Exception: If API call fails.
         """
         try:
-            prompt = f"""Create a table of contents for an educational course about "{topic}" 
-targeted at {audience}. 
+            # Detect if input is in Russian (contains Cyrillic characters)
+            import re
+            is_russian = bool(re.search(r'[а-яА-ЯёЁ]', topic + ' ' + audience))
+            
+            # Build the prompt based on language
+            if is_russian:
+                system_content = "Вы эксперт по разработке учебных программ, который создает хорошо структурированный образовательный контент."
+                prompt = f"""Создайте оглавление для образовательного курса на тему "{topic}" 
+для аудитории: {audience}.
 
-Provide exactly 5 chapter titles that progressively build knowledge from basics to advanced concepts.
+Предоставьте ровно 10-12 названий глав, которые последовательно развивают знания от основ до продвинутых концепций.
 
-Format your response as a simple numbered list with just the chapter titles, like:
-1. Introduction to [Topic]
-2. [Second Chapter Title]
-3. [Third Chapter Title]
-4. [Fourth Chapter Title]
-5. [Fifth Chapter Title]
+Форматируйте ответ как простой нумерованный список только с названиями глав:
+1. [Название первой главы]
+2. [Название второй главы]
+...и так далее.
 
-Only provide the chapter titles, nothing else."""
+Названия должны быть профессиональными и привлекательными. Предоставьте только названия глав, ничего больше."""
+            else:
+                system_content = "You are an AI Content Architect who creates well-structured educational content."
+                prompt = f"""Create a table of contents for an educational course about "{topic}" 
+targeted at {audience}.
+
+Provide exactly 10-12 chapter titles that progressively build knowledge from basics to advanced concepts.
+
+Format your response as a simple numbered list with just the chapter titles:
+1. [Title of Chapter 1]
+2. [Title of Chapter 2]
+...and so on.
+
+The titles must be professional and catchy. Ensure the structure is logical and flows well. Only provide the chapter titles, nothing else."""
 
             response = self.client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert curriculum designer who creates "
-                        "well-structured educational content.",
+                        "content": system_content,
                     },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.7,
-                max_tokens=500,
+                max_tokens=800,
             )
 
             # Parse the response to extract chapter titles
@@ -75,33 +92,58 @@ Only provide the chapter titles, nothing else."""
             for line in lines:
                 line = line.strip()
                 if line:
-                    # Remove numbering (e.g., "1.", "1)", "Chapter 1:")
-                    for prefix in ["1.", "2.", "3.", "4.", "5.", "1)", "2)", "3)", "4)", "5)"]:
-                        if line.startswith(prefix):
-                            line = line[len(prefix) :].strip()
-                            break
+                    # Remove numbering (works for both English and Russian)
+                    import re
+                    line = re.sub(r'^(\d+[\.\)\:\-]\s*)', '', line).strip()
                     # Remove "Chapter X:" prefix if present
-                    if line.lower().startswith("chapter"):
+                    if line.lower().startswith("chapter") or line.startswith("Глава"):
                         parts = line.split(":", 1)
                         if len(parts) > 1:
                             line = parts[1].strip()
                     if line:
                         chapters.append(line)
 
-            # Ensure we have exactly 5 chapters
-            if len(chapters) < 5:
+            # Ensure we have 10-12 chapters
+            if len(chapters) < 10:
                 # Fill with generic titles if needed
-                generic = [
-                    f"Introduction to {topic}",
-                    f"Core Concepts of {topic}",
-                    f"Practical Applications",
-                    f"Advanced Techniques",
-                    f"Conclusion and Next Steps",
-                ]
-                while len(chapters) < 5:
+                if is_russian:
+                    generic = [
+                        f"Введение в {topic}",
+                        f"Основные концепции {topic}",
+                        f"Практические применения",
+                        f"Продвинутые техники",
+                        f"Заключение и следующие шаги",
+                        f"Дополнительная тема 6",
+                        f"Дополнительная тема 7",
+                        f"Дополнительная тема 8",
+                        f"Дополнительная тема 9",
+                        f"Дополнительная тема 10",
+                        f"Дополнительная тема 11",
+                        f"Дополнительная тема 12"
+                    ]
+                else:
+                    generic = [
+                        f"Introduction to {topic}",
+                        f"Core Concepts of {topic}",
+                        f"Practical Applications",
+                        f"Advanced Techniques",
+                        f"Conclusion and Next Steps",
+                        f"Additional Topic 6",
+                        f"Additional Topic 7",
+                        f"Additional Topic 8",
+                        f"Additional Topic 9",
+                        f"Additional Topic 10",
+                        f"Additional Topic 11",
+                        f"Additional Topic 12"
+                    ]
+                while len(chapters) < 10:
                     chapters.append(generic[len(chapters)])
 
-            return chapters[:5]
+            # Return 10-12 chapters (prefer 10 if less, truncate to 12 if more)
+            if len(chapters) > 12:
+                return chapters[:12]
+            else:
+                return chapters[:max(10, len(chapters))]
 
         except Exception as e:
             raise Exception(f"Failed to generate outline: {str(e)}")

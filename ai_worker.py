@@ -97,32 +97,48 @@ class OutlineGenerator(AIWorkerBase):
         try:
             client = self.get_client()
             
-            prompt = f"""Create a detailed table of contents for an educational course about "{self.topic}" 
+            # Detect if input is in Russian (contains Cyrillic characters)
+            is_russian = bool(re.search(r'[а-яА-ЯёЁ]', self.topic + ' ' + self.audience))
+            
+            # Build the prompt based on language
+            if is_russian:
+                system_content = "Вы эксперт по разработке учебных программ, который создает хорошо структурированный образовательный контент."
+                prompt = f"""Создайте оглавление для образовательного курса на тему "{self.topic}" 
+для аудитории: {self.audience}.
+
+Предоставьте ровно 10-12 названий глав, которые последовательно развивают знания от основ до продвинутых концепций.
+
+Форматируйте ответ как простой нумерованный список только с названиями глав:
+1. [Название первой главы]
+2. [Название второй главы]
+...и так далее.
+
+Названия должны быть профессиональными и привлекательными. Предоставьте только названия глав, ничего больше."""
+            else:
+                system_content = "You are an AI Content Architect who creates well-structured educational content."
+                prompt = f"""Create a table of contents for an educational course about "{self.topic}" 
 targeted at {self.audience}.
 
-Provide exactly 5 chapter titles that progressively build knowledge from basics to advanced concepts.
+Provide exactly 10-12 chapter titles that progressively build knowledge from basics to advanced concepts.
 
 Format your response as a simple numbered list with just the chapter titles:
-1. [First Chapter Title]
-2. [Second Chapter Title]
-3. [Third Chapter Title]
-4. [Fourth Chapter Title]
-5. [Fifth Chapter Title]
+1. [Title of Chapter 1]
+2. [Title of Chapter 2]
+...and so on.
 
-Make the titles descriptive and engaging. Only provide the chapter titles, nothing else."""
+The titles must be professional and catchy. Ensure the structure is logical and flows well. Only provide the chapter titles, nothing else."""
 
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert curriculum designer who creates "
-                        "well-structured educational content."
+                        "content": system_content
                     },
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=500
+                max_tokens=800
             )
             
             # Parse the response
@@ -133,16 +149,52 @@ Make the titles descriptive and engaging. Only provide the chapter titles, nothi
             for line in lines:
                 line = line.strip()
                 if line:
-                    # Remove numbering
+                    # Remove numbering (works for both English and Russian)
                     cleaned = re.sub(r'^(\d+[\.\)\:\-]\s*)', '', line).strip()
                     if cleaned:
                         chapters.append(cleaned)
             
-            # Ensure we have 5 chapters
-            while len(chapters) < 5:
-                chapters.append(f"Additional Topic {len(chapters) + 1}")
+            # Ensure we have 10-12 chapters
+            if len(chapters) < 10:
+                # Fill with generic titles if needed
+                if is_russian:
+                    generic = [
+                        f"Введение в {self.topic}",
+                        f"Основные концепции {self.topic}",
+                        f"Практические применения",
+                        f"Продвинутые техники",
+                        f"Заключение и следующие шаги",
+                        f"Дополнительная тема 6",
+                        f"Дополнительная тема 7",
+                        f"Дополнительная тема 8",
+                        f"Дополнительная тема 9",
+                        f"Дополнительная тема 10",
+                        f"Дополнительная тема 11",
+                        f"Дополнительная тема 12"
+                    ]
+                else:
+                    generic = [
+                        f"Introduction to {self.topic}",
+                        f"Core Concepts of {self.topic}",
+                        f"Practical Applications",
+                        f"Advanced Techniques",
+                        f"Conclusion and Next Steps",
+                        f"Additional Topic 6",
+                        f"Additional Topic 7",
+                        f"Additional Topic 8",
+                        f"Additional Topic 9",
+                        f"Additional Topic 10",
+                        f"Additional Topic 11",
+                        f"Additional Topic 12"
+                    ]
+                while len(chapters) < 10:
+                    chapters.append(generic[len(chapters)])
             
-            self.result = chapters[:5]
+            # Return 10-12 chapters (prefer 10 if less, truncate to 12 if more)
+            if len(chapters) > 12:
+                self.result = chapters[:12]
+            else:
+                self.result = chapters[:max(10, len(chapters))]
             
             if self.callback:
                 self.callback(self.result)
