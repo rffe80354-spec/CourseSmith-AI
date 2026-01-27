@@ -464,6 +464,9 @@ class EnterpriseApp(ctk.CTk):
         self.activation_entry.pack(pady=(0, 20))
         self.activation_entry.bind("<Return>", lambda e: self._on_activate())
         
+        # Set focus to entry field for better UX
+        self.after(0, lambda: self.activation_entry.focus())
+        
         # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         from utils import add_context_menu
         add_context_menu(self.activation_entry)
