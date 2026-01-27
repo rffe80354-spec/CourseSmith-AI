@@ -106,8 +106,9 @@ def test_utf8_encoding():
     assert 'Машинное обучение' in output, "Cyrillic content not preserved"
     
     # Ensure output can be written to file
-    test_file = '/tmp/test_cyrillic_output.txt'
-    with open(test_file, 'w', encoding='utf-8') as f:
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as f:
+        test_file = f.name
         f.write(output)
     
     # Read it back
@@ -115,6 +116,10 @@ def test_utf8_encoding():
         read_content = f.read()
     
     assert read_content == output, "File write/read failed for Cyrillic text"
+    
+    # Clean up temp file
+    import os
+    os.unlink(test_file)
     
     print("✓ UTF-8 and Cyrillic encoding tests passed!\n")
 

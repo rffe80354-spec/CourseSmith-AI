@@ -45,6 +45,33 @@ class CourseSmithEngine:
         self.course_title = None
         self.chapters = []
 
+    def _sanitize_input(self, text: str, max_length: int = 2000) -> str:
+        """
+        Sanitize user input to prevent prompt injection.
+        
+        Args:
+            text: The input text to sanitize.
+            max_length: Maximum allowed length.
+            
+        Returns:
+            str: Sanitized text.
+        """
+        if not text:
+            return ""
+        
+        # Limit length
+        text = text[:max_length]
+        
+        # Remove potential prompt injection patterns
+        # Remove system-like instructions
+        text = re.sub(r'(?i)(ignore\s+(previous|above|all)\s+(instructions?|prompts?))', '', text)
+        text = re.sub(r'(?i)(system\s*:|assistant\s*:|user\s*:)', '', text)
+        
+        # Strip excessive whitespace
+        text = ' '.join(text.split())
+        
+        return text.strip()
+
     def detect_language(self, text: str) -> str:
         """
         Detect if the text is in Russian or English.
@@ -72,6 +99,9 @@ class CourseSmithEngine:
             str: A professional course title.
         """
         try:
+            # Sanitize input
+            user_instruction = self._sanitize_input(user_instruction)
+            
             if language == 'ru':
                 system_content = "Вы эксперт по созданию профессиональных образовательных курсов."
                 prompt = f"""На основе следующей инструкции создайте профессиональное, авторитетное название для образовательного курса:
@@ -129,6 +159,9 @@ Provide only the course title, without additional explanations."""
             list: A list of exactly 10 chapter titles.
         """
         try:
+            # Sanitize input
+            user_instruction = self._sanitize_input(user_instruction)
+            
             if language == 'ru':
                 system_content = "Вы эксперт по разработке структуры образовательных курсов."
                 prompt = f"""На основе следующей инструкции создайте структуру из РОВНО 10 глав для образовательного курса:
@@ -223,6 +256,10 @@ Provide only the list of chapters, nothing else."""
             str: Professional chapter content with markdown formatting.
         """
         try:
+            # Sanitize inputs
+            chapter_title = self._sanitize_input(chapter_title, max_length=500)
+            course_context = self._sanitize_input(course_context)
+            
             if language == 'ru':
                 system_content = "Вы эксперт-преподаватель, который создает профессиональный образовательный контент высокого уровня."
                 prompt = f"""Напишите экспертный контент для Главы {chapter_num}: "{chapter_title}"
