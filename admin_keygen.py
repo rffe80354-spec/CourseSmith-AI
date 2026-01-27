@@ -17,9 +17,9 @@ Features:
 
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import customtkinter as ctk
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox
 from license_guard import generate_key
 from utils import resource_path
 from dotenv import load_dotenv
@@ -36,6 +36,7 @@ except ImportError:
     print("Warning: Supabase not available.")
 
 # Supabase configuration - Use same credentials as main.py
+# For security, credentials should be loaded from environment variables
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://spfwfyjpexktgnusgyib.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR")
 
@@ -294,7 +295,9 @@ class AdminKeygenApp(ctk.CTk):
                 return
         
         # Validate email
-        if '@' not in email_input or '.' not in email_input:
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email_input):
             messagebox.showerror("Error", "Please enter a valid email address.")
             return
         
@@ -320,8 +323,9 @@ class AdminKeygenApp(ctk.CTk):
                 text_color=("#1f6aa5", "#3b8ed0")
             )
             
-            # Refresh key history after generation
-            self.after(500, self._refresh_key_history)
+            # Refresh key history after generation (only if sync was successful)
+            if sync_success:
+                self.after(1000, self._refresh_key_history)
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to generate license: {str(e)}")
@@ -346,7 +350,18 @@ class AdminKeygenApp(ctk.CTk):
             return False
         
         try:
+            # Check if license key already exists
+            existing = client.table("licenses").select("license_key").eq("license_key", license_key).execute()
+            if existing.data and len(existing.data) > 0:
+                messagebox.showwarning(
+                    "Duplicate Key",
+                    f"License key {license_key} already exists in database. This should not happen - "
+                    "please contact support."
+                )
+                return False
+            
             # Prepare license data
+            from datetime import datetime, timezone
             license_data = {
                 'license_key': license_key,
                 'email': email,
@@ -355,7 +370,7 @@ class AdminKeygenApp(ctk.CTk):
                 'is_banned': False,
                 'used_hwids': [],  # Empty array for new licenses
                 'max_devices': 3,  # Default to 3 devices
-                'created_at': datetime.now().isoformat()
+                'created_at': datetime.now(timezone.utc).isoformat()
             }
             
             # Insert into Supabase
@@ -369,7 +384,15 @@ class AdminKeygenApp(ctk.CTk):
                 return False
                 
         except Exception as e:
-            print(f"Error syncing to Supabase: {e}")
+            error_msg = str(e)
+            print(f"Error syncing to Supabase: {error_msg}")
+            
+            # Show user-friendly error
+            messagebox.showerror(
+                "Database Sync Error",
+                f"Failed to sync license to database:\n{error_msg}\n\n"
+                "The license key was generated but not saved to the cloud database."
+            )
             return False
     
     def _refresh_key_history(self):
@@ -401,11 +424,13 @@ class AdminKeygenApp(ctk.CTk):
                     
                     # Parse and format date
                     try:
+                        from datetime import datetime
                         if created != 'N/A':
                             dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
                             created = dt.strftime("%Y-%m-%d %H:%M")
-                    except:
-                        pass
+                    except (ValueError, TypeError) as e:
+                        print(f"Date parsing error for {created}: {e}")
+                        created = 'Invalid Date'
                     
                     history += f"#{idx}. {email}\n"
                     history += f"    Key:  {key}\n"
@@ -424,9 +449,11 @@ class AdminKeygenApp(ctk.CTk):
                 self.history_text.configure(state="disabled")
                 
         except Exception as e:
+            error_msg = str(e)
+            print(f"Error fetching key history: {error_msg}")
             self.history_text.configure(state="normal")
             self.history_text.delete("1.0", "end")
-            self.history_text.insert("1.0", f"Error fetching key history:\n\n{str(e)}")
+            self.history_text.insert("1.0", f"Error fetching key history:\n\n{error_msg}")
             self.history_text.configure(state="disabled")
     
     def _display_license(self, email, tier, license_key, sync_success):

@@ -694,6 +694,16 @@ class EnterpriseApp(ctk.CTk):
             messagebox.showerror("Error", "Please enter an API key.")
             return
         
+        # Validate OpenAI API key format
+        if not api_key.startswith("sk-"):
+            result = messagebox.askyesno(
+                "Invalid API Key Format",
+                "The API key doesn't start with 'sk-' which is the expected format for OpenAI API keys.\n\n"
+                "Do you want to save it anyway?"
+            )
+            if not result:
+                return
+        
         # Save to .env file
         env_path = os.path.join(os.getcwd(), ".env")
         try:
@@ -722,6 +732,12 @@ class EnterpriseApp(ctk.CTk):
                     self.coursesmith_engine = CourseSmithEngine(api_key=api_key)
                 except Exception as e:
                     print(f"Warning: Could not reinitialize coursesmith_engine: {e}")
+                    messagebox.showwarning(
+                        "Partial Success",
+                        f"API key saved, but engine reinitialization failed:\n{str(e)}\n\n"
+                        "Please restart the application."
+                    )
+                    return
             
             messagebox.showinfo("Success", "API key saved successfully!")
             
