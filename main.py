@@ -301,8 +301,26 @@ class EnterpriseApp(ctk.CTk):
         self.current_tab = "forge"
         self.progress_animation_running = False
         
+        # Initialize coursesmith_engine
+        self.coursesmith_engine = None
+        self._init_coursesmith_engine()
+        
         # Create UI
         self._create_ui()
+    
+    def _init_coursesmith_engine(self):
+        """Initialize the CourseSmith Engine with API key from environment."""
+        try:
+            from coursesmith_engine import CourseSmithEngine
+            api_key = os.getenv("OPENAI_API_KEY")
+            if api_key:
+                self.coursesmith_engine = CourseSmithEngine(api_key=api_key)
+            else:
+                # Initialize without API key - user can add it later in Settings
+                self.coursesmith_engine = CourseSmithEngine(api_key=None, require_api_key=False)
+        except Exception as e:
+            print(f"Warning: Could not initialize coursesmith_engine: {e}")
+            self.coursesmith_engine = None
         
     def _create_ui(self):
         """Create the main enterprise UI with sidebar."""
@@ -587,16 +605,128 @@ class EnterpriseApp(ctk.CTk):
         
         # Settings frame
         settings_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
-        settings_frame.pack(fill="both", expand=True)
+        settings_frame.pack(fill="both", expand=True, pady=(0, 20))
         
-        # Placeholder for settings
-        placeholder_label = ctk.CTkLabel(
-            settings_frame,
-            text="⚙️ Settings options will appear here",
-            font=ctk.CTkFont(size=16),
+        # API Key section
+        api_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        api_frame.pack(fill="x", padx=30, pady=(30, 20))
+        
+        api_label = ctk.CTkLabel(
+            api_frame,
+            text="OpenAI API Key",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS['text']
+        )
+        api_label.pack(anchor="w", pady=(0, 10))
+        
+        api_help_label = ctk.CTkLabel(
+            api_frame,
+            text="Your API key is stored in the .env file in the application directory.",
+            font=ctk.CTkFont(size=12),
             text_color=COLORS['text_dim']
         )
-        placeholder_label.pack(expand=True)
+        api_help_label.pack(anchor="w", pady=(0, 15))
+        
+        # Load current API key from environment
+        current_key = os.getenv("OPENAI_API_KEY", "")
+        
+        # API Key entry with show/hide button
+        entry_frame = ctk.CTkFrame(api_frame, fg_color="transparent")
+        entry_frame.pack(fill="x", pady=(0, 10))
+        
+        self.api_key_entry = ctk.CTkEntry(
+            entry_frame,
+            placeholder_text="sk-...",
+            height=45,
+            font=ctk.CTkFont(size=14),
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2,
+            show="*"
+        )
+        self.api_key_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        if current_key:
+            self.api_key_entry.insert(0, current_key)
+        
+        # Show/Hide button
+        self.api_key_visible = False
+        self.show_hide_btn = ctk.CTkButton(
+            entry_frame,
+            text="👁",
+            width=45,
+            height=45,
+            font=ctk.CTkFont(size=18),
+            fg_color=COLORS['sidebar'],
+            hover_color=COLORS['accent'],
+            command=self._toggle_api_key_visibility
+        )
+        self.show_hide_btn.pack(side="right")
+        
+        # Save button
+        save_btn = ctk.CTkButton(
+            api_frame,
+            text="💾 Save API Key",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=50,
+            corner_radius=10,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=self._save_api_key
+        )
+        save_btn.pack(pady=(20, 0))
+    
+    def _toggle_api_key_visibility(self):
+        """Toggle API key visibility."""
+        self.api_key_visible = not self.api_key_visible
+        if self.api_key_visible:
+            self.api_key_entry.configure(show="")
+            self.show_hide_btn.configure(text="👁‍🗨")
+        else:
+            self.api_key_entry.configure(show="*")
+            self.show_hide_btn.configure(text="👁")
+    
+    def _save_api_key(self):
+        """Save the API key to .env file and update environment."""
+        api_key = self.api_key_entry.get().strip()
+        
+        if not api_key:
+            messagebox.showerror("Error", "Please enter an API key.")
+            return
+        
+        # Save to .env file
+        env_path = os.path.join(os.getcwd(), ".env")
+        try:
+            # Read existing content
+            existing_lines = []
+            if os.path.exists(env_path):
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        stripped = line.strip()
+                        if stripped and not stripped.startswith("OPENAI_API_KEY"):
+                            existing_lines.append(line.rstrip())
+            
+            # Write with new API key
+            with open(env_path, 'w') as f:
+                for line in existing_lines:
+                    f.write(line + "\n")
+                f.write(f"OPENAI_API_KEY={api_key}\n")
+            
+            # Update environment variable
+            os.environ["OPENAI_API_KEY"] = api_key
+            
+            # Update coursesmith_engine instance if it exists
+            if hasattr(self, 'coursesmith_engine'):
+                try:
+                    from coursesmith_engine import CourseSmithEngine
+                    self.coursesmith_engine = CourseSmithEngine(api_key=api_key)
+                except Exception as e:
+                    print(f"Warning: Could not reinitialize coursesmith_engine: {e}")
+            
+            messagebox.showinfo("Success", "API key saved successfully!")
+            
+        except IOError as e:
+            messagebox.showerror("Error", f"Failed to save API key: {e}")
     
     def _start_generation(self):
         """Start course generation with animated progress."""
