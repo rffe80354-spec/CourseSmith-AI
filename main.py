@@ -300,9 +300,12 @@ class EnterpriseApp(ctk.CTk):
         """Initialize the enterprise application."""
         super().__init__()
         
-        # Set widget scaling for High-DPI support (125%-150% scaling)
-        # This ensures proper layout on High-DPI monitors
-        ctk.set_widget_scaling(1.0)  # Default 1.0, increase to 1.25 or 1.5 for higher DPI
+        # Set widget scaling for High-DPI support
+        # Default is 1.0. Adjust manually if needed for specific DPI requirements:
+        # - Set to 1.25 for 125% scaling
+        # - Set to 1.5 for 150% scaling
+        # This can be customized based on user preferences or system detection
+        ctk.set_widget_scaling(1.0)
         
         # Configure window
         self.title("CourseSmith AI Enterprise")

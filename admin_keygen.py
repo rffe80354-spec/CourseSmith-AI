@@ -107,9 +107,12 @@ class AdminKeygenApp(ctk.CTk):
         """Initialize the admin keygen application."""
         super().__init__()
         
-        # Set widget scaling for High-DPI support (125%-150% scaling)
-        # This ensures proper layout on High-DPI monitors
-        ctk.set_widget_scaling(1.0)  # Default 1.0, increase to 1.25 or 1.5 for higher DPI
+        # Set widget scaling for High-DPI support
+        # Default is 1.0. Adjust manually if needed for specific DPI requirements:
+        # - Set to 1.25 for 125% scaling
+        # - Set to 1.5 for 150% scaling
+        # This can be customized based on user preferences or system detection
+        ctk.set_widget_scaling(1.0)
         
         # Configure window - larger for Global Key Explorer
         self.title("CourseSmith License Management Suite")
@@ -463,7 +466,7 @@ class AdminKeygenApp(ctk.CTk):
         )
         self.loading_label.pack(side="left", padx=(10, 0))
         
-        # Global Key Explorer (scrollable with proper configuration)
+        # Global Key Explorer with grid weight configuration for proper expansion
         self.explorer_frame = ctk.CTkScrollableFrame(
             right_column,
             corner_radius=8,
@@ -472,7 +475,7 @@ class AdminKeygenApp(ctk.CTk):
             border_width=2
         )
         self.explorer_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        # Configure grid weights for proper scrolling behavior
+        # Configure grid weights for proper scrolling behavior and content expansion
         self.explorer_frame.grid_columnconfigure(0, weight=1)
         
     def _on_search_keypress(self, event):
@@ -827,10 +830,19 @@ class AdminKeygenApp(ctk.CTk):
             activate_scrollbars=False
         )
         textbox.insert("1.0", text)
-        textbox.configure(state="disabled")  # Read-only
+        # Note: NOT setting to disabled to allow text selection
+        # Text is effectively read-only due to no modification bindings
         
         # Add right-click context menu for copy functionality
+        # Only copy and select-all will work (paste is ignored for read-only)
         add_context_menu(textbox)
+        
+        # Prevent text modification while allowing selection
+        def block_modification(event):
+            return "break"
+        
+        tk_widget = textbox._textbox if hasattr(textbox, '_textbox') else textbox
+        tk_widget.bind("<Key>", block_modification)
         
         return textbox
     
