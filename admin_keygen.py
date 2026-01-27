@@ -116,9 +116,23 @@ class AdminKeygenApp(ctk.CTk):
         
         # Configure window - larger for Global Key Explorer
         self.title("CourseSmith License Management Suite")
-        self.state('zoomed')
         self.minsize(1280, 720)
         self.resizable(True, True)
+        
+        # Maximize window (cross-platform compatible)
+        try:
+            # Try Windows-specific zoomed state
+            self.state('zoomed')
+        except:
+            # Fallback for other platforms
+            try:
+                # Try macOS
+                self.attributes('-zoomed', True)
+            except:
+                # Fallback: set large geometry
+                screen_width = self.winfo_screenwidth()
+                screen_height = self.winfo_screenheight()
+                self.geometry(f"{screen_width}x{screen_height}+0+0")
         
         # Set appearance
         self.configure(fg_color=COLORS['background'])
