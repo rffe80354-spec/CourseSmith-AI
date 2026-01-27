@@ -7,7 +7,7 @@ Also includes clipboard helper functions and right-click menu for cross-platform
 import os
 import sys
 import tkinter as tk
-from tkinter import Menu
+from tkinter import Menu, TclError
 
 
 def resource_path(relative_path):
@@ -399,7 +399,7 @@ def setup_global_window_shortcuts(window):
             focused = window.focus_get()
             if focused:
                 focused.event_generate("<<Copy>>")
-        except (AttributeError, Exception):
+        except (AttributeError, TclError):
             pass
         return "break"
     
@@ -413,10 +413,10 @@ def setup_global_window_shortcuts(window):
                     state = str(focused.cget("state"))
                     if state in ("disabled", "readonly"):
                         return "break"
-                except (AttributeError, Exception):
+                except (AttributeError, TclError):
                     pass
                 focused.event_generate("<<Paste>>")
-        except (AttributeError, Exception):
+        except (AttributeError, TclError):
             pass
         return "break"
     
@@ -428,13 +428,13 @@ def setup_global_window_shortcuts(window):
                 # Try event_generate first
                 try:
                     focused.event_generate("<<SelectAll>>")
-                except (AttributeError, Exception):
+                except (AttributeError, TclError):
                     # Fallback to manual selection for Entry/Text widgets
                     if hasattr(focused, 'select_range'):
                         focused.select_range(0, 'end')
                     elif hasattr(focused, 'tag_add'):
                         focused.tag_add('sel', '1.0', 'end')
-        except (AttributeError, Exception):
+        except (AttributeError, TclError):
             pass
         return "break"
     
@@ -448,10 +448,10 @@ def setup_global_window_shortcuts(window):
                     state = str(focused.cget("state"))
                     if state in ("disabled", "readonly"):
                         return "break"
-                except (AttributeError, Exception):
+                except (AttributeError, TclError):
                     pass
                 focused.event_generate("<<Cut>>")
-        except (AttributeError, Exception):
+        except (AttributeError, TclError):
             pass
         return "break"
     
