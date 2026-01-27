@@ -16,15 +16,25 @@ Features:
 
 import sys
 import os
+from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox
 from license_guard import generate_key
 from utils import resource_path
 
-# Suppress stdout/stderr for --noconsole mode
+# Suppress stdout/stderr for --noconsole mode with log file fallback
 if hasattr(sys, 'frozen'):
-    sys.stdout = None
-    sys.stderr = None
+    # Redirect to log file instead of complete suppression for debugging
+    try:
+        log_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'FaleovadAI', 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, f'admin_keygen_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        sys.stdout = open(log_file, 'w', encoding='utf-8')
+        sys.stderr = sys.stdout
+    except:
+        # If log file creation fails, suppress completely
+        sys.stdout = None
+        sys.stderr = None
 
 # God Mode secret trigger - DO NOT SHARE
 GOD_MODE_CODE = "A543278.B543278.Z12345_Faleovad2009"

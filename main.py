@@ -16,10 +16,19 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 
-# Suppress stdout/stderr for --noconsole mode
+# Suppress stdout/stderr for --noconsole mode with log file fallback
 if hasattr(sys, 'frozen'):
-    sys.stdout = None
-    sys.stderr = None
+    # Redirect to log file instead of complete suppression for debugging
+    try:
+        log_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'FaleovadAI', 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, f'coursesmith_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        sys.stdout = open(log_file, 'w', encoding='utf-8')
+        sys.stderr = sys.stdout
+    except:
+        # If log file creation fails, suppress completely
+        sys.stdout = None
+        sys.stderr = None
 
 
 # Supabase configuration for remote kill switch
@@ -488,10 +497,6 @@ class EnterpriseApp(ctk.CTk):
         )
         self.generate_btn.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
-        # Bind hover effect
-        self.generate_btn.bind("<Enter>", lambda e: self.generate_btn.configure(fg_color=COLORS['accent_hover']))
-        self.generate_btn.bind("<Leave>", lambda e: self.generate_btn.configure(fg_color=COLORS['accent']))
-        
         # Clear button
         clear_btn = ctk.CTkButton(
             action_frame,
@@ -608,10 +613,12 @@ class EnterpriseApp(ctk.CTk):
         # Start progress animation in thread
         self._start_progress_animation()
         
-        # Simulate generation (replace with actual generation logic)
+        # TODO: Replace with actual course generation logic from app.py
+        # This is a placeholder for UI demonstration purposes
+        # In production, integrate with coursesmith_engine and pdf_engine
         def simulate_generation():
             import time
-            time.sleep(5)
+            time.sleep(5)  # Placeholder - replace with actual generation
             self.after(0, self._finish_generation)
         
         thread = threading.Thread(target=simulate_generation, daemon=True)
