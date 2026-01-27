@@ -244,8 +244,9 @@ def get_underlying_tk_widget(widget):
 
 def add_context_menu(widget):
     """
-    Add a right-click context menu to a widget.
+    Add a right-click context menu to a widget AND bind all keyboard shortcuts.
     Works with CTkEntry and CTkTextbox (extracts underlying tk widget).
+    Now also applies Ctrl+C, Ctrl+V, and Ctrl+A bindings automatically.
     
     Args:
         widget: The CTkEntry, CTkTextbox, or tkinter widget to bind to.
@@ -254,6 +255,8 @@ def add_context_menu(widget):
         RightClickMenu: The created context menu instance.
     """
     tk_widget = get_underlying_tk_widget(widget)
+    # Also bind all keyboard shortcuts when adding context menu
+    bind_all_shortcuts(widget)
     return RightClickMenu(tk_widget)
 
 
@@ -301,10 +304,69 @@ def handle_custom_paste(event, widget):
     return "break"
 
 
+def handle_custom_copy(event, widget):
+    """
+    Handle Ctrl+C copy event for CustomTkinter widgets.
+    Returns "break" to prevent the default Tkinter handler from firing.
+    
+    Args:
+        event: The key event (can be None for direct calls).
+        widget: The CTkEntry, CTkTextbox, or tkinter widget to copy from.
+        
+    Returns:
+        str: "break" to stop event propagation.
+    """
+    tk_widget = get_underlying_tk_widget(widget)
+    clipboard_copy(tk_widget)
+    return "break"
+
+
+def handle_custom_select_all(event, widget):
+    """
+    Handle Ctrl+A select all event for CustomTkinter widgets.
+    Returns "break" to prevent the default Tkinter handler from firing.
+    
+    Args:
+        event: The key event (can be None for direct calls).
+        widget: The CTkEntry, CTkTextbox, or tkinter widget to select all in.
+        
+    Returns:
+        str: "break" to stop event propagation.
+    """
+    tk_widget = get_underlying_tk_widget(widget)
+    clipboard_select_all(tk_widget)
+    return "break"
+
+
+def bind_all_shortcuts(widget):
+    """
+    Bind all standard keyboard shortcuts (Ctrl+C, Ctrl+V, Ctrl+A) to a CustomTkinter widget.
+    This provides comprehensive clipboard support that works reliably with CTkEntry and CTkTextbox.
+    
+    Args:
+        widget: The CTkEntry, CTkTextbox, or tkinter widget to bind to.
+    """
+    tk_widget = get_underlying_tk_widget(widget)
+    
+    # Bind Ctrl+V (Paste) - both uppercase and lowercase
+    tk_widget.bind("<Control-v>", lambda e: handle_custom_paste(e, widget))
+    tk_widget.bind("<Control-V>", lambda e: handle_custom_paste(e, widget))
+    
+    # Bind Ctrl+C (Copy) - both uppercase and lowercase
+    tk_widget.bind("<Control-c>", lambda e: handle_custom_copy(e, widget))
+    tk_widget.bind("<Control-C>", lambda e: handle_custom_copy(e, widget))
+    
+    # Bind Ctrl+A (Select All) - both uppercase and lowercase
+    tk_widget.bind("<Control-a>", lambda e: handle_custom_select_all(e, widget))
+    tk_widget.bind("<Control-A>", lambda e: handle_custom_select_all(e, widget))
+
+
 def bind_paste_shortcut(widget):
     """
     Bind Ctrl+V paste shortcut to a CustomTkinter widget.
     This provides explicit paste handling that works reliably with CTkEntry and CTkTextbox.
+    
+    DEPRECATED: Use bind_all_shortcuts() instead for full clipboard support.
     
     Args:
         widget: The CTkEntry, CTkTextbox, or tkinter widget to bind to.

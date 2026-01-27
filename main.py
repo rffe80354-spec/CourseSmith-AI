@@ -300,6 +300,13 @@ class EnterpriseApp(ctk.CTk):
         """Initialize the enterprise application."""
         super().__init__()
         
+        # Set widget scaling for High-DPI support
+        # Default is 1.0. Adjust manually if needed for specific DPI requirements:
+        # - Set to 1.25 for 125% scaling
+        # - Set to 1.5 for 150% scaling
+        # This can be customized based on user preferences or system detection
+        ctk.set_widget_scaling(1.0)
+        
         # Configure window
         self.title("CourseSmith AI Enterprise")
         self.geometry("1200x800")
@@ -452,10 +459,9 @@ class EnterpriseApp(ctk.CTk):
         self.activation_entry.pack(pady=(0, 20))
         self.activation_entry.bind("<Return>", lambda e: self._on_activate())
         
-        # Add clipboard support
-        from utils import add_context_menu, bind_paste_shortcut
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
+        from utils import add_context_menu
         add_context_menu(self.activation_entry)
-        bind_paste_shortcut(self.activation_entry)
         
         # Activate button
         activate_btn = ctk.CTkButton(
@@ -699,10 +705,9 @@ class EnterpriseApp(ctk.CTk):
         )
         self.instruction_textbox.pack(fill="both", expand=True, padx=25, pady=(0, 25))
         
-        # Add clipboard support
-        from utils import add_context_menu, bind_paste_shortcut
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
+        from utils import add_context_menu
         add_context_menu(self.instruction_textbox)
-        bind_paste_shortcut(self.instruction_textbox)
         
         # Action buttons frame
         action_frame = ctk.CTkFrame(container, fg_color="transparent")
@@ -855,10 +860,9 @@ class EnterpriseApp(ctk.CTk):
         if current_key:
             self.api_key_entry.insert(0, current_key)
         
-        # Add clipboard support
-        from utils import add_context_menu, bind_paste_shortcut
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
+        from utils import add_context_menu
         add_context_menu(self.api_key_entry)
-        bind_paste_shortcut(self.api_key_entry)
         
         # Show/Hide button
         self.api_key_visible = False

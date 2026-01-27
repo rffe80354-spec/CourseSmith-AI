@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 import customtkinter as ctk
 from tkinter import messagebox
 from license_guard import generate_key
-from utils import resource_path, add_context_menu, bind_paste_shortcut
+from utils import resource_path, add_context_menu
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -106,6 +106,13 @@ class AdminKeygenApp(ctk.CTk):
     def __init__(self):
         """Initialize the admin keygen application."""
         super().__init__()
+        
+        # Set widget scaling for High-DPI support
+        # Default is 1.0. Adjust manually if needed for specific DPI requirements:
+        # - Set to 1.25 for 125% scaling
+        # - Set to 1.5 for 150% scaling
+        # This can be customized based on user preferences or system detection
+        ctk.set_widget_scaling(1.0)
         
         # Configure window - larger for Global Key Explorer
         self.title("CourseSmith License Management Suite")
@@ -201,9 +208,8 @@ class AdminKeygenApp(ctk.CTk):
         self.email_entry.pack(fill="x", padx=20, pady=(0, 15))
         self.email_entry.bind("<Return>", lambda e: self._on_generate())
         
-        # Add clipboard support
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.email_entry)
-        bind_paste_shortcut(self.email_entry)
         
         # Tier selection (now always visible - no God Mode)
         tier_label = ctk.CTkLabel(
@@ -281,9 +287,8 @@ class AdminKeygenApp(ctk.CTk):
         self.duration_entry.pack(fill="x", padx=20, pady=(0, 15))
         self.duration_entry.insert(0, "lifetime")
         
-        # Add clipboard support
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.duration_entry)
-        bind_paste_shortcut(self.duration_entry)
         
         # Device Limit input
         device_label = ctk.CTkLabel(
@@ -315,9 +320,8 @@ class AdminKeygenApp(ctk.CTk):
         self.device_limit_entry.pack(padx=20, pady=(0, 15), anchor="w")
         self.device_limit_entry.insert(0, "3")
         
-        # Add clipboard support
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.device_limit_entry)
-        bind_paste_shortcut(self.device_limit_entry)
         
         # Generate button
         self.generate_btn = ctk.CTkButton(
@@ -352,9 +356,8 @@ class AdminKeygenApp(ctk.CTk):
         )
         self.output_text.pack(fill="x", padx=20, pady=(0, 10))
         
-        # Add clipboard support
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.output_text)
-        bind_paste_shortcut(self.output_text)
         
         # Copy button
         self.copy_btn = ctk.CTkButton(
@@ -417,9 +420,8 @@ class AdminKeygenApp(ctk.CTk):
         )
         self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=12)
         
-        # Add clipboard support for search
+        # Add clipboard support for search (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.search_entry)
-        bind_paste_shortcut(self.search_entry)
         
         # Bind real-time search (with debouncing)
         self.search_entry.bind("<KeyRelease>", self._on_search_keypress)
@@ -459,7 +461,7 @@ class AdminKeygenApp(ctk.CTk):
         )
         self.loading_label.pack(side="left", padx=(10, 0))
         
-        # Global Key Explorer (scrollable)
+        # Global Key Explorer with grid weight configuration for proper expansion
         self.explorer_frame = ctk.CTkScrollableFrame(
             right_column,
             corner_radius=8,
@@ -468,6 +470,8 @@ class AdminKeygenApp(ctk.CTk):
             border_width=2
         )
         self.explorer_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        # Configure grid weights for proper scrolling behavior and content expansion
+        self.explorer_frame.grid_columnconfigure(0, weight=1)
         
     def _on_search_keypress(self, event):
         """Handle search keypress with debouncing."""
@@ -786,11 +790,62 @@ class AdminKeygenApp(ctk.CTk):
                 font=ctk.CTkFont(size=12, weight="bold"),
                 text_color=COLORS['background']
             )
-            header_label.grid(row=0, column=idx, padx=10, pady=10, sticky="w")
+            header_label.grid(row=0, column=idx, padx=10, pady=10, sticky="ew")
         
         # Create row for each license
         for idx, license_record in enumerate(licenses):
             self._create_license_row(license_record, idx)
+    
+    def _create_selectable_text_widget(self, parent, text, font, text_color, row_color, width=None, height=25):
+        """
+        Create a read-only, selectable text widget that allows copying.
+        Uses CTkTextbox configured to look like a label but allow text selection.
+        
+        Args:
+            parent: Parent widget
+            text: Text to display
+            font: Font to use
+            text_color: Text color
+            row_color: Background color to match row
+            width: Optional width
+            height: Height in pixels
+            
+        Returns:
+            CTkTextbox: The created selectable text widget
+        """
+        textbox = ctk.CTkTextbox(
+            parent,
+            font=font,
+            text_color=text_color,
+            fg_color=row_color,
+            border_width=0,
+            height=height,
+            width=width if width else 100,
+            wrap="none",
+            activate_scrollbars=False
+        )
+        textbox.insert("1.0", text)
+        # Note: NOT setting to disabled to allow text selection
+        # Text is effectively read-only due to blocking insert/delete operations
+        
+        # Prevent text modification while allowing selection and clipboard operations
+        def block_modification(event):
+            # Allow clipboard shortcuts to pass through
+            if event.keysym in ['c', 'C', 'v', 'V', 'a', 'A'] and (event.state & 0x4):  # Ctrl key
+                return None  # Let the binding continue
+            # Block all other key presses that would modify content
+            if event.char or event.keysym in ['BackSpace', 'Delete', 'Return', 'Tab']:
+                return "break"
+            return None
+        
+        tk_widget = textbox._textbox if hasattr(textbox, '_textbox') else textbox
+        tk_widget.bind("<Key>", block_modification)
+        
+        # Add right-click context menu for copy functionality AFTER blocking modifications
+        # This ensures shortcuts are bound after the blocking handler
+        add_context_menu(textbox)
+        
+        return textbox
     
     def _create_license_row(self, license_record, idx):
         """Create a row for a single license in the explorer."""
@@ -838,66 +893,68 @@ class AdminKeygenApp(ctk.CTk):
         row_frame.grid_columnconfigure(5, weight=1)
         row_frame.grid_columnconfigure(6, weight=0)
         
-        # Email
-        email_label = ctk.CTkLabel(
+        # Email - selectable textbox
+        email_display = email[:35] + "..." if len(email) > 35 else email
+        email_textbox = self._create_selectable_text_widget(
             row_frame,
-            text=email[:35] + "..." if len(email) > 35 else email,
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS['text'],
-            anchor="w"
+            email_display,
+            ctk.CTkFont(size=11),
+            COLORS['text'],
+            row_color
         )
-        email_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        email_textbox.grid(row=0, column=0, padx=10, pady=5, sticky="ew")
         
-        # License Key
-        key_label = ctk.CTkLabel(
+        # License Key - selectable textbox
+        key_textbox = self._create_selectable_text_widget(
             row_frame,
-            text=key,
-            font=ctk.CTkFont(family="Courier New", size=11),
-            text_color=COLORS['accent'],
-            anchor="w"
+            key,
+            ctk.CTkFont(family="Courier New", size=11),
+            COLORS['accent'],
+            row_color
         )
-        key_label.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        key_textbox.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
         
-        # Tier
+        # Tier - selectable textbox
         tier_color = "#FFD700" if tier == "professional" else ("#FFA500" if tier == "extended" else "#A0A0A0")
-        tier_label = ctk.CTkLabel(
+        tier_textbox = self._create_selectable_text_widget(
             row_frame,
-            text=tier.upper() if tier != 'N/A' else tier,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color=tier_color,
-            anchor="w"
+            tier.upper() if tier != 'N/A' else tier,
+            ctk.CTkFont(size=11, weight="bold"),
+            tier_color,
+            row_color
         )
-        tier_label.grid(row=0, column=2, padx=10, pady=10, sticky="w")
+        tier_textbox.grid(row=0, column=2, padx=10, pady=5, sticky="ew")
         
-        # Device usage
-        device_label = ctk.CTkLabel(
+        # Device usage - selectable textbox
+        device_textbox = self._create_selectable_text_widget(
             row_frame,
-            text=device_usage,
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS['text'],
-            anchor="w"
+            device_usage,
+            ctk.CTkFont(size=11),
+            COLORS['text'],
+            row_color
         )
-        device_label.grid(row=0, column=3, padx=10, pady=10, sticky="w")
+        device_textbox.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
         
-        # Created date
-        date_label = ctk.CTkLabel(
+        # Created date - selectable textbox
+        date_textbox = self._create_selectable_text_widget(
             row_frame,
-            text=created,
-            font=ctk.CTkFont(size=10),
-            text_color=COLORS['text_dim'],
-            anchor="w"
+            created,
+            ctk.CTkFont(size=10),
+            COLORS['text_dim'],
+            row_color
         )
-        date_label.grid(row=0, column=4, padx=10, pady=10, sticky="w")
+        date_textbox.grid(row=0, column=4, padx=10, pady=5, sticky="ew")
         
-        # HWIDs preview
-        hwid_label = ctk.CTkLabel(
+        # HWIDs preview - selectable textbox
+        hwid_textbox = self._create_selectable_text_widget(
             row_frame,
-            text=hwid_preview,
-            font=ctk.CTkFont(size=9),
-            text_color=COLORS['text_dim'],
-            anchor="w"
+            hwid_preview,
+            ctk.CTkFont(size=9),
+            COLORS['text_dim'],
+            row_color,
+            width=150
         )
-        hwid_label.grid(row=0, column=5, padx=10, pady=10, sticky="w")
+        hwid_textbox.grid(row=0, column=5, padx=10, pady=5, sticky="ew")
         
         # Action buttons frame
         action_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
