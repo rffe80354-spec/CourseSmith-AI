@@ -86,3 +86,8 @@ app_backup.py
 test_keygen_ui.py
 keygen_ui_screenshot.png
 keys_*.txt
+
+# Backup files
+*.bak
+*_old.py
+*_console.py

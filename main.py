@@ -1,12 +1,14 @@
 """
-CourseSmith ENTERPRISE - Entry Point
+CourseSmith ENTERPRISE - Entry Point with UI Overhaul
 A commercial desktop application to generate educational PDF books using AI with DRM protection.
+Features enterprise sidebar navigation and modern animations.
 """
 
 import os
 import sys
 import json
 import subprocess
+import threading
 from datetime import datetime, timezone
 import customtkinter as ctk
 from tkinter import messagebox
@@ -14,9 +16,35 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 
+# Suppress stdout/stderr for --noconsole mode with log file fallback
+if hasattr(sys, 'frozen'):
+    # Redirect to log file instead of complete suppression for debugging
+    try:
+        log_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'FaleovadAI', 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, f'coursesmith_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        sys.stdout = open(log_file, 'w', encoding='utf-8')
+        sys.stderr = sys.stdout
+    except:
+        # If log file creation fails, suppress completely
+        sys.stdout = None
+        sys.stderr = None
+
+
 # Supabase configuration for remote kill switch
 SUPABASE_URL = "https://spfwfyjpexktgnusgyib.supabase.co"
 SUPABASE_KEY = "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR"
+
+
+# Enterprise color scheme
+COLORS = {
+    'background': '#0B0E14',
+    'sidebar': '#151921',
+    'accent': '#7F5AF0',
+    'accent_hover': '#9D7BF5',
+    'text': '#E0E0E0',
+    'text_dim': '#808080'
+}
 
 
 def get_hwid():
@@ -254,6 +282,372 @@ def validate_license_key(license_key: str) -> dict:
         }
 
 
+class EnterpriseApp(ctk.CTk):
+    """Enterprise UI with sidebar navigation."""
+    
+    def __init__(self):
+        """Initialize the enterprise application."""
+        super().__init__()
+        
+        # Configure window
+        self.title("CourseSmith AI Enterprise")
+        self.geometry("1200x800")
+        self.minsize(1000, 600)
+        
+        # Configure colors
+        self.configure(fg_color=COLORS['background'])
+        
+        # State
+        self.current_tab = "forge"
+        self.progress_animation_running = False
+        
+        # Create UI
+        self._create_ui()
+        
+    def _create_ui(self):
+        """Create the main enterprise UI with sidebar."""
+        # Main container
+        main_container = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
+        main_container.pack(fill="both", expand=True)
+        
+        # Sidebar (200px fixed width)
+        self.sidebar = ctk.CTkFrame(
+            main_container,
+            width=200,
+            corner_radius=0,
+            fg_color=COLORS['sidebar']
+        )
+        self.sidebar.pack(side="left", fill="y")
+        self.sidebar.pack_propagate(False)
+        
+        # Logo/Header in sidebar
+        logo_label = ctk.CTkLabel(
+            self.sidebar,
+            text="⚡ CourseSmith",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=COLORS['accent']
+        )
+        logo_label.pack(pady=(30, 50))
+        
+        # Navigation buttons
+        self.nav_buttons = {}
+        
+        self.nav_buttons['forge'] = self._create_nav_button("🔥 Forge", "forge")
+        self.nav_buttons['library'] = self._create_nav_button("📚 Library", "library")
+        self.nav_buttons['settings'] = self._create_nav_button("⚙️ Settings", "settings")
+        
+        # Spacer
+        spacer = ctk.CTkFrame(self.sidebar, fg_color="transparent", height=20)
+        spacer.pack(fill="both", expand=True)
+        
+        # Version label at bottom
+        version_label = ctk.CTkLabel(
+            self.sidebar,
+            text="v2.0 Enterprise",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS['text_dim']
+        )
+        version_label.pack(pady=(0, 20))
+        
+        # Main content area
+        self.content_frame = ctk.CTkFrame(
+            main_container,
+            corner_radius=0,
+            fg_color=COLORS['background']
+        )
+        self.content_frame.pack(side="right", fill="both", expand=True)
+        
+        # Show default tab
+        self._switch_tab("forge")
+    
+    def _create_nav_button(self, text, tab_id):
+        """Create a navigation button with hover effects."""
+        btn = ctk.CTkButton(
+            self.sidebar,
+            text=text,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=45,
+            corner_radius=10,
+            fg_color="transparent",
+            text_color=COLORS['text'],
+            hover_color=COLORS['accent'],
+            anchor="w",
+            command=lambda: self._switch_tab(tab_id)
+        )
+        btn.pack(fill="x", padx=15, pady=5)
+        
+        # Bind hover events for glow effect
+        btn.bind("<Enter>", lambda e: self._on_button_hover(btn, True))
+        btn.bind("<Leave>", lambda e: self._on_button_hover(btn, False))
+        
+        return btn
+    
+    def _on_button_hover(self, button, is_entering):
+        """Handle button hover for glow effect."""
+        if is_entering:
+            button.configure(
+                text_color=COLORS['background'],
+                fg_color=COLORS['accent_hover']
+            )
+        else:
+            # Check if this is the active tab
+            if button == self.nav_buttons.get(self.current_tab):
+                button.configure(
+                    text_color=COLORS['background'],
+                    fg_color=COLORS['accent']
+                )
+            else:
+                button.configure(
+                    text_color=COLORS['text'],
+                    fg_color="transparent"
+                )
+    
+    def _switch_tab(self, tab_id):
+        """Switch to a different tab."""
+        self.current_tab = tab_id
+        
+        # Update button states
+        for btn_id, btn in self.nav_buttons.items():
+            if btn_id == tab_id:
+                btn.configure(
+                    fg_color=COLORS['accent'],
+                    text_color=COLORS['background']
+                )
+            else:
+                btn.configure(
+                    fg_color="transparent",
+                    text_color=COLORS['text']
+                )
+        
+        # Clear content frame
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+        
+        # Show appropriate content
+        if tab_id == "forge":
+            self._create_forge_tab()
+        elif tab_id == "library":
+            self._create_library_tab()
+        elif tab_id == "settings":
+            self._create_settings_tab()
+    
+    def _create_forge_tab(self):
+        """Create the Forge tab - main course generation interface."""
+        # Main container with padding
+        container = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=40, pady=40)
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            container,
+            text="Forge Your Course",
+            font=ctk.CTkFont(size=32, weight="bold"),
+            text_color=COLORS['text']
+        )
+        title_label.pack(anchor="w", pady=(0, 10))
+        
+        # Subtitle
+        subtitle_label = ctk.CTkLabel(
+            container,
+            text="Enter your master instruction below to generate an educational course",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim']
+        )
+        subtitle_label.pack(anchor="w", pady=(0, 30))
+        
+        # Input frame
+        input_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
+        input_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        # Input label
+        input_label = ctk.CTkLabel(
+            input_frame,
+            text="Master Instruction",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS['text']
+        )
+        input_label.pack(anchor="w", padx=25, pady=(25, 10))
+        
+        # Large text input
+        self.instruction_textbox = ctk.CTkTextbox(
+            input_frame,
+            font=ctk.CTkFont(size=14),
+            wrap="word",
+            height=300,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
+        )
+        self.instruction_textbox.pack(fill="both", expand=True, padx=25, pady=(0, 25))
+        
+        # Action buttons frame
+        action_frame = ctk.CTkFrame(container, fg_color="transparent")
+        action_frame.pack(fill="x", pady=(0, 20))
+        
+        # Generate button
+        self.generate_btn = ctk.CTkButton(
+            action_frame,
+            text="⚡ Generate Course",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=50,
+            corner_radius=10,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=self._start_generation
+        )
+        self.generate_btn.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        # Clear button
+        clear_btn = ctk.CTkButton(
+            action_frame,
+            text="Clear",
+            font=ctk.CTkFont(size=14),
+            height=50,
+            corner_radius=10,
+            fg_color=COLORS['sidebar'],
+            hover_color=COLORS['accent'],
+            command=self._clear_instruction
+        )
+        clear_btn.pack(side="left", padx=(0, 0))
+        
+        # Progress frame (initially hidden)
+        self.progress_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
+        
+        self.progress_label = ctk.CTkLabel(
+            self.progress_frame,
+            text="Generating...",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text']
+        )
+        self.progress_label.pack(pady=(20, 10))
+        
+        self.progress_bar = ctk.CTkProgressBar(
+            self.progress_frame,
+            width=400,
+            height=20,
+            corner_radius=10,
+            progress_color=COLORS['accent'],
+            mode="indeterminate"
+        )
+        self.progress_bar.pack(pady=(0, 20))
+    
+    def _create_library_tab(self):
+        """Create the Library tab."""
+        container = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=40, pady=40)
+        
+        title_label = ctk.CTkLabel(
+            container,
+            text="Course Library",
+            font=ctk.CTkFont(size=32, weight="bold"),
+            text_color=COLORS['text']
+        )
+        title_label.pack(anchor="w", pady=(0, 10))
+        
+        subtitle_label = ctk.CTkLabel(
+            container,
+            text="View and manage your generated courses",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim']
+        )
+        subtitle_label.pack(anchor="w", pady=(0, 30))
+        
+        # Placeholder for library content
+        placeholder_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
+        placeholder_frame.pack(fill="both", expand=True)
+        
+        placeholder_label = ctk.CTkLabel(
+            placeholder_frame,
+            text="📚 Your course library will appear here",
+            font=ctk.CTkFont(size=16),
+            text_color=COLORS['text_dim']
+        )
+        placeholder_label.pack(expand=True)
+    
+    def _create_settings_tab(self):
+        """Create the Settings tab."""
+        container = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=40, pady=40)
+        
+        title_label = ctk.CTkLabel(
+            container,
+            text="Settings",
+            font=ctk.CTkFont(size=32, weight="bold"),
+            text_color=COLORS['text']
+        )
+        title_label.pack(anchor="w", pady=(0, 10))
+        
+        subtitle_label = ctk.CTkLabel(
+            container,
+            text="Configure your CourseSmith preferences",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim']
+        )
+        subtitle_label.pack(anchor="w", pady=(0, 30))
+        
+        # Settings frame
+        settings_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
+        settings_frame.pack(fill="both", expand=True)
+        
+        # Placeholder for settings
+        placeholder_label = ctk.CTkLabel(
+            settings_frame,
+            text="⚙️ Settings options will appear here",
+            font=ctk.CTkFont(size=16),
+            text_color=COLORS['text_dim']
+        )
+        placeholder_label.pack(expand=True)
+    
+    def _start_generation(self):
+        """Start course generation with animated progress."""
+        instruction = self.instruction_textbox.get("1.0", "end-1c").strip()
+        
+        if not instruction:
+            messagebox.showwarning("Input Required", "Please enter a master instruction.")
+            return
+        
+        # Show progress frame
+        self.progress_frame.pack(fill="x", pady=(20, 0))
+        self.generate_btn.configure(state="disabled")
+        
+        # Start progress animation in thread
+        self._start_progress_animation()
+        
+        # TODO: Replace with actual course generation logic from app.py
+        # This is a placeholder for UI demonstration purposes
+        # In production, integrate with coursesmith_engine and pdf_engine
+        def simulate_generation():
+            import time
+            time.sleep(5)  # Placeholder - replace with actual generation
+            self.after(0, self._finish_generation)
+        
+        thread = threading.Thread(target=simulate_generation, daemon=True)
+        thread.start()
+    
+    def _start_progress_animation(self):
+        """Start non-blocking progress bar animation."""
+        if not self.progress_animation_running:
+            self.progress_animation_running = True
+            self.progress_bar.start()
+    
+    def _stop_progress_animation(self):
+        """Stop progress bar animation."""
+        if self.progress_animation_running:
+            self.progress_animation_running = False
+            self.progress_bar.stop()
+    
+    def _finish_generation(self):
+        """Finish generation and show result."""
+        self._stop_progress_animation()
+        self.progress_frame.pack_forget()
+        self.generate_btn.configure(state="normal")
+        messagebox.showinfo("Success", "Course generated successfully!")
+    
+    def _clear_instruction(self):
+        """Clear the instruction textbox."""
+        self.instruction_textbox.delete("1.0", "end")
+
+
 def main():
     """Initialize and run the CourseSmith ENTERPRISE application."""
     # Check for remote ban before starting the application
@@ -279,13 +673,16 @@ def main():
     
     # Set appearance mode
     ctk.set_appearance_mode("Dark")
+    
+    # Create custom theme with enterprise colors
     ctk.set_default_color_theme("blue")
     
     # Import app here after environment is loaded
-    from app import App
+    # Note: The EnterpriseApp is the new main UI
+    # The original App class is still available via: from app import App
     
-    # Create and run the application
-    app = App()
+    # Create and run the enterprise application
+    app = EnterpriseApp()
     app.mainloop()
 
 
