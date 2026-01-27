@@ -315,6 +315,11 @@ class EnterpriseApp(ctk.CTk):
         # Configure colors
         self.configure(fg_color=COLORS['background'])
         
+        # GLOBAL HOTKEY OVERRIDE - Bind keyboard shortcuts at root window level
+        # This ensures shortcuts work regardless of widget focus issues
+        from utils import setup_global_window_shortcuts
+        setup_global_window_shortcuts(self)
+        
         # State
         self.current_tab = "forge"
         self.progress_animation_running = False

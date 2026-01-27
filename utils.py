@@ -7,7 +7,7 @@ Also includes clipboard helper functions and right-click menu for cross-platform
 import os
 import sys
 import tkinter as tk
-from tkinter import Menu
+from tkinter import Menu, TclError
 
 
 def resource_path(relative_path):
@@ -376,3 +376,98 @@ def bind_paste_shortcut(widget):
     # Bind both uppercase and lowercase for Ctrl+V
     tk_widget.bind("<Control-v>", lambda e: handle_custom_paste(e, widget))
     tk_widget.bind("<Control-V>", lambda e: handle_custom_paste(e, widget))
+
+
+# ==================== GLOBAL WINDOW-LEVEL SHORTCUTS ====================
+
+def setup_global_window_shortcuts(window):
+    """
+    Setup GLOBAL keyboard shortcuts at root window level.
+    This ensures shortcuts work regardless of widget-specific bindings or focus issues.
+    Uses bind_all() to intercept events at the application level.
+    
+    This function should be called once during window initialization to enable
+    application-wide keyboard shortcuts (Ctrl+C, Ctrl+V, Ctrl+A, Ctrl+X).
+    
+    Args:
+        window: The root window (CTk or Tk instance) to bind shortcuts to.
+    """
+    # Create handler functions with proper error handling
+    def global_copy(event):
+        """Global handler for Ctrl+C (Copy)."""
+        try:
+            focused = window.focus_get()
+            if focused:
+                focused.event_generate("<<Copy>>")
+        except (AttributeError, TclError):
+            pass
+        return "break"
+    
+    def global_paste(event):
+        """Global handler for Ctrl+V (Paste)."""
+        try:
+            focused = window.focus_get()
+            if focused:
+                # Check if widget is editable
+                try:
+                    state = str(focused.cget("state"))
+                    if state in ("disabled", "readonly"):
+                        return "break"
+                except (AttributeError, TclError):
+                    pass
+                focused.event_generate("<<Paste>>")
+        except (AttributeError, TclError):
+            pass
+        return "break"
+    
+    def global_select_all(event):
+        """Global handler for Ctrl+A (Select All)."""
+        try:
+            focused = window.focus_get()
+            if focused:
+                # Try event_generate first
+                try:
+                    focused.event_generate("<<SelectAll>>")
+                except (AttributeError, TclError):
+                    # Fallback to manual selection for Entry/Text widgets
+                    if hasattr(focused, 'select_range'):
+                        focused.select_range(0, 'end')
+                    elif hasattr(focused, 'tag_add'):
+                        focused.tag_add('sel', '1.0', 'end')
+        except (AttributeError, TclError):
+            pass
+        return "break"
+    
+    def global_cut(event):
+        """Global handler for Ctrl+X (Cut)."""
+        try:
+            focused = window.focus_get()
+            if focused:
+                # Check if widget is editable
+                try:
+                    state = str(focused.cget("state"))
+                    if state in ("disabled", "readonly"):
+                        return "break"
+                except (AttributeError, TclError):
+                    pass
+                focused.event_generate("<<Cut>>")
+        except (AttributeError, TclError):
+            pass
+        return "break"
+    
+    # Bind Ctrl+C (Copy) - both uppercase and lowercase variants
+    window.bind_all("<Control-c>", global_copy)
+    window.bind_all("<Control-C>", global_copy)
+    
+    # Bind Ctrl+V (Paste) - both uppercase and lowercase variants
+    window.bind_all("<Control-v>", global_paste)
+    window.bind_all("<Control-V>", global_paste)
+    
+    # Bind Ctrl+A (Select All) - both uppercase and lowercase variants
+    window.bind_all("<Control-a>", global_select_all)
+    window.bind_all("<Control-A>", global_select_all)
+    
+    # Bind Ctrl+X (Cut) - both uppercase and lowercase variants
+    window.bind_all("<Control-x>", global_cut)
+    window.bind_all("<Control-X>", global_cut)
+

@@ -128,6 +128,11 @@ class AdminKeygenApp(ctk.CTk):
         # Set appearance
         self.configure(fg_color=COLORS['background'])
         
+        # GLOBAL HOTKEY OVERRIDE - Bind keyboard shortcuts at root window level
+        # This ensures shortcuts work regardless of widget focus issues
+        from utils import setup_global_window_shortcuts
+        setup_global_window_shortcuts(self)
+        
         # Set icon if available
         try:
             icon_path = resource_path("resources/admin_keygen.ico")
@@ -795,6 +800,10 @@ class AdminKeygenApp(ctk.CTk):
         # Create row for each license
         for idx, license_record in enumerate(licenses):
             self._create_license_row(license_record, idx)
+        
+        # Force canvas update to prevent floating text during scrolling
+        # This ensures all widgets are properly positioned before scrolling begins
+        self.explorer_frame.update_idletasks()
     
     def _create_selectable_text_widget(self, parent, text, font, text_color, row_color, width=None, height=25):
         """
