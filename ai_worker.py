@@ -190,11 +190,11 @@ The titles must be professional and catchy. Ensure the structure is logical and 
                 while len(chapters) < 10:
                     chapters.append(generic[len(chapters)])
             
-            # Return 10-12 chapters (prefer 10 if less, truncate to 12 if more)
+            # Return 10-12 chapters (truncate to 12 if more, already at least 10 from above)
             if len(chapters) > 12:
                 self.result = chapters[:12]
             else:
-                self.result = chapters[:max(10, len(chapters))]
+                self.result = chapters
             
             if self.callback:
                 self.callback(self.result)

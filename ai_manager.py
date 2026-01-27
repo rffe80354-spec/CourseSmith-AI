@@ -4,6 +4,7 @@ Provides methods for generating outlines, chapter content, and cover images.
 """
 
 import os
+import re
 import tempfile
 import requests
 from dotenv import load_dotenv
@@ -40,7 +41,6 @@ class AIGenerator:
         """
         try:
             # Detect if input is in Russian (contains Cyrillic characters)
-            import re
             is_russian = bool(re.search(r'[а-яА-ЯёЁ]', topic + ' ' + audience))
             
             # Build the prompt based on language
@@ -93,7 +93,6 @@ The titles must be professional and catchy. Ensure the structure is logical and 
                 line = line.strip()
                 if line:
                     # Remove numbering (works for both English and Russian)
-                    import re
                     line = re.sub(r'^(\d+[\.\)\:\-]\s*)', '', line).strip()
                     # Remove "Chapter X:" prefix if present
                     if line.lower().startswith("chapter") or line.startswith("Глава"):
@@ -139,11 +138,11 @@ The titles must be professional and catchy. Ensure the structure is logical and 
                 while len(chapters) < 10:
                     chapters.append(generic[len(chapters)])
 
-            # Return 10-12 chapters (prefer 10 if less, truncate to 12 if more)
+            # Return 10-12 chapters (truncate to 12 if more, already at least 10 from above)
             if len(chapters) > 12:
                 return chapters[:12]
             else:
-                return chapters[:max(10, len(chapters))]
+                return chapters
 
         except Exception as e:
             raise Exception(f"Failed to generate outline: {str(e)}")
