@@ -283,7 +283,7 @@ def validate_license_key(license_key: str) -> dict:
 
 
 class EnterpriseApp(ctk.CTk):
-    """Enterprise UI with sidebar navigation."""
+    """Enterprise UI with sidebar navigation and license authentication."""
     
     def __init__(self):
         """Initialize the enterprise application."""
@@ -300,13 +300,202 @@ class EnterpriseApp(ctk.CTk):
         # State
         self.current_tab = "forge"
         self.progress_animation_running = False
+        self.license_valid = False  # Track license validation state
+        self.license_data = None  # Store validated license data
         
         # Initialize coursesmith_engine
         self.coursesmith_engine = None
         self._init_coursesmith_engine()
         
-        # Create UI
-        self._create_ui()
+        # Check if license is already activated
+        if self._check_existing_license():
+            # License already validated, show main UI
+            self._create_main_ui()
+        else:
+            # Show login/activation screen
+            self._create_activation_ui()
+    
+    def _check_existing_license(self):
+        """Check if a license is already activated on this device."""
+        try:
+            current_hwid = get_hwid()
+            if not current_hwid or current_hwid == "UNKNOWN_ID":
+                return False
+            
+            # Connect to Supabase
+            supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+            
+            # Query licenses table for this HWID
+            response = supabase.table("licenses").select("*").limit(100).execute()
+            
+            # Find license that matches this HWID
+            for record in response.data if response.data else []:
+                used_hwids = _parse_hwids_array(record.get("used_hwids"))
+                
+                if current_hwid in used_hwids:
+                    # Found matching license, validate it
+                    if self._validate_license_record(record):
+                        self.license_valid = True
+                        self.license_data = record
+                        return True
+                    else:
+                        # License found but invalid (expired/banned)
+                        return False
+            
+            return False
+            
+        except Exception as e:
+            print(f"Error checking existing license: {e}")
+            # On error, allow offline usage
+            return False
+    
+    def _validate_license_record(self, record):
+        """Validate a license record (check expiration and ban status)."""
+        # Check if license is banned
+        if record.get("is_banned") is True:
+            return False
+        
+        # Check if license has expired
+        valid_until = record.get("valid_until")
+        if valid_until:
+            try:
+                expiration_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                current_date = datetime.now(timezone.utc)
+                
+                if current_date > expiration_date:
+                    return False
+            except Exception:
+                # If date parsing fails, allow access (fail-open)
+                pass
+        
+        return True
+    
+    def _create_activation_ui(self):
+        """Create the license activation screen."""
+        # Main container
+        container = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
+        container.pack(fill="both", expand=True)
+        
+        # Center frame
+        center_frame = ctk.CTkFrame(container, fg_color="transparent")
+        center_frame.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Logo/Title
+        title_label = ctk.CTkLabel(
+            center_frame,
+            text="⚡ CourseSmith AI",
+            font=ctk.CTkFont(size=48, weight="bold"),
+            text_color=COLORS['accent']
+        )
+        title_label.pack(pady=(0, 10))
+        
+        subtitle_label = ctk.CTkLabel(
+            center_frame,
+            text="Enterprise Edition",
+            font=ctk.CTkFont(size=20),
+            text_color=COLORS['text']
+        )
+        subtitle_label.pack(pady=(0, 50))
+        
+        # Activation frame
+        activation_frame = ctk.CTkFrame(
+            center_frame,
+            corner_radius=15,
+            fg_color=COLORS['sidebar'],
+            width=500,
+            height=300
+        )
+        activation_frame.pack(padx=40, pady=20)
+        activation_frame.pack_propagate(False)
+        
+        # Activation title
+        activation_title = ctk.CTkLabel(
+            activation_frame,
+            text="License Activation Required",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=COLORS['text']
+        )
+        activation_title.pack(pady=(30, 10))
+        
+        # Instructions
+        instructions = ctk.CTkLabel(
+            activation_frame,
+            text="Please enter your license key to activate CourseSmith AI",
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS['text_dim']
+        )
+        instructions.pack(pady=(0, 25))
+        
+        # License key entry
+        self.activation_entry = ctk.CTkEntry(
+            activation_frame,
+            placeholder_text="CS-XXXX-XXXX",
+            font=ctk.CTkFont(size=16),
+            height=50,
+            width=400,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
+        )
+        self.activation_entry.pack(pady=(0, 20))
+        self.activation_entry.bind("<Return>", lambda e: self._on_activate())
+        
+        # Add clipboard support
+        from utils import add_context_menu, bind_paste_shortcut
+        add_context_menu(self.activation_entry)
+        bind_paste_shortcut(self.activation_entry)
+        
+        # Activate button
+        activate_btn = ctk.CTkButton(
+            activation_frame,
+            text="🔓 Activate License",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=50,
+            width=400,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=self._on_activate
+        )
+        activate_btn.pack(pady=(0, 10))
+        
+        # Status label
+        self.activation_status = ctk.CTkLabel(
+            activation_frame,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text_dim']
+        )
+        self.activation_status.pack(pady=(10, 20))
+    
+    def _on_activate(self):
+        """Handle license activation."""
+        license_key = self.activation_entry.get().strip()
+        
+        if not license_key:
+            self.activation_status.configure(text="Please enter a license key", text_color="red")
+            return
+        
+        # Disable button during validation
+        self.activation_status.configure(text="Validating license...", text_color=COLORS['accent'])
+        self.update()
+        
+        # Validate license key
+        result = validate_license_key(license_key)
+        
+        if result['valid']:
+            self.license_valid = True
+            self.license_data = result['license_data']
+            
+            # Show success message
+            messagebox.showinfo("Success", result['message'])
+            
+            # Clear activation UI and show main UI
+            for widget in self.winfo_children():
+                widget.destroy()
+            
+            self._create_main_ui()
+        else:
+            self.activation_status.configure(text=result['message'], text_color="red")
     
     def _init_coursesmith_engine(self):
         """Initialize the CourseSmith Engine with API key from environment."""
@@ -322,8 +511,8 @@ class EnterpriseApp(ctk.CTk):
             print(f"Warning: Could not initialize coursesmith_engine: {e}")
             self.coursesmith_engine = None
         
-    def _create_ui(self):
-        """Create the main enterprise UI with sidebar."""
+    def _create_main_ui(self):
+        """Create the main enterprise UI with sidebar (after license validation)."""
         # Main container
         main_container = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
         main_container.pack(fill="both", expand=True)
@@ -498,6 +687,11 @@ class EnterpriseApp(ctk.CTk):
         )
         self.instruction_textbox.pack(fill="both", expand=True, padx=25, pady=(0, 25))
         
+        # Add clipboard support
+        from utils import add_context_menu, bind_paste_shortcut
+        add_context_menu(self.instruction_textbox)
+        bind_paste_shortcut(self.instruction_textbox)
+        
         # Action buttons frame
         action_frame = ctk.CTkFrame(container, fg_color="transparent")
         action_frame.pack(fill="x", pady=(0, 20))
@@ -533,7 +727,7 @@ class EnterpriseApp(ctk.CTk):
         
         self.progress_label = ctk.CTkLabel(
             self.progress_frame,
-            text="Generating...",
+            text="Generating your course...",
             font=ctk.CTkFont(size=14),
             text_color=COLORS['text']
         )
@@ -544,10 +738,10 @@ class EnterpriseApp(ctk.CTk):
             width=400,
             height=20,
             corner_radius=10,
-            progress_color=COLORS['accent'],
-            mode="indeterminate"
+            progress_color=COLORS['accent']
         )
         self.progress_bar.pack(pady=(0, 20))
+        self.progress_bar.set(0)
     
     def _create_library_tab(self):
         """Create the Library tab."""
@@ -648,6 +842,11 @@ class EnterpriseApp(ctk.CTk):
         
         if current_key:
             self.api_key_entry.insert(0, current_key)
+        
+        # Add clipboard support
+        from utils import add_context_menu, bind_paste_shortcut
+        add_context_menu(self.api_key_entry)
+        bind_paste_shortcut(self.api_key_entry)
         
         # Show/Hide button
         self.api_key_visible = False
@@ -756,10 +955,10 @@ class EnterpriseApp(ctk.CTk):
         self.progress_frame.pack(fill="x", pady=(20, 0))
         self.generate_btn.configure(state="disabled")
         
-        # Start progress animation in thread
-        self._start_progress_animation()
+        # Start progress animation
+        self._animate_progress()
         
-        # TODO: Replace with actual course generation logic from app.py
+        # TODO: Replace with actual course generation logic from coursesmith_engine
         # This is a placeholder for UI demonstration purposes
         # In production, integrate with coursesmith_engine and pdf_engine
         def simulate_generation():
@@ -770,24 +969,49 @@ class EnterpriseApp(ctk.CTk):
         thread = threading.Thread(target=simulate_generation, daemon=True)
         thread.start()
     
-    def _start_progress_animation(self):
-        """Start non-blocking progress bar animation."""
+    def _animate_progress(self):
+        """Animate progress bar smoothly."""
         if not self.progress_animation_running:
             self.progress_animation_running = True
-            self.progress_bar.start()
+            self.progress_bar.set(0)
+            self._update_progress_animation(0)
+    
+    def _update_progress_animation(self, value):
+        """Update progress bar animation."""
+        if self.progress_animation_running:
+            # Increment progress
+            value = min(value + 0.01, 0.95)  # Max at 95% until complete
+            self.progress_bar.set(value)
+            
+            # Update label with different messages
+            if value < 0.3:
+                self.progress_label.configure(text="Analyzing your instruction...")
+            elif value < 0.6:
+                self.progress_label.configure(text="Generating course structure...")
+            elif value < 0.9:
+                self.progress_label.configure(text="Creating content...")
+            else:
+                self.progress_label.configure(text="Finalizing your course...")
+            
+            # Continue animation
+            self.after(50, lambda: self._update_progress_animation(value))
     
     def _stop_progress_animation(self):
         """Stop progress bar animation."""
-        if self.progress_animation_running:
-            self.progress_animation_running = False
-            self.progress_bar.stop()
+        self.progress_animation_running = False
+        self.progress_bar.set(1.0)
+        self.progress_label.configure(text="Course generation complete!")
     
     def _finish_generation(self):
         """Finish generation and show result."""
         self._stop_progress_animation()
-        self.progress_frame.pack_forget()
-        self.generate_btn.configure(state="normal")
-        messagebox.showinfo("Success", "Course generated successfully!")
+        
+        # Show completion for a moment
+        self.after(1000, lambda: [
+            self.progress_frame.pack_forget(),
+            self.generate_btn.configure(state="normal"),
+            messagebox.showinfo("Success", "Course generated successfully!")
+        ])
     
     def _clear_instruction(self):
         """Clear the instruction textbox."""
