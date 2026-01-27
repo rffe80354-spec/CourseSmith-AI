@@ -64,8 +64,7 @@ def get_hwid():
     try:
         # Primary method: Get system UUID using wmic csproduct
         result = subprocess.check_output(
-            'wmic csproduct get uuid',
-            shell=True,
+            ['wmic', 'csproduct', 'get', 'uuid'],
             timeout=5
         ).decode()
         
@@ -73,7 +72,7 @@ def get_hwid():
         lines = result.strip().split('\n')
         if len(lines) >= 2:
             uuid = lines[1].strip()
-            if uuid and uuid != "UUID" and uuid != "":
+            if uuid and uuid != "UUID":
                 return uuid
         
     except Exception as e:
@@ -82,8 +81,7 @@ def get_hwid():
     # Fallback method: Try disk drive serial number
     try:
         result = subprocess.check_output(
-            'wmic diskdrive get serialnumber',
-            shell=True,
+            ['wmic', 'diskdrive', 'get', 'serialnumber'],
             timeout=5
         ).decode()
         
@@ -91,7 +89,7 @@ def get_hwid():
         lines = result.strip().split('\n')
         if len(lines) >= 2:
             serial = lines[1].strip()
-            if serial and serial != "SerialNumber" and serial != "":
+            if serial and serial != "SerialNumber":
                 return serial
                 
     except Exception as e:
