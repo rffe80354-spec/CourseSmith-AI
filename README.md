@@ -2,6 +2,27 @@
 
 A professional desktop application for generating educational PDF books using AI. Built with Python, customtkinter, OpenAI GPT-4o, and ReportLab.
 
+## 🚀 NEW: CourseSmith Ultimate Engine
+
+The **CourseSmith Ultimate Engine** is a powerful educational course generator that creates professional, multi-format courses from a single instruction.
+
+**Key Features:**
+- 🌍 **Multi-Language Support**: Automatic English/Russian detection with full Cyrillic support
+- 📚 **10-Chapter Structure**: Logical progression from basics to advanced topics
+- ✍️ **Expert Content**: ~1500 characters per chapter with markdown formatting
+- 📝 **Structured Output**: Easy conversion to PDF, DOCX, and EPUB
+- 🎯 **UTF-8 Clean**: Perfect encoding without rendering errors
+
+**Quick Start:**
+```python
+from coursesmith_engine import generate_course_from_instruction
+
+output = generate_course_from_instruction("Machine Learning Fundamentals")
+print(output)
+```
+
+📖 **[Read the full documentation →](COURSESMITH_ENGINE_README.md)**
+
 ## 💰 License Tiers
 
 Faleovad AI Enterprise features a tiered licensing system:
