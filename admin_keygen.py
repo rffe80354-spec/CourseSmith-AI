@@ -130,7 +130,8 @@ class AdminKeygenApp(ctk.CTk):
         
         # GLOBAL HOTKEY OVERRIDE - Bind keyboard shortcuts at root window level
         # This ensures shortcuts work regardless of widget focus issues
-        self._setup_global_shortcuts()
+        from utils import setup_global_window_shortcuts
+        setup_global_window_shortcuts(self)
         
         # Set icon if available
         try:
@@ -153,90 +154,6 @@ class AdminKeygenApp(ctk.CTk):
         
         # Load all licenses on startup (non-blocking)
         self.after(500, self._load_all_licenses_async)
-        
-    def _setup_global_shortcuts(self):
-        """
-        Setup GLOBAL keyboard shortcuts at root window level.
-        This ensures shortcuts work regardless of widget-specific bindings or focus issues.
-        Uses bind_all() to intercept events at the application level.
-        """
-        # Bind Ctrl+C (Copy) - both uppercase and lowercase variants
-        self.bind_all("<Control-c>", self._global_copy)
-        self.bind_all("<Control-C>", self._global_copy)
-        
-        # Bind Ctrl+V (Paste) - both uppercase and lowercase variants
-        self.bind_all("<Control-v>", self._global_paste)
-        self.bind_all("<Control-V>", self._global_paste)
-        
-        # Bind Ctrl+A (Select All) - both uppercase and lowercase variants
-        self.bind_all("<Control-a>", self._global_select_all)
-        self.bind_all("<Control-A>", self._global_select_all)
-        
-        # Bind Ctrl+X (Cut) - both uppercase and lowercase variants
-        self.bind_all("<Control-x>", self._global_cut)
-        self.bind_all("<Control-X>", self._global_cut)
-    
-    def _global_copy(self, event):
-        """Global handler for Ctrl+C (Copy)."""
-        try:
-            focused = self.focus_get()
-            if focused:
-                focused.event_generate("<<Copy>>")
-        except Exception:
-            pass
-        return "break"
-    
-    def _global_paste(self, event):
-        """Global handler for Ctrl+V (Paste)."""
-        try:
-            focused = self.focus_get()
-            if focused:
-                # Check if widget is editable
-                try:
-                    state = str(focused.cget("state"))
-                    if state in ("disabled", "readonly"):
-                        return "break"
-                except:
-                    pass
-                focused.event_generate("<<Paste>>")
-        except Exception:
-            pass
-        return "break"
-    
-    def _global_select_all(self, event):
-        """Global handler for Ctrl+A (Select All)."""
-        try:
-            focused = self.focus_get()
-            if focused:
-                # Try event_generate first
-                try:
-                    focused.event_generate("<<SelectAll>>")
-                except:
-                    # Fallback to manual selection for Entry/Text widgets
-                    if hasattr(focused, 'select_range'):
-                        focused.select_range(0, 'end')
-                    elif hasattr(focused, 'tag_add'):
-                        focused.tag_add('sel', '1.0', 'end')
-        except Exception:
-            pass
-        return "break"
-    
-    def _global_cut(self, event):
-        """Global handler for Ctrl+X (Cut)."""
-        try:
-            focused = self.focus_get()
-            if focused:
-                # Check if widget is editable
-                try:
-                    state = str(focused.cget("state"))
-                    if state in ("disabled", "readonly"):
-                        return "break"
-                except:
-                    pass
-                focused.event_generate("<<Cut>>")
-        except Exception:
-            pass
-        return "break"
         
     def _create_ui(self):
         """Create the main UI with Global Key Explorer and Search."""
