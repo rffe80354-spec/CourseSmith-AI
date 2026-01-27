@@ -116,14 +116,9 @@ class AdminKeygenApp(ctk.CTk):
         
         # Configure window - larger for Global Key Explorer
         self.title("CourseSmith License Management Suite")
-        self.geometry("1600x900")
+        self.state('zoomed')
+        self.minsize(1280, 720)
         self.resizable(True, True)
-        
-        # Center window on screen
-        self.update_idletasks()
-        x = (self.winfo_screenwidth() // 2) - (1600 // 2)
-        y = (self.winfo_screenheight() // 2) - (900 // 2)
-        self.geometry(f"1600x900+{x}+{y}")
         
         # Set appearance
         self.configure(fg_color=COLORS['background'])
@@ -160,8 +155,8 @@ class AdminKeygenApp(ctk.CTk):
         # Main container with two columns
         main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        main_frame.grid_columnconfigure(0, weight=0, minsize=450)  # Generator column (fixed)
-        main_frame.grid_columnconfigure(1, weight=1)  # Global Explorer (expandable)
+        main_frame.grid_columnconfigure(0, weight=0, minsize=350)  # Sidebar (fixed)
+        main_frame.grid_columnconfigure(1, weight=1)  # Explorer (expandable)
         main_frame.grid_rowconfigure(0, weight=1)
         
         # Left column - Key Generator
