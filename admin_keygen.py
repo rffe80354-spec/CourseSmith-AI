@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 import customtkinter as ctk
 from tkinter import messagebox
 from license_guard import generate_key
-from utils import resource_path, add_context_menu, bind_paste_shortcut
+from utils import resource_path, add_context_menu
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -208,9 +208,8 @@ class AdminKeygenApp(ctk.CTk):
         self.email_entry.pack(fill="x", padx=20, pady=(0, 15))
         self.email_entry.bind("<Return>", lambda e: self._on_generate())
         
-        # Add clipboard support
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.email_entry)
-        bind_paste_shortcut(self.email_entry)
         
         # Tier selection (now always visible - no God Mode)
         tier_label = ctk.CTkLabel(
@@ -288,9 +287,8 @@ class AdminKeygenApp(ctk.CTk):
         self.duration_entry.pack(fill="x", padx=20, pady=(0, 15))
         self.duration_entry.insert(0, "lifetime")
         
-        # Add clipboard support
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.duration_entry)
-        bind_paste_shortcut(self.duration_entry)
         
         # Device Limit input
         device_label = ctk.CTkLabel(
@@ -322,9 +320,8 @@ class AdminKeygenApp(ctk.CTk):
         self.device_limit_entry.pack(padx=20, pady=(0, 15), anchor="w")
         self.device_limit_entry.insert(0, "3")
         
-        # Add clipboard support
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.device_limit_entry)
-        bind_paste_shortcut(self.device_limit_entry)
         
         # Generate button
         self.generate_btn = ctk.CTkButton(
@@ -359,9 +356,8 @@ class AdminKeygenApp(ctk.CTk):
         )
         self.output_text.pack(fill="x", padx=20, pady=(0, 10))
         
-        # Add clipboard support
+        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.output_text)
-        bind_paste_shortcut(self.output_text)
         
         # Copy button
         self.copy_btn = ctk.CTkButton(
@@ -424,9 +420,8 @@ class AdminKeygenApp(ctk.CTk):
         )
         self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=12)
         
-        # Add clipboard support for search
+        # Add clipboard support for search (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.search_entry)
-        bind_paste_shortcut(self.search_entry)
         
         # Bind real-time search (with debouncing)
         self.search_entry.bind("<KeyRelease>", self._on_search_keypress)
