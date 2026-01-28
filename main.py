@@ -255,13 +255,14 @@ class EnterpriseApp(ctk.CTk):
         return True
     
     def _create_activation_ui(self):
-        """Create the license activation screen with expanded 550x850 geometry."""
-        # Set window size for login screen (expanded to ensure Activate button is fully visible)
-        self.geometry("550x850")
-        self.minsize(550, 850)
-        self.resizable(False, False)
+        """Create the license activation screen with full screen background and centered login card."""
+        # Keep the window maximized (full screen background)
+        # Login card will be centered on the full screen
+        self.geometry("1200x800")
+        self.minsize(800, 600)
+        self.resizable(True, True)
         
-        # Main container
+        # Main container (full screen background)
         container = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
         container.pack(fill="both", expand=True)
         
@@ -453,8 +454,7 @@ class EnterpriseApp(ctk.CTk):
         Create the main enterprise UI with sidebar (after license validation).
         Uses delayed rendering to prevent RecursionError during initialization.
         """
-        # Maximize the window immediately on main UI creation
-        self._maximize_window()
+        # Window is already maximized from __init__, no need to call _maximize_window() again
         
         # Use after() for initial rendering to prevent RecursionError
         self.after(UI_RENDER_DELAY_MS, self._render_main_ui)
