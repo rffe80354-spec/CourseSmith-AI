@@ -252,10 +252,10 @@ class EnterpriseApp(ctk.CTk):
         return True
     
     def _create_activation_ui(self):
-        """Create the license activation screen with 500x750 geometry."""
-        # Set window size for login screen (500x750 as per spec)
-        self.geometry("500x750")
-        self.minsize(500, 750)
+        """Create the license activation screen with expanded 550x850 geometry."""
+        # Set window size for login screen (expanded to ensure Activate button is fully visible)
+        self.geometry("550x850")
+        self.minsize(550, 850)
         self.resizable(False, False)
         
         # Main container
@@ -283,13 +283,13 @@ class EnterpriseApp(ctk.CTk):
         )
         subtitle_label.pack(pady=(0, 50))
         
-        # Activation frame - height increased to 450 to fit Email + Key + Button
+        # Activation frame - expanded height to 500 to fit Email + Key + Button with generous padding
         activation_frame = ctk.CTkFrame(
             center_frame,
             corner_radius=15,
             fg_color=COLORS['sidebar'],
             width=500,
-            height=450
+            height=500
         )
         activation_frame.pack(padx=40, pady=20)
         activation_frame.pack_propagate(False)
@@ -486,7 +486,56 @@ class EnterpriseApp(ctk.CTk):
             font=ctk.CTkFont(size=20, weight="bold"),
             text_color=COLORS['accent']
         )
-        logo_label.pack(pady=(30, 50))
+        logo_label.pack(pady=(30, 20))
+        
+        # License Info Frame - Display Tier and Expiration in Sidebar
+        license_info_frame = ctk.CTkFrame(
+            self.sidebar,
+            fg_color=COLORS['background'],
+            corner_radius=10
+        )
+        license_info_frame.pack(fill="x", padx=15, pady=(0, 30))
+        
+        # Get license tier and expiration from license_data
+        tier_text = "Unknown"
+        expiry_text = "N/A"
+        if self.license_data and isinstance(self.license_data, dict):
+            tier_text = self.license_data.get('tier', 'standard').upper()
+            valid_until = self.license_data.get('valid_until')
+            if valid_until:
+                try:
+                    expiry_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                    expiry_text = expiry_date.strftime("%Y-%m-%d")
+                except Exception:
+                    expiry_text = "Lifetime"
+            else:
+                expiry_text = "Lifetime"
+        
+        # Determine tier color based on tier level
+        tier_colors = {
+            "PROFESSIONAL": "#FFD700",  # Gold
+            "EXTENDED": "#FFA500",       # Orange
+            "STANDARD": "#A0A0A0"        # Gray/Silver
+        }
+        tier_color = tier_colors.get(tier_text, COLORS['accent'])
+        
+        # Tier label
+        tier_label = ctk.CTkLabel(
+            license_info_frame,
+            text=f"🎫 Tier: {tier_text}",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=tier_color
+        )
+        tier_label.pack(pady=(10, 5), padx=10, anchor="w")
+        
+        # Expiration label
+        expiry_label = ctk.CTkLabel(
+            license_info_frame,
+            text=f"📅 Expires: {expiry_text}",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_dim']
+        )
+        expiry_label.pack(pady=(0, 10), padx=10, anchor="w")
         
         # Navigation buttons
         self.nav_buttons = {}
@@ -685,13 +734,14 @@ class EnterpriseApp(ctk.CTk):
         )
         log_label.pack(anchor="w", padx=25, pady=(25, 10))
         
-        # Logging console text widget
+        # Logging console text widget - Matrix-style (Black bg/Green text)
         self.log_console = ctk.CTkTextbox(
             log_frame,
             font=ctk.CTkFont(family="Consolas", size=12),
             wrap="word",
             height=200,
-            fg_color=COLORS['background'],
+            fg_color="#000000",  # Matrix-style black background
+            text_color="#00FF00",  # Matrix-style green text
             border_color=COLORS['accent'],
             border_width=2,
             state="disabled"  # Read-only
@@ -849,59 +899,6 @@ class EnterpriseApp(ctk.CTk):
             command=self._save_api_key
         )
         save_btn.pack(pady=(20, 0))
-        
-        # Email section
-        email_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        email_frame.pack(fill="x", padx=30, pady=(30, 20))
-        
-        email_label = ctk.CTkLabel(
-            email_frame,
-            text="Email for Course Notifications",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=COLORS['text']
-        )
-        email_label.pack(anchor="w", pady=(0, 10))
-        
-        email_help_label = ctk.CTkLabel(
-            email_frame,
-            text="This email will appear in generation logs (e.g., 'Sending copy to [email]...').",
-            font=ctk.CTkFont(size=12),
-            text_color=COLORS['text_dim']
-        )
-        email_help_label.pack(anchor="w", pady=(0, 15))
-        
-        # Email entry
-        self.email_entry = ctk.CTkEntry(
-            email_frame,
-            placeholder_text="your@email.com",
-            height=45,
-            font=ctk.CTkFont(size=14),
-            fg_color=COLORS['background'],
-            border_color=COLORS['accent'],
-            border_width=2
-        )
-        self.email_entry.pack(fill="x", pady=(0, 10))
-        
-        # Load saved email from .env
-        saved_email = os.getenv("USER_EMAIL", "")
-        if saved_email:
-            self.email_entry.insert(0, saved_email)
-        
-        # Add clipboard support
-        add_context_menu(self.email_entry)
-        
-        # Save email button
-        save_email_btn = ctk.CTkButton(
-            email_frame,
-            text="💾 Save Email",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            height=50,
-            corner_radius=10,
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover'],
-            command=self._save_email
-        )
-        save_email_btn.pack(pady=(20, 0))
     
     def _toggle_api_key_visibility(self):
         """Toggle API key visibility."""
@@ -971,50 +968,6 @@ class EnterpriseApp(ctk.CTk):
         except IOError as e:
             messagebox.showerror("Error", f"Failed to save API key: {e}")
     
-    def _save_email(self):
-        """Save the user email to .env file and update environment."""
-        email = self.email_entry.get().strip()
-        
-        if not email:
-            messagebox.showerror("Error", "Please enter an email address.")
-            return
-        
-        # Basic email validation
-        if '@' not in email or '.' not in email:
-            result = messagebox.askyesno(
-                "Invalid Email Format",
-                "The email doesn't appear to be valid.\n\n"
-                "Do you want to save it anyway?"
-            )
-            if not result:
-                return
-        
-        # Save to .env file
-        env_path = os.path.join(os.getcwd(), ".env")
-        try:
-            # Read existing content
-            existing_lines = []
-            if os.path.exists(env_path):
-                with open(env_path, 'r') as f:
-                    for line in f:
-                        stripped = line.strip()
-                        if stripped and not stripped.startswith("USER_EMAIL"):
-                            existing_lines.append(line.rstrip())
-            
-            # Write with new email
-            with open(env_path, 'w') as f:
-                for line in existing_lines:
-                    f.write(line + "\n")
-                f.write(f"USER_EMAIL={email}\n")
-            
-            # Update environment variable
-            os.environ["USER_EMAIL"] = email
-            
-            messagebox.showinfo("Success", "Email saved successfully!")
-            
-        except IOError as e:
-            messagebox.showerror("Error", f"Failed to save email: {e}")
-    
     def _log_message(self, message: str):
         """
         Add a timestamped message to the logging console.
@@ -1034,7 +987,7 @@ class EnterpriseApp(ctk.CTk):
     def _generate_pdf_file(self, course_data: dict) -> str:
         """
         Generate a real PDF file from course data and save to Downloads folder.
-        Uses reportlab's SimpleDocTemplate for PDF generation.
+        Uses the shared generate_pdf utility function from utils module.
         
         Args:
             course_data: Dictionary containing 'title' and 'chapters' list
@@ -1042,95 +995,8 @@ class EnterpriseApp(ctk.CTk):
         Returns:
             str: Path to the generated PDF file
         """
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import inch
-        from reportlab.lib.enums import TA_CENTER
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-        from reportlab.lib.colors import HexColor
-        from xml.sax.saxutils import escape
-        
-        # Determine Downloads folder path (cross-platform)
-        if sys.platform == "win32":
-            # Windows: C:\Users\{Username}\Downloads\
-            downloads_dir = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'Downloads')
-        else:
-            # Linux/Mac: ~/Downloads/
-            downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
-        
-        # Ensure Downloads directory exists
-        os.makedirs(downloads_dir, exist_ok=True)
-        
-        # Create filename from title and timestamp
-        title = course_data.get('title', 'Untitled Course')
-        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-        safe_title = safe_title[:50] if safe_title else "Course"
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{safe_title}_{timestamp}.pdf"
-        filepath = os.path.join(downloads_dir, filename)
-        
-        # Create PDF document
-        doc = SimpleDocTemplate(filepath, pagesize=letter)
-        styles = getSampleStyleSheet()
-        
-        # Create custom styles
-        title_style = ParagraphStyle(
-            'CourseTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            alignment=TA_CENTER,
-            spaceAfter=30,
-            textColor=HexColor('#1a1a2e'),
-            fontName='Helvetica-Bold'
-        )
-        
-        chapter_style = ParagraphStyle(
-            'ChapterTitle',
-            parent=styles['Heading2'],
-            fontSize=18,
-            spaceAfter=12,
-            spaceBefore=20,
-            textColor=HexColor('#4a4a6a'),
-            fontName='Helvetica-Bold'
-        )
-        
-        content_style = ParagraphStyle(
-            'ContentText',
-            parent=styles['Normal'],
-            fontSize=12,
-            spaceAfter=12,
-            leading=16,
-            fontName='Helvetica'
-        )
-        
-        # Build document content
-        story = []
-        
-        # Add course title (H1, Bold) - escape HTML entities
-        story.append(Paragraph(escape(title), title_style))
-        story.append(Spacer(1, 0.5 * inch))
-        
-        # Add each chapter/module (H2) with content
-        chapters = course_data.get('chapters', [])
-        for i, chapter in enumerate(chapters):
-            chapter_title = chapter.get('title', f'Module {i+1}')
-            chapter_content = chapter.get('content', '')
-            
-            # Add chapter title (H2) - escape HTML entities
-            story.append(Paragraph(escape(chapter_title), chapter_style))
-            
-            # Add chapter content with line breaks preserved - escape HTML entities
-            for paragraph in chapter_content.split('\n\n'):
-                if paragraph.strip():
-                    story.append(Paragraph(escape(paragraph.strip()), content_style))
-                    story.append(Spacer(1, 0.1 * inch))
-            
-            story.append(Spacer(1, 0.3 * inch))
-        
-        # Build the PDF
-        doc.build(story)
-        
-        return filepath
+        from utils import generate_pdf
+        return generate_pdf(course_data)
     
     def _start_generation(self):
         """Start course generation with animated progress and detailed logging."""
