@@ -1022,7 +1022,7 @@ class EnterpriseApp(ctk.CTk):
             try:
                 # Progress callback to update UI
                 def progress_callback(step, total, message):
-                    # Update progress label on main thread
+                    # Update progress label on main thread (explicit value capture)
                     self.after(0, lambda msg=message: self.progress_label.configure(text=msg))
                 
                 # Generate the full course
@@ -1038,9 +1038,9 @@ class EnterpriseApp(ctk.CTk):
                 self.after(0, lambda: self._finish_generation(success=True))
                 
             except Exception as e:
-                # Handle errors on main thread
+                # Handle errors on main thread (explicit value capture)
                 error_msg = str(e)
-                self.after(0, lambda: self._finish_generation(success=False, error=error_msg))
+                self.after(0, lambda err=error_msg: self._finish_generation(success=False, error=err))
         
         # Run generation in background thread
         thread = threading.Thread(target=run_generation, daemon=True)
@@ -1107,6 +1107,9 @@ class EnterpriseApp(ctk.CTk):
                     # Sanitize filename
                     safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
                     safe_title = safe_title[:50]  # Limit length
+                    # Ensure filename is not empty after sanitization
+                    if not safe_title:
+                        safe_title = "Course"
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     filename = f"{safe_title}_{timestamp}.json"
                     filepath = os.path.join(courses_dir, filename)
