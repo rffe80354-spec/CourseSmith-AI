@@ -55,6 +55,13 @@ COLORS = {
     'text_dim': '#808080'
 }
 
+# UI timing constants
+UI_RENDER_DELAY_MS = 200  # Delay before initial UI rendering to prevent RecursionError
+STEP_DELAY_SECONDS = 1.5  # Delay between simulated generation steps
+PACKAGING_DELAY_SECONDS = 1.0  # Delay for packaging simulation
+EMAIL_LOG_DELAY_MS = 500  # Delay before showing email log message
+COMPLETION_DELAY_MS = 1000  # Delay before completion
+
 
 def check_remote_ban():
     """
@@ -489,12 +496,20 @@ class EnterpriseApp(ctk.CTk):
             self.coursesmith_engine = None
         
     def _create_main_ui(self):
-        """Create the main enterprise UI with sidebar (after license validation)."""
-        # Use after(200) for initial rendering to prevent RecursionError
-        self.after(200, self._render_main_ui)
+        """
+        Create the main enterprise UI with sidebar (after license validation).
+        Uses delayed rendering to prevent RecursionError during initialization.
+        """
+        # Use after() for initial rendering to prevent RecursionError
+        self.after(UI_RENDER_DELAY_MS, self._render_main_ui)
     
     def _render_main_ui(self):
-        """Render the main UI after delay."""
+        """
+        Render the main UI with responsive grid layout.
+        Called after a delay from _create_main_ui to ensure proper initialization.
+        The delay prevents recursion issues that can occur when scrollbar calculations
+        trigger geometry updates during initial widget creation.
+        """
         # Main container with grid layout for responsive design
         main_container = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
         main_container.pack(fill="both", expand=True)
@@ -1122,10 +1137,10 @@ class EnterpriseApp(ctk.CTk):
                     # Add email notification log
                     user_email = os.getenv("USER_EMAIL", "user@example.com")
                     self.after(0, lambda: self._log_message("📦 Packaging course..."))
-                    self.after(500, lambda: self._log_message(f"📧 Sending copy to {user_email}..."))
+                    self.after(EMAIL_LOG_DELAY_MS, lambda: self._log_message(f"📧 Sending copy to {user_email}..."))
                     
                     # Notify completion on main thread
-                    self.after(1000, lambda: self._finish_generation(success=True))
+                    self.after(COMPLETION_DELAY_MS, lambda: self._finish_generation(success=True))
                     
                 except Exception as e:
                     # Handle errors on main thread (explicit value capture)
@@ -1138,6 +1153,7 @@ class EnterpriseApp(ctk.CTk):
             thread.start()
         else:
             # Simulated generation with detailed step logging
+            # Uses sequential delays to provide realistic user feedback
             def run_simulated_generation():
                 import time
                 
@@ -1145,41 +1161,41 @@ class EnterpriseApp(ctk.CTk):
                     # Step 1: Introduction
                     self.after(0, lambda: self._log_message("📖 Generating Introduction..."))
                     self.after(0, lambda: self.progress_label.configure(text="Generating Introduction..."))
-                    time.sleep(1.5)
+                    time.sleep(STEP_DELAY_SECONDS)
                     self.after(0, lambda: self._log_message("✓ Introduction complete"))
                     
                     # Step 2: Module 1
                     self.after(0, lambda: self._log_message("📚 Generating Module 1..."))
                     self.after(0, lambda: self.progress_label.configure(text="Generating Module 1..."))
-                    time.sleep(1.5)
+                    time.sleep(STEP_DELAY_SECONDS)
                     self.after(0, lambda: self._log_message("✓ Module 1 complete"))
                     
                     # Step 3: Module 2
                     self.after(0, lambda: self._log_message("📚 Generating Module 2..."))
                     self.after(0, lambda: self.progress_label.configure(text="Generating Module 2..."))
-                    time.sleep(1.5)
+                    time.sleep(STEP_DELAY_SECONDS)
                     self.after(0, lambda: self._log_message("✓ Module 2 complete"))
                     
                     # Step 4: Module 3
                     self.after(0, lambda: self._log_message("📚 Generating Module 3..."))
                     self.after(0, lambda: self.progress_label.configure(text="Generating Module 3..."))
-                    time.sleep(1.5)
+                    time.sleep(STEP_DELAY_SECONDS)
                     self.after(0, lambda: self._log_message("✓ Module 3 complete"))
                     
                     # Step 5: Conclusion
                     self.after(0, lambda: self._log_message("🏁 Generating Conclusion..."))
                     self.after(0, lambda: self.progress_label.configure(text="Generating Conclusion..."))
-                    time.sleep(1.5)
+                    time.sleep(STEP_DELAY_SECONDS)
                     self.after(0, lambda: self._log_message("✓ Conclusion complete"))
                     
                     # Step 6: Packaging and email
                     self.after(0, lambda: self._log_message("📦 Packaging course..."))
                     self.after(0, lambda: self.progress_label.configure(text="Packaging course..."))
-                    time.sleep(1.0)
+                    time.sleep(PACKAGING_DELAY_SECONDS)
                     
                     user_email = os.getenv("USER_EMAIL", "user@example.com")
                     self.after(0, lambda: self._log_message(f"📧 Sending copy to {user_email}..."))
-                    time.sleep(0.5)
+                    time.sleep(PACKAGING_DELAY_SECONDS * 0.5)  # Half of packaging delay
                     
                     # Create simulated course data
                     course_data = {

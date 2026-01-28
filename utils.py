@@ -489,10 +489,11 @@ def get_hwid() -> str:
     """
     try:
         # Primary method: Get system UUID using wmic csproduct
+        # Security: Using list of arguments instead of shell=True to prevent shell injection
         result = subprocess.check_output(
-            'wmic csproduct get uuid',
-            shell=True,
-            timeout=5
+            ['wmic', 'csproduct', 'get', 'uuid'],
+            timeout=5,
+            shell=False
         ).decode()
         
         # Parse output - UUID is on second line
@@ -507,10 +508,11 @@ def get_hwid() -> str:
     
     # Fallback method: Try disk drive serial number
     try:
+        # Security: Using list of arguments instead of shell=True to prevent shell injection
         result = subprocess.check_output(
-            'wmic diskdrive get serialnumber',
-            shell=True,
-            timeout=5
+            ['wmic', 'diskdrive', 'get', 'serialnumber'],
+            timeout=5,
+            shell=False
         ).decode()
         
         # Parse output - Serial number is on second line
@@ -544,7 +546,7 @@ def parse_hwids_array(hwids_value) -> list:
     if isinstance(hwids_value, str):
         try:
             return json.loads(hwids_value)
-        except:
+        except Exception:
             return []
     return []
 
@@ -567,6 +569,9 @@ def is_license_expired(valid_until: Optional[str]) -> bool:
     """
     Check if a license has expired based on valid_until timestamp.
     
+    Security Note: This function fails closed - if parsing fails, it treats
+    the license as expired to prevent unauthorized access with malformed dates.
+    
     Args:
         valid_until: ISO format timestamp string (or None for no expiration)
         
@@ -583,8 +588,8 @@ def is_license_expired(valid_until: Optional[str]) -> bool:
         return current_date > expiration_date
     except Exception as e:
         print(f"Error parsing expiration date: {e}")
-        # If parsing fails, assume not expired (fail-open for better UX)
-        return False
+        # SECURITY: Fail closed - treat as expired if we can't parse the date
+        return True
 
 
 def check_license(license_key: str, email: str, supabase_url: str, supabase_key: str) -> Dict[str, Any]:

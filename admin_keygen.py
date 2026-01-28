@@ -87,6 +87,9 @@ DURATION_MAP = {
     'lifetime': 'lifetime'
 }
 
+# Lazy loading configuration
+LAZY_LOAD_BATCH_SIZE = 30  # Number of license rows to render per batch
+
 
 def get_supabase_client():
     """Get Supabase client instance."""
@@ -822,8 +825,18 @@ class AdminKeygenApp(ctk.CTk):
         self._render_next_batch()
     
     def _render_next_batch(self):
-        """Render the next batch of licenses (30 at a time)."""
-        batch_size = 30
+        """
+        Render the next batch of licenses using lazy loading.
+        
+        This method implements pagination by rendering licenses in batches of
+        LAZY_LOAD_BATCH_SIZE (default: 30) to improve performance when dealing
+        with large numbers of licenses (e.g., 165+ rows). After each batch,
+        a "Load More" button appears to load the next batch on demand.
+        
+        This approach prevents UI freezing that would occur if all licenses
+        were rendered simultaneously.
+        """
+        batch_size = LAZY_LOAD_BATCH_SIZE
         start_idx = self.displayed_count
         end_idx = min(start_idx + batch_size, len(self.total_licenses))
         
