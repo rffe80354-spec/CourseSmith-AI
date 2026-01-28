@@ -252,7 +252,12 @@ class EnterpriseApp(ctk.CTk):
         return True
     
     def _create_activation_ui(self):
-        """Create the license activation screen."""
+        """Create the license activation screen with 500x750 geometry."""
+        # Set window size for login screen (500x750 as per spec)
+        self.geometry("500x750")
+        self.minsize(500, 750)
+        self.resizable(False, False)
+        
         # Main container
         container = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
         container.pack(fill="both", expand=True)
@@ -367,18 +372,19 @@ class EnterpriseApp(ctk.CTk):
         )
         self.activation_status.pack(pady=(10, 10))
         
-        # Activate button - Green button packed at bottom with side="bottom" and pady=30
+        # Activate button - Green button packed at bottom with side="bottom" and pady=40
+        # Specs: height=60, width=400, color=#28a745
         activate_btn = ctk.CTkButton(
             activation_frame,
             text="🔓 Activate License",
             font=ctk.CTkFont(size=16, weight="bold"),
-            height=50,
+            height=60,
             width=400,
             fg_color="#28a745",  # Green color for activate button
             hover_color="#218838",  # Darker green on hover
             command=self._on_activate
         )
-        activate_btn.pack(side="bottom", pady=30)
+        activate_btn.pack(side="bottom", pady=40)
     
     def _on_activate(self):
         """Handle license activation."""
@@ -415,6 +421,11 @@ class EnterpriseApp(ctk.CTk):
             # Clear activation UI and show main UI
             for widget in self.winfo_children():
                 widget.destroy()
+            
+            # Restore window to main app size (1200x800) after login
+            self.geometry("1200x800")
+            self.minsize(1000, 600)
+            self.resizable(True, True)
             
             self._create_main_ui()
         else:
@@ -1020,6 +1031,106 @@ class EnterpriseApp(ctk.CTk):
         self.log_console.see("end")  # Scroll to bottom
         self.log_console.configure(state="disabled")
     
+    def _generate_pdf_file(self, course_data: dict) -> str:
+        """
+        Generate a real PDF file from course data and save to Downloads folder.
+        Uses reportlab's SimpleDocTemplate for PDF generation.
+        
+        Args:
+            course_data: Dictionary containing 'title' and 'chapters' list
+            
+        Returns:
+            str: Path to the generated PDF file
+        """
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+        from reportlab.lib.colors import HexColor
+        
+        # Determine Downloads folder path (cross-platform)
+        if sys.platform == "win32":
+            # Windows: C:\Users\{Username}\Downloads\
+            downloads_dir = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'Downloads')
+        else:
+            # Linux/Mac: ~/Downloads/
+            downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+        
+        # Ensure Downloads directory exists
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        # Create filename from title and timestamp
+        title = course_data.get('title', 'Untitled Course')
+        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+        safe_title = safe_title[:50] if safe_title else "Course"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{safe_title}_{timestamp}.pdf"
+        filepath = os.path.join(downloads_dir, filename)
+        
+        # Create PDF document
+        doc = SimpleDocTemplate(filepath, pagesize=letter)
+        styles = getSampleStyleSheet()
+        
+        # Create custom styles
+        title_style = ParagraphStyle(
+            'CourseTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            alignment=TA_CENTER,
+            spaceAfter=30,
+            textColor=HexColor('#1a1a2e'),
+            fontName='Helvetica-Bold'
+        )
+        
+        chapter_style = ParagraphStyle(
+            'ChapterTitle',
+            parent=styles['Heading2'],
+            fontSize=18,
+            spaceAfter=12,
+            spaceBefore=20,
+            textColor=HexColor('#4a4a6a'),
+            fontName='Helvetica-Bold'
+        )
+        
+        content_style = ParagraphStyle(
+            'ContentText',
+            parent=styles['Normal'],
+            fontSize=12,
+            spaceAfter=12,
+            leading=16,
+            fontName='Helvetica'
+        )
+        
+        # Build document content
+        story = []
+        
+        # Add course title (H1, Bold)
+        story.append(Paragraph(title, title_style))
+        story.append(Spacer(1, 0.5 * inch))
+        
+        # Add each chapter/module (H2) with content
+        chapters = course_data.get('chapters', [])
+        for i, chapter in enumerate(chapters):
+            chapter_title = chapter.get('title', f'Module {i+1}')
+            chapter_content = chapter.get('content', '')
+            
+            # Add chapter title (H2)
+            story.append(Paragraph(chapter_title, chapter_style))
+            
+            # Add chapter content with line breaks preserved
+            for paragraph in chapter_content.split('\n\n'):
+                if paragraph.strip():
+                    story.append(Paragraph(paragraph.strip(), content_style))
+                    story.append(Spacer(1, 0.1 * inch))
+            
+            story.append(Spacer(1, 0.3 * inch))
+        
+        # Build the PDF
+        doc.build(story)
+        
+        return filepath
+    
     def _start_generation(self):
         """Start course generation with animated progress and detailed logging."""
         instruction = self.instruction_textbox.get("1.0", "end-1c").strip()
@@ -1093,69 +1204,72 @@ class EnterpriseApp(ctk.CTk):
             thread = threading.Thread(target=run_generation, daemon=True)
             thread.start()
         else:
-            # Simulated generation with detailed step logging
-            # Uses sequential delays to provide realistic user feedback
+            # Simulated generation with detailed step logging and PDF output
+            # Uses sequential delays to provide realistic user feedback ("Matrix effect")
             def run_simulated_generation():
                 import time
                 
                 try:
-                    # Step 1: Initializing AI
-                    self.after(0, lambda: self._log_message("🤖 Initializing AI..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Initializing AI..."))
+                    # Step 1: Initializing AI Engine (Matrix effect log sequence)
+                    self.after(0, lambda: self._log_message("[System]: Initializing AI Engine..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Initializing AI Engine..."))
+                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(STEP_DELAY_SECONDS)
-                    self.after(0, lambda: self._log_message("✓ AI initialized"))
                     
-                    # Step 2: Generating Module structure
-                    self.after(0, lambda: self._log_message("📚 Generating Module structure..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Generating Module structure..."))
+                    # Step 2: Structuring Course Content
+                    self.after(0, lambda: self._log_message("[AI]: Structuring Course Content..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Structuring Course Content..."))
+                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(STEP_DELAY_SECONDS)
-                    self.after(0, lambda: self._log_message("✓ Module structure complete"))
                     
-                    # Step 3: Module 1
-                    self.after(0, lambda: self._log_message("📖 Generating Module 1..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Generating Module 1..."))
+                    # Step 3: Writing Module 1
+                    self.after(0, lambda: self._log_message("[Generative]: Writing Module 1..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Writing Module 1..."))
+                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(STEP_DELAY_SECONDS)
-                    self.after(0, lambda: self._log_message("✓ Module 1 complete"))
                     
-                    # Step 4: Module 2
-                    self.after(0, lambda: self._log_message("📖 Generating Module 2..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Generating Module 2..."))
+                    # Step 4: Writing Module 2
+                    self.after(0, lambda: self._log_message("[Generative]: Writing Module 2..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Writing Module 2..."))
+                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(STEP_DELAY_SECONDS)
-                    self.after(0, lambda: self._log_message("✓ Module 2 complete"))
                     
-                    # Step 5: Module 3
-                    self.after(0, lambda: self._log_message("📖 Generating Module 3..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Generating Module 3..."))
+                    # Step 5: Writing Module 3
+                    self.after(0, lambda: self._log_message("[Generative]: Writing Module 3..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Writing Module 3..."))
+                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(STEP_DELAY_SECONDS)
-                    self.after(0, lambda: self._log_message("✓ Module 3 complete"))
                     
-                    # Step 6: Packaging and email
-                    self.after(0, lambda: self._log_message("📦 Packaging course..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Packaging course..."))
+                    # Step 6: Rendering PDF document
+                    self.after(0, lambda: self._log_message("[PDF]: Rendering document..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Rendering PDF document..."))
+                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(PACKAGING_DELAY_SECONDS)
-                    
-                    # Get user email from license data (actual email used in login)
-                    user_email = "user@example.com"
-                    if self.license_data and isinstance(self.license_data, dict):
-                        user_email = self.license_data.get('email', user_email)
-                    self.after(0, lambda email=user_email: self._log_message(f"📧 Sending copy to {email}..."))
-                    time.sleep(PACKAGING_DELAY_SECONDS * 0.5)  # Half of packaging delay
                     
                     # Create simulated course data - modules match log steps
                     course_data = {
                         'title': f"Course: {instruction[:50]}",
                         'chapters': [
-                            {'title': 'Module 1', 'content': 'Simulated module 1 content'},
-                            {'title': 'Module 2', 'content': 'Simulated module 2 content'},
-                            {'title': 'Module 3', 'content': 'Simulated module 3 content'},
+                            {'title': 'Module 1: Introduction', 'content': 'This is the introduction module content.\n\n[VIDEO/IMAGE PLACEHOLDER]\n\nSimulated educational content for Module 1.'},
+                            {'title': 'Module 2: Core Concepts', 'content': 'This is the core concepts module content.\n\n[VIDEO/IMAGE PLACEHOLDER]\n\nSimulated educational content for Module 2.'},
+                            {'title': 'Module 3: Advanced Topics', 'content': 'This is the advanced topics module content.\n\n[VIDEO/IMAGE PLACEHOLDER]\n\nSimulated educational content for Module 3.'},
                         ],
                         'language': 'en'
                     }
                     
                     self.generated_course_data = course_data
                     
+                    # Generate real PDF file to Downloads folder
+                    pdf_path = self._generate_pdf_file(course_data)
+                    
+                    # Step 7: File saved to Downloads
+                    self.after(0, lambda p=pdf_path: self._log_message(f"[System]: File saved to Downloads."))
+                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
+                    
+                    # Store PDF path for success message
+                    self.generated_pdf_path = pdf_path
+                    
                     # Notify completion on main thread
-                    self.after(0, lambda: self._log_message("✅ Course generation complete!"))
                     self.after(0, lambda: self._finish_generation(success=True))
                     
                 except Exception as e:
@@ -1240,16 +1354,22 @@ class EnterpriseApp(ctk.CTk):
                     with open(filepath, 'w', encoding='utf-8') as f:
                         json.dump(self.generated_course_data, f, indent=2, ensure_ascii=False)
                     
-                    # Show success message with course info
+                    # Show success message with course info (include PDF path if generated)
                     course_title = self.generated_course_data.get('title', 'Course')
                     chapter_count = len(self.generated_course_data.get('chapters', []))
+                    
+                    # Include PDF path in message if available
+                    pdf_info = ""
+                    if hasattr(self, 'generated_pdf_path') and self.generated_pdf_path:
+                        pdf_info = f"\n\nPDF saved to:\n{self.generated_pdf_path}"
+                    
                     messagebox.showinfo(
                         "Success", 
                         f"Course generated successfully!\n\n"
                         f"Title: {course_title}\n"
                         f"Chapters: {chapter_count}\n"
-                        f"Language: {self.generated_course_data.get('language', 'en')}\n\n"
-                        f"Saved to: {filepath}"
+                        f"Language: {self.generated_course_data.get('language', 'en')}"
+                        f"{pdf_info}"
                     )
                 except Exception as save_error:
                     # Still show success but mention save error

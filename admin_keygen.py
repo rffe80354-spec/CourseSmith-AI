@@ -88,7 +88,7 @@ DURATION_MAP = {
 }
 
 # Lazy loading configuration
-LAZY_LOAD_BATCH_SIZE = 30  # Number of license rows to render per batch
+LAZY_LOAD_BATCH_SIZE = 50  # Number of license rows to render per batch
 
 
 def get_supabase_client():
@@ -728,7 +728,7 @@ class AdminKeygenApp(ctk.CTk):
         thread.start()
     
     def _fetch_all_licenses(self):
-        """Fetch licenses from Supabase with pagination (runs in background thread)."""
+        """Fetch licenses from Supabase (runs in background thread)."""
         client = get_supabase_client()
         
         if not client:
@@ -737,17 +737,17 @@ class AdminKeygenApp(ctk.CTk):
             return
         
         try:
-            # STRICT PAGINATION: Fetch only first 30 licenses to prevent lag
-            # Use Supabase pagination with .range(0, 29) for exactly 30 records (0-indexed)
-            response = client.table("licenses").select("*").order("created_at", desc=True).range(0, 29).execute()
+            # Fixed query: Use limit(50) instead of broken pagination
+            # This fetches the first 50 licenses ordered by creation date (most recent first)
+            response = client.table("licenses").select("*").order("created_at", desc=True).limit(50).execute()
             
             if response.data:
                 self.all_licenses = response.data
                 self.current_offset = len(response.data)
-                # Track if there might be more licenses (exactly 30 returned suggests more exist)
-                self.has_more_licenses = len(response.data) >= 30
+                # Track if there might be more licenses
+                self.has_more_licenses = len(response.data) >= 50
                 self.filtered_licenses = self.all_licenses.copy()
-                # Update UI on main thread
+                # Update UI on main thread - display ALL licenses from response
                 self.after(0, lambda: self._display_licenses(self.filtered_licenses))
             else:
                 self.all_licenses = []
@@ -764,7 +764,7 @@ class AdminKeygenApp(ctk.CTk):
             self.after(0, lambda: self._finish_loading())
     
     def _load_more_licenses_async(self):
-        """Load more licenses from Supabase (pagination - next 30 rows)."""
+        """Load more licenses from Supabase (pagination - next 50 rows)."""
         if self.is_loading:
             return
         
@@ -776,7 +776,7 @@ class AdminKeygenApp(ctk.CTk):
         thread.start()
     
     def _fetch_more_licenses(self):
-        """Fetch next batch of licenses from Supabase (runs in background thread)."""
+        """Fetch next batch of 50 licenses from Supabase (runs in background thread)."""
         client = get_supabase_client()
         
         if not client:
@@ -784,9 +784,9 @@ class AdminKeygenApp(ctk.CTk):
             return
         
         try:
-            # Fetch next 30 licenses starting from current offset
-            # .range(start, end) is inclusive, so end = start + 29 for 30 records
-            end_offset = self.current_offset + 29
+            # Fetch next 50 licenses starting from current offset
+            # .range(start, end) is inclusive, so end = start + 49 for 50 records
+            end_offset = self.current_offset + 49
             response = client.table("licenses").select("*").order("created_at", desc=True).range(self.current_offset, end_offset).execute()
             
             if response.data:
@@ -794,7 +794,7 @@ class AdminKeygenApp(ctk.CTk):
                 self.all_licenses.extend(response.data)
                 self.current_offset += len(response.data)
                 # Track if there might be more licenses
-                self.has_more_licenses = len(response.data) >= 30
+                self.has_more_licenses = len(response.data) >= 50
                 self.filtered_licenses = self.all_licenses.copy()
                 # Update UI on main thread (re-display all)
                 self.after(0, lambda: self._display_licenses(self.filtered_licenses))
@@ -1136,7 +1136,7 @@ class AdminKeygenApp(ctk.CTk):
         copy_key_btn.pack(side="left", padx=2)
         
         # Copy HWID button (copy first HWID if available)
-        if used_hwids and len(used_hwids) > 0:
+        if hwid:
             copy_hwid_btn = ctk.CTkButton(
                 action_frame,
                 text="💻",
@@ -1145,7 +1145,7 @@ class AdminKeygenApp(ctk.CTk):
                 height=30,
                 fg_color=COLORS['accent'],
                 hover_color=COLORS['accent_hover'],
-                command=lambda h=used_hwids[0]: self._copy_to_clipboard(h, "HWID")
+                command=lambda h=hwid: self._copy_to_clipboard(h, "HWID")
             )
             copy_hwid_btn.pack(side="left", padx=2)
     
