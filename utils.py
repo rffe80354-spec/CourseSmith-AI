@@ -717,13 +717,14 @@ def check_license(license_key: str, email: str, supabase_url: str, supabase_key:
 def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path: Optional[str] = None) -> str:
     """
     Generate a styled PDF document from course data using reportlab.
-    Saves to the user's Downloads folder by default on Windows (C:\\Users\\{User}\\Downloads\\).
+    Saves to the user's Downloads folder by default using os.path.expanduser.
     
     Args:
         course_data: Dictionary containing:
             - 'title': Course title (required)
             - 'chapters': List of chapter dicts with 'title' and 'content' keys
-        page_count: Target number of pages (5-50). The generator will loop content to fill pages.
+        page_count: Target number of pages (5-100). The generator will loop/duplicate 
+                   content modules to physically fill the requested page count.
                    Values outside this range will be clamped.
         output_path: Optional custom output path. If None, saves to Downloads folder.
         
@@ -742,16 +743,13 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
     from reportlab.lib.colors import HexColor
     from xml.sax.saxutils import escape
     
-    # Validate and clamp page_count to acceptable range (5-50)
-    page_count = max(5, min(50, int(page_count)))
+    # Validate and clamp page_count to acceptable range (5-100)
+    page_count = max(5, min(100, int(page_count)))
     
-    # Determine output path - default to Downloads folder
+    # Determine output path - default to Downloads folder using os.path.expanduser
     if output_path is None:
-        # Default to Downloads folder (Windows: C:\Users\{User}\Downloads\)
-        if sys.platform == "win32":
-            downloads_dir = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'Downloads')
-        else:
-            downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+        # Default to Downloads folder using os.path.expanduser for cross-platform support
+        downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
         
         os.makedirs(downloads_dir, exist_ok=True)
         

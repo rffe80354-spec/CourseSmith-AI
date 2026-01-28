@@ -169,6 +169,9 @@ class EnterpriseApp(ctk.CTk):
         self.geometry("1200x800")
         self.minsize(1000, 600)
         
+        # FULL SCREEN / MAXIMIZED MODE - Launch maximized immediately
+        self._maximize_window()
+        
         # Configure colors
         self.configure(fg_color=COLORS['background'])
         
@@ -511,13 +514,24 @@ class EnterpriseApp(ctk.CTk):
         )
         logo_label.pack(pady=(30, 20))
         
-        # License Info Frame - Display Tier and Expiration in Sidebar
+        # Navigation buttons
+        self.nav_buttons = {}
+        
+        self.nav_buttons['forge'] = self._create_nav_button("🔥 Forge", "forge")
+        self.nav_buttons['library'] = self._create_nav_button("📚 Library", "library")
+        self.nav_buttons['settings'] = self._create_nav_button("⚙️ Settings", "settings")
+        
+        # Spacer
+        spacer = ctk.CTkFrame(self.sidebar, fg_color="transparent", height=20)
+        spacer.pack(fill="both", expand=True)
+        
+        # License Info Frame - Display "TIER: {tier} | EXP: {date}" at BOTTOM of sidebar
         license_info_frame = ctk.CTkFrame(
             self.sidebar,
             fg_color=COLORS['background'],
             corner_radius=10
         )
-        license_info_frame.pack(fill="x", padx=15, pady=(0, 30))
+        license_info_frame.pack(fill="x", padx=15, pady=(0, 10))
         
         # Get license tier and expiration from license_data
         tier_text = "Unknown"
@@ -542,34 +556,14 @@ class EnterpriseApp(ctk.CTk):
         }
         tier_color = tier_colors.get(tier_text, COLORS['accent'])
         
-        # Tier label
-        tier_label = ctk.CTkLabel(
+        # Combined Tier and Expiration label in one line: "TIER: {tier} | EXP: {date}"
+        tier_exp_label = ctk.CTkLabel(
             license_info_frame,
-            text=f"🎫 Tier: {tier_text}",
-            font=ctk.CTkFont(size=11, weight="bold"),
+            text=f"TIER: {tier_text} | EXP: {expiry_text}",
+            font=ctk.CTkFont(size=10, weight="bold"),
             text_color=tier_color
         )
-        tier_label.pack(pady=(10, 5), padx=10, anchor="w")
-        
-        # Expiration label
-        expiry_label = ctk.CTkLabel(
-            license_info_frame,
-            text=f"📅 Expires: {expiry_text}",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS['text_dim']
-        )
-        expiry_label.pack(pady=(0, 10), padx=10, anchor="w")
-        
-        # Navigation buttons
-        self.nav_buttons = {}
-        
-        self.nav_buttons['forge'] = self._create_nav_button("🔥 Forge", "forge")
-        self.nav_buttons['library'] = self._create_nav_button("📚 Library", "library")
-        self.nav_buttons['settings'] = self._create_nav_button("⚙️ Settings", "settings")
-        
-        # Spacer
-        spacer = ctk.CTkFrame(self.sidebar, fg_color="transparent", height=20)
-        spacer.pack(fill="both", expand=True)
+        tier_exp_label.pack(pady=10, padx=10)
         
         # Version label at bottom
         version_label = ctk.CTkLabel(
@@ -735,12 +729,12 @@ class EnterpriseApp(ctk.CTk):
         )
         self.page_count_label.pack(anchor="w", pady=(0, 10))
         
-        # Page Count slider (Range: 5 to 50)
+        # Page Count slider (Range: 5 to 100 pages)
         self.page_count_slider = ctk.CTkSlider(
             page_count_frame,
             from_=5,
-            to=50,
-            number_of_steps=45,
+            to=100,
+            number_of_steps=95,
             variable=self.page_count_var,
             width=400,
             height=20,
