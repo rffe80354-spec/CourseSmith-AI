@@ -450,8 +450,31 @@ class EnterpriseApp(ctk.CTk):
         Create the main enterprise UI with sidebar (after license validation).
         Uses delayed rendering to prevent RecursionError during initialization.
         """
+        # Maximize the window immediately on main UI creation
+        self._maximize_window()
+        
         # Use after() for initial rendering to prevent RecursionError
         self.after(UI_RENDER_DELAY_MS, self._render_main_ui)
+    
+    def _maximize_window(self):
+        """
+        Maximize the window (cross-platform compatible).
+        Uses self.state('zoomed') for Windows, with fallbacks for other platforms.
+        """
+        from tkinter import TclError
+        try:
+            # Try Windows-specific zoomed state
+            self.state('zoomed')
+        except (TclError, AttributeError):
+            # Fallback for other platforms
+            try:
+                # Try macOS
+                self.attributes('-zoomed', True)
+            except (TclError, AttributeError):
+                # Fallback: set large geometry
+                screen_width = self.winfo_screenwidth()
+                screen_height = self.winfo_screenheight()
+                self.geometry(f"{screen_width}x{screen_height}+0+0")
     
     def _render_main_ui(self):
         """
@@ -691,6 +714,42 @@ class EnterpriseApp(ctk.CTk):
         # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         from utils import add_context_menu
         add_context_menu(self.instruction_textbox)
+        
+        # Settings Panel Frame (above Generate button)
+        settings_panel = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
+        settings_panel.pack(fill="x", pady=(0, 20))
+        
+        # Page Count slider with dynamic label
+        page_count_frame = ctk.CTkFrame(settings_panel, fg_color="transparent")
+        page_count_frame.pack(fill="x", padx=25, pady=20)
+        
+        # Initialize page count variable (default: 10 pages)
+        self.page_count_var = ctk.IntVar(value=10)
+        
+        # Dynamic label that updates with slider
+        self.page_count_label = ctk.CTkLabel(
+            page_count_frame,
+            text="Target: 10 Pages",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        )
+        self.page_count_label.pack(anchor="w", pady=(0, 10))
+        
+        # Page Count slider (Range: 5 to 50)
+        self.page_count_slider = ctk.CTkSlider(
+            page_count_frame,
+            from_=5,
+            to=50,
+            number_of_steps=45,
+            variable=self.page_count_var,
+            width=400,
+            height=20,
+            progress_color=COLORS['accent'],
+            button_color=COLORS['accent'],
+            button_hover_color=COLORS['accent_hover'],
+            command=self._on_page_count_change
+        )
+        self.page_count_slider.pack(anchor="w")
         
         # Action buttons frame
         action_frame = ctk.CTkFrame(container, fg_color="transparent")
@@ -968,6 +1027,16 @@ class EnterpriseApp(ctk.CTk):
         except IOError as e:
             messagebox.showerror("Error", f"Failed to save API key: {e}")
     
+    def _on_page_count_change(self, value):
+        """
+        Handle page count slider change - update the dynamic label.
+        
+        Args:
+            value: The new slider value (float, will be converted to int)
+        """
+        page_count = int(value)
+        self.page_count_label.configure(text=f"Target: {page_count} Pages")
+    
     def _log_message(self, message: str):
         """
         Add a timestamped message to the logging console.
@@ -996,7 +1065,10 @@ class EnterpriseApp(ctk.CTk):
             str: Path to the generated PDF file
         """
         from utils import generate_pdf
-        return generate_pdf(course_data)
+        # Get page count from slider (default to 10 if not set)
+        page_count = getattr(self, 'page_count_var', None)
+        target_pages = page_count.get() if page_count else 10
+        return generate_pdf(course_data, page_count=target_pages)
     
     def _start_generation(self):
         """Start course generation with animated progress and detailed logging."""
@@ -1006,14 +1078,19 @@ class EnterpriseApp(ctk.CTk):
             messagebox.showwarning("Input Required", "Please enter a master instruction.")
             return
         
+        # Get the target page count from slider
+        target_page_count = getattr(self, 'page_count_var', None)
+        target_pages = target_page_count.get() if target_page_count else 10
+        
         # Clear log console
         self.log_console.configure(state="normal")
         self.log_console.delete("1.0", "end")
         self.log_console.configure(state="disabled")
         
-        # Log generation start
+        # Log generation start with page count
         self._log_message("🔥 Starting course generation...")
         self._log_message(f"📝 Instruction: {instruction[:100]}...")
+        self._log_message(f"📄 Target Pages: {target_pages}")
         
         # Check if coursesmith_engine is available
         has_api_key = self.coursesmith_engine is not None and self.coursesmith_engine.client is not None
@@ -1074,54 +1151,56 @@ class EnterpriseApp(ctk.CTk):
         else:
             # Simulated generation with detailed step logging and PDF output
             # Uses sequential delays to provide realistic user feedback ("Matrix effect")
+            # Smart Generation: Thinking time scales with page_count selection
             def run_simulated_generation():
                 import time
                 
                 try:
+                    # Calculate dynamic delay based on page count (smart generation)
+                    # More pages = longer thinking time
+                    base_delay = STEP_DELAY_SECONDS
+                    page_multiplier = target_pages / 10.0  # Scale based on pages
+                    smart_delay = base_delay * max(0.5, min(page_multiplier, 3.0))  # Clamp between 0.5x and 3x
+                    
                     # Step 1: Initializing AI Engine (Matrix effect log sequence)
                     self.after(0, lambda: self._log_message("[System]: Initializing AI Engine..."))
                     self.after(0, lambda: self.progress_label.configure(text="Initializing AI Engine..."))
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
-                    time.sleep(STEP_DELAY_SECONDS)
+                    time.sleep(smart_delay)
                     
                     # Step 2: Structuring Course Content
                     self.after(0, lambda: self._log_message("[AI]: Structuring Course Content..."))
                     self.after(0, lambda: self.progress_label.configure(text="Structuring Course Content..."))
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
-                    time.sleep(STEP_DELAY_SECONDS)
+                    time.sleep(smart_delay)
                     
-                    # Step 3: Writing Module 1
-                    self.after(0, lambda: self._log_message("[Generative]: Writing Module 1..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Writing Module 1..."))
-                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
-                    time.sleep(STEP_DELAY_SECONDS)
+                    # Generate dynamic number of modules based on page count
+                    num_modules = max(3, target_pages // 10)  # At least 3 modules, more for higher page counts
                     
-                    # Step 4: Writing Module 2
-                    self.after(0, lambda: self._log_message("[Generative]: Writing Module 2..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Writing Module 2..."))
-                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
-                    time.sleep(STEP_DELAY_SECONDS)
+                    # Write modules dynamically
+                    for module_num in range(1, num_modules + 1):
+                        self.after(0, lambda m=module_num: self._log_message(f"[Generative]: Writing Module {m}..."))
+                        self.after(0, lambda m=module_num: self.progress_label.configure(text=f"Writing Module {m}..."))
+                        self.after(0, lambda: self.update_idletasks())  # Force UI refresh
+                        time.sleep(smart_delay)
                     
-                    # Step 5: Writing Module 3
-                    self.after(0, lambda: self._log_message("[Generative]: Writing Module 3..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Writing Module 3..."))
-                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
-                    time.sleep(STEP_DELAY_SECONDS)
-                    
-                    # Step 6: Rendering PDF document
+                    # Step N+1: Rendering PDF document
                     self.after(0, lambda: self._log_message("[PDF]: Rendering document..."))
                     self.after(0, lambda: self.progress_label.configure(text="Rendering PDF document..."))
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(PACKAGING_DELAY_SECONDS)
                     
-                    # Create simulated course data - modules match log steps
+                    # Create simulated course data - modules scale with page count
+                    chapters = []
+                    for i in range(num_modules):
+                        module_titles = ['Introduction', 'Core Concepts', 'Advanced Topics', 'Practical Applications', 'Case Studies', 'Best Practices', 'Future Trends']
+                        title = f"Module {i+1}: {module_titles[i % len(module_titles)]}"
+                        content = f"This is the {module_titles[i % len(module_titles)].lower()} module content.\n\n[VIDEO/IMAGE PLACEHOLDER]\n\nSimulated educational content for Module {i+1}. This module covers important aspects of the topic and provides detailed explanations."
+                        chapters.append({'title': title, 'content': content})
+                    
                     course_data = {
                         'title': f"Course: {instruction[:50]}",
-                        'chapters': [
-                            {'title': 'Module 1: Introduction', 'content': 'This is the introduction module content.\n\n[VIDEO/IMAGE PLACEHOLDER]\n\nSimulated educational content for Module 1.'},
-                            {'title': 'Module 2: Core Concepts', 'content': 'This is the core concepts module content.\n\n[VIDEO/IMAGE PLACEHOLDER]\n\nSimulated educational content for Module 2.'},
-                            {'title': 'Module 3: Advanced Topics', 'content': 'This is the advanced topics module content.\n\n[VIDEO/IMAGE PLACEHOLDER]\n\nSimulated educational content for Module 3.'},
-                        ],
+                        'chapters': chapters,
                         'language': 'en'
                     }
                     
@@ -1130,7 +1209,7 @@ class EnterpriseApp(ctk.CTk):
                     # Generate real PDF file to Downloads folder
                     pdf_path = self._generate_pdf_file(course_data)
                     
-                    # Step 7: File saved to Downloads (include filename)
+                    # Step N+2: File saved to Downloads (include filename)
                     pdf_filename = os.path.basename(pdf_path)
                     self.after(0, lambda fn=pdf_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
