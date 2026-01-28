@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 # Import HWID and license utilities from utils module
-from utils import get_hwid, parse_hwids_array
+from utils import get_hwid, parse_hwids_array, check_license, add_context_menu
 
 
 # Suppress stdout/stderr for --noconsole mode with log file fallback
@@ -66,14 +66,13 @@ COMPLETION_DELAY_MS = 1000  # Delay before completion
 def check_remote_ban():
     """
     Check if the current HWID is authorized for license activation.
-    Implements multi-device license support:
+    Implements device binding support:
     - Checks if license has expired
     - Checks if license is banned
-    - Validates device count against max_devices limit
-    - Automatically registers new devices if room available
-    - Uses 'used_hwids' JSONB array instead of single 'hwid' column
+    - Validates device HWID matches stored HWID
+    - Uses single 'hwid' column instead of 'used_hwids' array
     
-    If banned, expired, or device limit reached, shows error and exits.
+    If banned, expired, or HWID mismatch, shows error and exits.
     Allows offline usage by catching connection errors.
     """
     try:
@@ -87,25 +86,15 @@ def check_remote_ban():
         # Connect to Supabase
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Query licenses table - search for licenses containing this HWID in used_hwids
-        # Remove limit to check all licenses for this HWID
-        response = supabase.table("licenses").select("*").execute()
-        
-        # Find license that matches this HWID
-        license_record = None
-        for record in response.data if response.data else []:
-            # Parse used_hwids (JSONB array)
-            used_hwids = parse_hwids_array(record.get("used_hwids"))
-            
-            # Check if current HWID is already registered
-            if current_hwid in used_hwids:
-                license_record = record
-                break
+        # Query licenses table - search for license with this HWID
+        response = supabase.table("licenses").select("*").eq("hwid", current_hwid).execute()
         
         # If no license found with this HWID, allow app to continue
-        # (First-time activation handled by license_guard.py)
-        if license_record is None:
+        # (First-time activation handled during login)
+        if not response.data or len(response.data) == 0:
             return
+        
+        license_record = response.data[0]
         
         # Check if license is banned
         if license_record.get("is_banned") is True:
@@ -125,7 +114,7 @@ def check_remote_ban():
                 if current_date > expiration_date:
                     messagebox.showerror(
                         "Subscription Expired",
-                        "Your subscription for CourseSmith AI has expired. Please renew on Whop to continue."
+                        "Your subscription for CourseSmith AI has expired. Please renew to continue."
                     )
                     sys.exit()
             except Exception as e:
@@ -144,111 +133,21 @@ def check_remote_ban():
         pass
 
 
-def validate_license_key(license_key: str) -> dict:
+def validate_license_key(license_key: str, email: str) -> dict:
     """
-    Validate a license key and register the current device if authorized.
+    Validate a license key with email and register the current device if authorized.
     This function is called during first-time activation.
     
     Args:
         license_key: The license key to validate
+        email: The email associated with the license
         
     Returns:
         dict: License information with status
             {'valid': bool, 'message': str, 'license_data': dict or None}
     """
-    try:
-        # Get current hardware ID
-        current_hwid = get_hwid()
-        
-        if not current_hwid or current_hwid == "UNKNOWN_ID":
-            return {
-                'valid': False,
-                'message': 'Unable to identify device hardware ID.',
-                'license_data': None
-            }
-        
-        # Connect to Supabase
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        
-        # Query licenses table for the provided license key
-        response = supabase.table("licenses").select("*").eq("license_key", license_key).execute()
-        
-        # Check if license key exists
-        if not response.data or len(response.data) == 0:
-            return {
-                'valid': False,
-                'message': 'Invalid license key.',
-                'license_data': None
-            }
-        
-        license_record = response.data[0]
-        
-        # Check if license is banned
-        if license_record.get("is_banned") is True:
-            return {
-                'valid': False,
-                'message': 'This license has been revoked.',
-                'license_data': None
-            }
-        
-        # Check if license has expired
-        valid_until = license_record.get("valid_until")
-        if valid_until:
-            try:
-                expiration_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
-                current_date = datetime.now(timezone.utc)
-                
-                if current_date > expiration_date:
-                    return {
-                        'valid': False,
-                        'message': 'This license has expired.',
-                        'license_data': None
-                    }
-            except Exception:
-                pass
-        
-        # Parse used_hwids (JSONB array)
-        used_hwids = parse_hwids_array(license_record.get("used_hwids"))
-        max_devices = license_record.get("max_devices", 1)
-        
-        # Check if current HWID is already registered
-        if current_hwid in used_hwids:
-            # Already activated on this device
-            return {
-                'valid': True,
-                'message': 'License is valid and already activated on this device.',
-                'license_data': license_record
-            }
-        
-        # Check if there's room for a new device
-        if len(used_hwids) < max_devices:
-            # Add current HWID to the list
-            used_hwids.append(current_hwid)
-            
-            # Update Supabase with new HWID
-            supabase.table("licenses").update({
-                "used_hwids": used_hwids
-            }).eq("license_key", license_key).execute()
-            
-            return {
-                'valid': True,
-                'message': f'License activated successfully! Device {len(used_hwids)}/{max_devices} registered.',
-                'license_data': license_record
-            }
-        else:
-            # Device limit reached
-            return {
-                'valid': False,
-                'message': f'Device Limit Reached. Max: {max_devices}. Please deactivate a device or upgrade your license.',
-                'license_data': None
-            }
-        
-    except Exception as e:
-        return {
-            'valid': False,
-            'message': f'Error validating license: {str(e)}',
-            'license_data': None
-        }
+    # Use the check_license function from utils module
+    return check_license(license_key, email, SUPABASE_URL, SUPABASE_KEY)
 
 
 class EnterpriseApp(ctk.CTk):
@@ -402,13 +301,43 @@ class EnterpriseApp(ctk.CTk):
         # Instructions
         instructions = ctk.CTkLabel(
             activation_frame,
-            text="Please enter your license key to activate CourseSmith AI",
+            text="Please enter your email and license key to activate CourseSmith AI",
             font=ctk.CTkFont(size=13),
             text_color=COLORS['text_dim']
         )
         instructions.pack(pady=(0, 25))
         
-        # License key entry
+        # Email entry field
+        email_label = ctk.CTkLabel(
+            activation_frame,
+            text="Email Address",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text']
+        )
+        email_label.pack(pady=(0, 5), anchor="w", padx=50)
+        
+        self.activation_email_entry = ctk.CTkEntry(
+            activation_frame,
+            placeholder_text="your@email.com",
+            font=ctk.CTkFont(size=16),
+            height=50,
+            width=400,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
+        )
+        self.activation_email_entry.pack(pady=(0, 15))
+        self.activation_email_entry.bind("<Return>", lambda e: self._on_activate())
+        
+        # License key entry field
+        key_label = ctk.CTkLabel(
+            activation_frame,
+            text="License Key",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text']
+        )
+        key_label.pack(pady=(0, 5), anchor="w", padx=50)
+        
         self.activation_entry = ctk.CTkEntry(
             activation_frame,
             placeholder_text="CS-XXXX-XXXX",
@@ -422,11 +351,11 @@ class EnterpriseApp(ctk.CTk):
         self.activation_entry.pack(pady=(0, 20))
         self.activation_entry.bind("<Return>", lambda e: self._on_activate())
         
-        # Set focus to entry field for better UX
-        self.after(0, lambda: self.activation_entry.focus())
+        # Set focus to email entry field for better UX
+        self.after(0, lambda: self.activation_email_entry.focus())
         
         # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
-        from utils import add_context_menu
+        add_context_menu(self.activation_email_entry)
         add_context_menu(self.activation_entry)
         
         # Activate button
@@ -453,7 +382,17 @@ class EnterpriseApp(ctk.CTk):
     
     def _on_activate(self):
         """Handle license activation."""
+        email = self.activation_email_entry.get().strip()
         license_key = self.activation_entry.get().strip()
+        
+        if not email:
+            self.activation_status.configure(text="Please enter your email address", text_color="red")
+            return
+        
+        # Basic email format validation
+        if '@' not in email or '.' not in email.split('@')[-1]:
+            self.activation_status.configure(text="Please enter a valid email address", text_color="red")
+            return
         
         if not license_key:
             self.activation_status.configure(text="Please enter a license key", text_color="red")
@@ -463,8 +402,8 @@ class EnterpriseApp(ctk.CTk):
         self.activation_status.configure(text="Validating license...", text_color=COLORS['accent'])
         self.update()
         
-        # Validate license key
-        result = validate_license_key(license_key)
+        # Validate license key with email
+        result = validate_license_key(license_key, email)
         
         if result['valid']:
             self.license_valid = True

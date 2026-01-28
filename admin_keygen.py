@@ -536,15 +536,14 @@ class AdminKeygenApp(ctk.CTk):
             email = str(license_record.get('email', '')).lower()
             key = str(license_record.get('license_key', '')).lower()
             created = str(license_record.get('created_at', '')).lower()
-            used_hwids = license_record.get('used_hwids', [])
+            hwid = str(license_record.get('hwid', '') or '').lower()
             
-            # Check if search term matches any field (using any() for efficiency)
+            # Check if search term matches any field
             matches = any([
                 search_term in email,
                 search_term in key,
                 search_term in created,
-                (isinstance(used_hwids, list) and 
-                 any(search_term in str(hwid).lower() for hwid in used_hwids))
+                search_term in hwid
             ])
             
             if matches:
@@ -927,8 +926,8 @@ class AdminKeygenApp(ctk.CTk):
         email = license_record.get('email', 'N/A')
         key = license_record.get('license_key', 'N/A')
         tier = license_record.get('tier', 'N/A')
-        max_devices = license_record.get('max_devices', 'N/A')
-        used_hwids = license_record.get('used_hwids', [])
+        device_limit = license_record.get('device_limit', 1)
+        hwid = license_record.get('hwid', None)
         created = license_record.get('created_at', 'N/A')
         
         # Parse and format date
@@ -941,13 +940,11 @@ class AdminKeygenApp(ctk.CTk):
             created = 'Invalid Date'
         
         # Determine device usage
-        if isinstance(used_hwids, list):
-            device_usage = f"{len(used_hwids)}/{max_devices}"
-            hwid_preview = ', '.join(used_hwids[:2]) if used_hwids else 'None'
-            if len(used_hwids) > 2:
-                hwid_preview += "..."
+        if hwid:
+            device_usage = f"1/{device_limit}"
+            hwid_preview = hwid[:20] + "..." if len(hwid) > 20 else hwid
         else:
-            device_usage = f"0/{max_devices}"
+            device_usage = f"0/{device_limit}"
             hwid_preview = 'None'
         
         # Row background (alternating)
@@ -1031,9 +1028,8 @@ class AdminKeygenApp(ctk.CTk):
         )
         hwid_textbox.grid(row=0, column=5, padx=10, pady=5, sticky="ew")
         
-        # Add "Reset HWID" context menu to HWID textbox
-        if used_hwids and len(used_hwids) > 0:
-            self._add_hwid_context_menu(hwid_textbox, license_record)
+        # Add "Reset HWID" context menu to HWID textbox (always show menu)
+        self._add_hwid_context_menu(hwid_textbox, license_record)
         
         # Action buttons frame
         action_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
@@ -1116,23 +1112,24 @@ class AdminKeygenApp(ctk.CTk):
     
     def _reset_hwid(self, license_record):
         """
-        Reset (clear) all HWIDs for a license.
+        Reset (clear) HWID for a license - sets hwid to NULL in Supabase.
+        This allows the user to re-bind their device.
         
         Args:
             license_record: The license record to reset
         """
         email = license_record.get('email', 'N/A')
         license_key = license_record.get('license_key', 'N/A')
-        used_hwids = license_record.get('used_hwids', [])
+        current_hwid = license_record.get('hwid', 'None')
         
         # Confirm with user
         if not messagebox.askyesno(
             "Confirm Reset HWID",
-            f"Are you sure you want to reset all HWIDs for:\n\n"
+            f"Are you sure you want to reset HWID for:\n\n"
             f"Email: {email}\n"
             f"License: {license_key}\n\n"
-            f"Current HWIDs: {len(used_hwids)}\n\n"
-            f"This will allow the license to be re-activated on new devices."
+            f"Current HWID: {current_hwid if current_hwid else 'None'}\n\n"
+            f"This will allow the license to be re-activated on a new device."
         ):
             return
         
@@ -1143,15 +1140,15 @@ class AdminKeygenApp(ctk.CTk):
             return
         
         try:
-            # Reset used_hwids to empty array
+            # Set hwid to NULL
             client.table("licenses").update({
-                "used_hwids": []
+                "hwid": None
             }).eq("license_key", license_key).execute()
             
             messagebox.showinfo(
                 "Success",
-                f"HWIDs reset successfully for license:\n{license_key}\n\n"
-                f"The license can now be activated on new devices."
+                f"HWID reset successfully for license:\n{license_key}\n\n"
+                f"The license can now be activated on a new device."
             )
             
             # Refresh the license list
@@ -1161,19 +1158,19 @@ class AdminKeygenApp(ctk.CTk):
             error_msg = str(e)
             messagebox.showerror(
                 "Reset Failed",
-                f"Failed to reset HWIDs:\n{error_msg}"
+                f"Failed to reset HWID:\n{error_msg}"
             )
     
     def _copy_first_hwid(self, license_record):
         """
-        Copy the first HWID to clipboard.
+        Copy the HWID to clipboard.
         
         Args:
             license_record: The license record
         """
-        used_hwids = license_record.get('used_hwids', [])
-        if used_hwids and len(used_hwids) > 0:
-            self._copy_to_clipboard(used_hwids[0], "HWID")
+        hwid = license_record.get('hwid', None)
+        if hwid:
+            self._copy_to_clipboard(hwid, "HWID")
         else:
             messagebox.showinfo("No HWID", "No HWID registered for this license.")
     
