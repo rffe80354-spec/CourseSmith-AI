@@ -193,19 +193,55 @@ pyinstaller --noconsole --onefile admin_keygen.py
 
 ### HWID Fetching
 - Uses `shell=True` as specified in requirements
-- **Note**: This is less secure than `shell=False`, but meets spec
-- Consider adding input validation if HWID is ever user-provided
+- **Security Note**: Command is hardcoded with no user input to prevent injection attacks
+- Using shell=False with argument list would be more secure if requirements allow
+- Consider changing specification to use shell=False in future versions
 
 ### License Validation
 - Always validates BOTH email AND license key
+- Email format validation (checks for @ and domain)
 - Fails closed on errors (treats as invalid)
 - Prevents brute force with consistent error messages
 - Uses timezone-aware datetime comparisons
+- Case-insensitive HWID comparison to prevent false negatives
 
 ### Admin Panel
 - HWID reset requires confirmation dialog
 - All database operations use parameterized queries
 - No plaintext credentials in code (uses environment variables)
+
+---
+
+## 8. CODE QUALITY IMPROVEMENTS (Post-Review)
+
+After code review, the following improvements were made:
+
+### Email Validation
+- Added basic email format validation before database query
+- Checks for '@' symbol and domain (e.g., '@example.com')
+- Provides immediate feedback for invalid email formats
+- Reduces unnecessary database queries
+
+### HWID Comparison
+- Implemented case-insensitive HWID comparison
+- Normalizes both stored and current HWID to lowercase
+- Prevents legitimate users from being denied due to case differences
+- More robust against variations in HWID format
+
+### Code Organization
+- Moved all imports to module level (main.py)
+- Removed unused `device_limit` variable from validation logic
+- Improved code maintainability and consistency
+
+### User Experience
+- Return key binding works from both email and license key fields
+- Users can press Enter from any input field to activate
+- Improved UX consistency throughout login flow
+
+### Security Documentation
+- Added explicit security note in `get_hwid()` function
+- Documented that command is hardcoded (no user input)
+- Recommended considering shell=False in future versions
 
 ---
 
