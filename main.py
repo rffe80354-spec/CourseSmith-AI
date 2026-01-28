@@ -252,10 +252,10 @@ class EnterpriseApp(ctk.CTk):
         return True
     
     def _create_activation_ui(self):
-        """Create the license activation screen with 500x750 geometry."""
-        # Set window size for login screen (500x750 as per spec)
-        self.geometry("500x750")
-        self.minsize(500, 750)
+        """Create the license activation screen with expanded 550x850 geometry."""
+        # Set window size for login screen (expanded to ensure Activate button is fully visible)
+        self.geometry("550x850")
+        self.minsize(550, 850)
         self.resizable(False, False)
         
         # Main container
@@ -283,13 +283,13 @@ class EnterpriseApp(ctk.CTk):
         )
         subtitle_label.pack(pady=(0, 50))
         
-        # Activation frame - height increased to 450 to fit Email + Key + Button
+        # Activation frame - expanded height to 500 to fit Email + Key + Button with generous padding
         activation_frame = ctk.CTkFrame(
             center_frame,
             corner_radius=15,
             fg_color=COLORS['sidebar'],
             width=500,
-            height=450
+            height=500
         )
         activation_frame.pack(padx=40, pady=20)
         activation_frame.pack_propagate(False)
@@ -486,7 +486,48 @@ class EnterpriseApp(ctk.CTk):
             font=ctk.CTkFont(size=20, weight="bold"),
             text_color=COLORS['accent']
         )
-        logo_label.pack(pady=(30, 50))
+        logo_label.pack(pady=(30, 20))
+        
+        # License Info Frame - Display Tier and Expiration in Sidebar
+        license_info_frame = ctk.CTkFrame(
+            self.sidebar,
+            fg_color=COLORS['background'],
+            corner_radius=10
+        )
+        license_info_frame.pack(fill="x", padx=15, pady=(0, 30))
+        
+        # Get license tier and expiration from license_data
+        tier_text = "Unknown"
+        expiry_text = "N/A"
+        if self.license_data and isinstance(self.license_data, dict):
+            tier_text = self.license_data.get('tier', 'standard').upper()
+            valid_until = self.license_data.get('valid_until')
+            if valid_until:
+                try:
+                    expiry_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                    expiry_text = expiry_date.strftime("%Y-%m-%d")
+                except Exception:
+                    expiry_text = "Lifetime"
+            else:
+                expiry_text = "Lifetime"
+        
+        # Tier label
+        tier_label = ctk.CTkLabel(
+            license_info_frame,
+            text=f"🎫 Tier: {tier_text}",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#FFD700" if tier_text == "PROFESSIONAL" else ("#FFA500" if tier_text == "EXTENDED" else COLORS['accent'])
+        )
+        tier_label.pack(pady=(10, 5), padx=10, anchor="w")
+        
+        # Expiration label
+        expiry_label = ctk.CTkLabel(
+            license_info_frame,
+            text=f"📅 Expires: {expiry_text}",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_dim']
+        )
+        expiry_label.pack(pady=(0, 10), padx=10, anchor="w")
         
         # Navigation buttons
         self.nav_buttons = {}
@@ -685,13 +726,14 @@ class EnterpriseApp(ctk.CTk):
         )
         log_label.pack(anchor="w", padx=25, pady=(25, 10))
         
-        # Logging console text widget
+        # Logging console text widget - Matrix-style (Black bg/Green text)
         self.log_console = ctk.CTkTextbox(
             log_frame,
             font=ctk.CTkFont(family="Consolas", size=12),
             wrap="word",
             height=200,
-            fg_color=COLORS['background'],
+            fg_color="#000000",  # Matrix-style black background
+            text_color="#00FF00",  # Matrix-style green text
             border_color=COLORS['accent'],
             border_width=2,
             state="disabled"  # Read-only
@@ -849,59 +891,6 @@ class EnterpriseApp(ctk.CTk):
             command=self._save_api_key
         )
         save_btn.pack(pady=(20, 0))
-        
-        # Email section
-        email_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        email_frame.pack(fill="x", padx=30, pady=(30, 20))
-        
-        email_label = ctk.CTkLabel(
-            email_frame,
-            text="Email for Course Notifications",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=COLORS['text']
-        )
-        email_label.pack(anchor="w", pady=(0, 10))
-        
-        email_help_label = ctk.CTkLabel(
-            email_frame,
-            text="This email will appear in generation logs (e.g., 'Sending copy to [email]...').",
-            font=ctk.CTkFont(size=12),
-            text_color=COLORS['text_dim']
-        )
-        email_help_label.pack(anchor="w", pady=(0, 15))
-        
-        # Email entry
-        self.email_entry = ctk.CTkEntry(
-            email_frame,
-            placeholder_text="your@email.com",
-            height=45,
-            font=ctk.CTkFont(size=14),
-            fg_color=COLORS['background'],
-            border_color=COLORS['accent'],
-            border_width=2
-        )
-        self.email_entry.pack(fill="x", pady=(0, 10))
-        
-        # Load saved email from .env
-        saved_email = os.getenv("USER_EMAIL", "")
-        if saved_email:
-            self.email_entry.insert(0, saved_email)
-        
-        # Add clipboard support
-        add_context_menu(self.email_entry)
-        
-        # Save email button
-        save_email_btn = ctk.CTkButton(
-            email_frame,
-            text="💾 Save Email",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            height=50,
-            corner_radius=10,
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover'],
-            command=self._save_email
-        )
-        save_email_btn.pack(pady=(20, 0))
     
     def _toggle_api_key_visibility(self):
         """Toggle API key visibility."""
@@ -970,50 +959,6 @@ class EnterpriseApp(ctk.CTk):
             
         except IOError as e:
             messagebox.showerror("Error", f"Failed to save API key: {e}")
-    
-    def _save_email(self):
-        """Save the user email to .env file and update environment."""
-        email = self.email_entry.get().strip()
-        
-        if not email:
-            messagebox.showerror("Error", "Please enter an email address.")
-            return
-        
-        # Basic email validation
-        if '@' not in email or '.' not in email:
-            result = messagebox.askyesno(
-                "Invalid Email Format",
-                "The email doesn't appear to be valid.\n\n"
-                "Do you want to save it anyway?"
-            )
-            if not result:
-                return
-        
-        # Save to .env file
-        env_path = os.path.join(os.getcwd(), ".env")
-        try:
-            # Read existing content
-            existing_lines = []
-            if os.path.exists(env_path):
-                with open(env_path, 'r') as f:
-                    for line in f:
-                        stripped = line.strip()
-                        if stripped and not stripped.startswith("USER_EMAIL"):
-                            existing_lines.append(line.rstrip())
-            
-            # Write with new email
-            with open(env_path, 'w') as f:
-                for line in existing_lines:
-                    f.write(line + "\n")
-                f.write(f"USER_EMAIL={email}\n")
-            
-            # Update environment variable
-            os.environ["USER_EMAIL"] = email
-            
-            messagebox.showinfo("Success", "Email saved successfully!")
-            
-        except IOError as e:
-            messagebox.showerror("Error", f"Failed to save email: {e}")
     
     def _log_message(self, message: str):
         """
