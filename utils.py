@@ -1,13 +1,18 @@
 """
 Utils Module - Helper functions for PyInstaller EXE compilation.
 Provides resource path resolution for bundled applications.
-Also includes clipboard helper functions and right-click menu for cross-platform compatibility.
+Also includes clipboard helper functions, right-click menu for cross-platform compatibility,
+and HWID/license checking utilities.
 """
 
 import os
 import sys
+import json
+import subprocess
 import tkinter as tk
 from tkinter import Menu, TclError
+from datetime import datetime, timezone
+from typing import Optional, Dict, Any
 
 
 def resource_path(relative_path):
@@ -470,4 +475,262 @@ def setup_global_window_shortcuts(window):
     # Bind Ctrl+X (Cut) - both uppercase and lowercase variants
     window.bind_all("<Control-x>", global_cut)
     window.bind_all("<Control-X>", global_cut)
+
+
+# ==================== HWID & LICENSE UTILITIES ====================
+
+def get_hwid() -> str:
+    """
+    Get the Windows Hardware ID (UUID) using wmic command with robust fallback.
+    This is the primary method for identifying unique devices for license management.
+    
+    Returns:
+        str: The hardware UUID or "UNKNOWN_ID" if an error occurs.
+    """
+    try:
+        # Primary method: Get system UUID using wmic csproduct
+        result = subprocess.check_output(
+            'wmic csproduct get uuid',
+            shell=True,
+            timeout=5
+        ).decode()
+        
+        # Parse output - UUID is on second line
+        lines = result.strip().split('\n')
+        if len(lines) >= 2:
+            uuid = lines[1].strip()
+            if uuid and uuid != "UUID":
+                return uuid
+        
+    except Exception as e:
+        print(f"Primary HWID method failed: {e}")
+    
+    # Fallback method: Try disk drive serial number
+    try:
+        result = subprocess.check_output(
+            'wmic diskdrive get serialnumber',
+            shell=True,
+            timeout=5
+        ).decode()
+        
+        # Parse output - Serial number is on second line
+        lines = result.strip().split('\n')
+        if len(lines) >= 2:
+            serial = lines[1].strip()
+            if serial and serial != "SerialNumber":
+                return serial
+                
+    except Exception as e:
+        print(f"Fallback HWID method failed: {e}")
+    
+    # If both methods fail, return UNKNOWN_ID
+    return "UNKNOWN_ID"
+
+
+def parse_hwids_array(hwids_value) -> list:
+    """
+    Helper function to safely parse used_hwids JSONB array from database.
+    
+    Args:
+        hwids_value: The value from the database (could be list, None, or string)
+        
+    Returns:
+        list: Parsed list of HWIDs, or empty list if None/invalid
+    """
+    if hwids_value is None:
+        return []
+    if isinstance(hwids_value, list):
+        return hwids_value
+    if isinstance(hwids_value, str):
+        try:
+            return json.loads(hwids_value)
+        except:
+            return []
+    return []
+
+
+def is_device_limit_reached(used_hwids: list, max_devices: int) -> bool:
+    """
+    Check if the device limit has been reached for a license.
+    
+    Args:
+        used_hwids: List of HWIDs already registered
+        max_devices: Maximum number of devices allowed
+        
+    Returns:
+        bool: True if limit reached, False otherwise
+    """
+    return len(used_hwids) >= max_devices
+
+
+def is_license_expired(valid_until: Optional[str]) -> bool:
+    """
+    Check if a license has expired based on valid_until timestamp.
+    
+    Args:
+        valid_until: ISO format timestamp string (or None for no expiration)
+        
+    Returns:
+        bool: True if expired, False if still valid or no expiration
+    """
+    if not valid_until:
+        # No expiration date means lifetime license
+        return False
+    
+    try:
+        expiration_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+        current_date = datetime.now(timezone.utc)
+        return current_date > expiration_date
+    except Exception as e:
+        print(f"Error parsing expiration date: {e}")
+        # If parsing fails, assume not expired (fail-open for better UX)
+        return False
+
+
+def check_license(license_key: str, email: str, supabase_url: str, supabase_key: str) -> Dict[str, Any]:
+    """
+    Comprehensive license validation with HWID checking and device registration.
+    This function validates a license key, checks HWID authorization, and registers
+    new devices if the limit hasn't been reached.
+    
+    Args:
+        license_key: The license key to validate
+        email: The email associated with the license
+        supabase_url: Supabase project URL
+        supabase_key: Supabase API key
+        
+    Returns:
+        dict: License validation result with the following structure:
+            {
+                'valid': bool,  # Whether the license is valid
+                'message': str,  # Human-readable status message
+                'license_data': dict or None,  # Full license record from database
+                'hwid_registered': bool,  # Whether current HWID is registered
+                'devices_used': int,  # Number of devices registered
+                'max_devices': int  # Maximum devices allowed
+            }
+    """
+    try:
+        # Import Supabase client
+        from supabase import create_client
+        
+        # Get current hardware ID
+        current_hwid = get_hwid()
+        
+        if not current_hwid or current_hwid == "UNKNOWN_ID":
+            return {
+                'valid': False,
+                'message': 'Unable to identify device hardware ID.',
+                'license_data': None,
+                'hwid_registered': False,
+                'devices_used': 0,
+                'max_devices': 0
+            }
+        
+        # Connect to Supabase
+        supabase = create_client(supabase_url, supabase_key)
+        
+        # Query licenses table for the provided license key
+        response = supabase.table("licenses").select("*").eq("license_key", license_key).execute()
+        
+        # Check if license key exists
+        if not response.data or len(response.data) == 0:
+            return {
+                'valid': False,
+                'message': 'Invalid license key.',
+                'license_data': None,
+                'hwid_registered': False,
+                'devices_used': 0,
+                'max_devices': 0
+            }
+        
+        license_record = response.data[0]
+        
+        # Verify email matches (case-insensitive)
+        if license_record.get('email', '').lower() != email.lower():
+            return {
+                'valid': False,
+                'message': 'License key does not match the provided email address.',
+                'license_data': None,
+                'hwid_registered': False,
+                'devices_used': 0,
+                'max_devices': 0
+            }
+        
+        # Check if license is banned
+        if license_record.get("is_banned") is True:
+            return {
+                'valid': False,
+                'message': 'This license has been revoked. Contact support.',
+                'license_data': license_record,
+                'hwid_registered': False,
+                'devices_used': 0,
+                'max_devices': license_record.get('max_devices', 0)
+            }
+        
+        # Check if license has expired
+        if is_license_expired(license_record.get("valid_until")):
+            return {
+                'valid': False,
+                'message': 'This license has expired. Please renew your subscription.',
+                'license_data': license_record,
+                'hwid_registered': False,
+                'devices_used': 0,
+                'max_devices': license_record.get('max_devices', 0)
+            }
+        
+        # Parse used_hwids (JSONB array)
+        used_hwids = parse_hwids_array(license_record.get("used_hwids"))
+        max_devices = license_record.get("max_devices", 1)
+        
+        # Check if current HWID is already registered
+        if current_hwid in used_hwids:
+            # Already activated on this device
+            return {
+                'valid': True,
+                'message': 'License is valid and already activated on this device.',
+                'license_data': license_record,
+                'hwid_registered': True,
+                'devices_used': len(used_hwids),
+                'max_devices': max_devices
+            }
+        
+        # Check if there's room for a new device
+        if not is_device_limit_reached(used_hwids, max_devices):
+            # Add current HWID to the list
+            used_hwids.append(current_hwid)
+            
+            # Update Supabase with new HWID
+            supabase.table("licenses").update({
+                "used_hwids": used_hwids
+            }).eq("license_key", license_key).execute()
+            
+            return {
+                'valid': True,
+                'message': f'License activated successfully! Device {len(used_hwids)}/{max_devices} registered.',
+                'license_data': license_record,
+                'hwid_registered': True,
+                'devices_used': len(used_hwids),
+                'max_devices': max_devices
+            }
+        else:
+            # Device limit reached
+            return {
+                'valid': False,
+                'message': f'Device limit reached ({max_devices} devices). Please deactivate a device or upgrade your license.',
+                'license_data': license_record,
+                'hwid_registered': False,
+                'devices_used': len(used_hwids),
+                'max_devices': max_devices
+            }
+        
+    except Exception as e:
+        return {
+            'valid': False,
+            'message': f'Error validating license: {str(e)}',
+            'license_data': None,
+            'hwid_registered': False,
+            'devices_used': 0,
+            'max_devices': 0
+        }
 
