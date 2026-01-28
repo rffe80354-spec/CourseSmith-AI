@@ -991,6 +991,22 @@ class EnterpriseApp(ctk.CTk):
             messagebox.showwarning("Input Required", "Please enter a master instruction.")
             return
         
+        # Check if coursesmith_engine is available
+        if self.coursesmith_engine is None:
+            messagebox.showerror(
+                "Engine Not Available", 
+                "CourseSmith Engine is not initialized. Please check your API key in Settings."
+            )
+            return
+        
+        # Check if API key is configured
+        if self.coursesmith_engine.client is None:
+            messagebox.showerror(
+                "API Key Required", 
+                "OpenAI API key is not configured. Please set it in the Settings tab."
+            )
+            return
+        
         # Show progress frame
         self.progress_frame.pack(fill="x", pady=(20, 0))
         self.generate_btn.configure(state="disabled")
@@ -998,15 +1014,36 @@ class EnterpriseApp(ctk.CTk):
         # Start progress animation
         self._animate_progress()
         
-        # TODO: Replace with actual course generation logic from coursesmith_engine
-        # This is a placeholder for UI demonstration purposes
-        # In production, integrate with coursesmith_engine and pdf_engine
-        def simulate_generation():
-            import time
-            time.sleep(5)  # Placeholder - replace with actual generation
-            self.after(0, self._finish_generation)
+        # Store generated course data
+        self.generated_course_data = None
         
-        thread = threading.Thread(target=simulate_generation, daemon=True)
+        # Actual course generation using coursesmith_engine
+        def run_generation():
+            try:
+                # Progress callback to update UI
+                def progress_callback(step, total, message):
+                    # Update progress label on main thread
+                    self.after(0, lambda msg=message: self.progress_label.configure(text=msg))
+                
+                # Generate the full course
+                course_data = self.coursesmith_engine.generate_full_course(
+                    user_instruction=instruction,
+                    progress_callback=progress_callback
+                )
+                
+                # Store the result
+                self.generated_course_data = course_data
+                
+                # Notify completion on main thread
+                self.after(0, lambda: self._finish_generation(success=True))
+                
+            except Exception as e:
+                # Handle errors on main thread
+                error_msg = str(e)
+                self.after(0, lambda: self._finish_generation(success=False, error=error_msg))
+        
+        # Run generation in background thread
+        thread = threading.Thread(target=run_generation, daemon=True)
         thread.start()
     
     def _animate_progress(self):
@@ -1042,15 +1079,69 @@ class EnterpriseApp(ctk.CTk):
         self.progress_bar.set(1.0)
         self.progress_label.configure(text="Course generation complete!")
     
-    def _finish_generation(self):
-        """Finish generation and show result."""
+    def _finish_generation(self, success=True, error=None):
+        """
+        Finish generation and show result.
+        
+        Args:
+            success: Whether generation succeeded.
+            error: Error message if generation failed.
+        """
         self._stop_progress_animation()
         
         # Show completion for a moment
         def complete_generation():
             self.progress_frame.pack_forget()
             self.generate_btn.configure(state="normal")
-            messagebox.showinfo("Success", "Course generated successfully!")
+            
+            if success and self.generated_course_data:
+                # Save generated course to data directory
+                try:
+                    from utils import get_data_dir
+                    data_dir = get_data_dir()
+                    courses_dir = os.path.join(data_dir, "generated_courses")
+                    os.makedirs(courses_dir, exist_ok=True)
+                    
+                    # Create filename from title and timestamp
+                    title = self.generated_course_data.get('title', 'Untitled Course')
+                    # Sanitize filename
+                    safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+                    safe_title = safe_title[:50]  # Limit length
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{safe_title}_{timestamp}.json"
+                    filepath = os.path.join(courses_dir, filename)
+                    
+                    # Save course data to JSON
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        json.dump(self.generated_course_data, f, indent=2, ensure_ascii=False)
+                    
+                    # Show success message with course info
+                    course_title = self.generated_course_data.get('title', 'Course')
+                    chapter_count = len(self.generated_course_data.get('chapters', []))
+                    messagebox.showinfo(
+                        "Success", 
+                        f"Course generated successfully!\n\n"
+                        f"Title: {course_title}\n"
+                        f"Chapters: {chapter_count}\n"
+                        f"Language: {self.generated_course_data.get('language', 'en')}\n\n"
+                        f"Saved to: {filepath}"
+                    )
+                except Exception as save_error:
+                    # Still show success but mention save error
+                    messagebox.showwarning(
+                        "Partial Success",
+                        f"Course generated successfully but failed to save:\n{save_error}"
+                    )
+            elif success:
+                # Success but no data (shouldn't happen)
+                messagebox.showwarning("Warning", "Course generation completed but no data was returned.")
+            else:
+                # Generation failed
+                messagebox.showerror(
+                    "Generation Failed", 
+                    f"Failed to generate course:\n\n{error}\n\n"
+                    "Please check your API key and internet connection."
+                )
         
         self.after(1000, complete_generation)
     
