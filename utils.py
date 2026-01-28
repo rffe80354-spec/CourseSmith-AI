@@ -489,11 +489,11 @@ def get_hwid() -> str:
     """
     try:
         # Primary method: Get system UUID using wmic csproduct
-        # Security: Using list of arguments instead of shell=True to prevent shell injection
+        # Using shell=True as specified in requirements
         result = subprocess.check_output(
-            ['wmic', 'csproduct', 'get', 'uuid'],
+            'wmic csproduct get uuid',
             timeout=5,
-            shell=False
+            shell=True
         ).decode()
         
         # Parse output - UUID is on second line
@@ -595,8 +595,14 @@ def is_license_expired(valid_until: Optional[str]) -> bool:
 def check_license(license_key: str, email: str, supabase_url: str, supabase_key: str) -> Dict[str, Any]:
     """
     Comprehensive license validation with HWID checking and device registration.
-    This function validates a license key, checks HWID authorization, and registers
-    new devices if the limit hasn't been reached.
+    This is "The Gatekeeper" - validates license key with email and manages device binding.
+    
+    Validation Logic:
+    - Query Supabase for a row matching BOTH email AND key. If not found -> "Invalid Credentials"
+    - Device Limit Check:
+        * Scenario A (Match): If stored hwid == current hwid -> ALLOW ACCESS
+        * Scenario B (New Device): If stored hwid is NULL and limit not reached -> UPDATE database with current hwid -> ALLOW ACCESS
+        * Scenario C (Limit Reached): If stored hwid != current hwid -> DENY ACCESS (Return "Device Limit Reached")
     
     Args:
         license_key: The license key to validate
@@ -610,9 +616,6 @@ def check_license(license_key: str, email: str, supabase_url: str, supabase_key:
                 'valid': bool,  # Whether the license is valid
                 'message': str,  # Human-readable status message
                 'license_data': dict or None,  # Full license record from database
-                'hwid_registered': bool,  # Whether current HWID is registered
-                'devices_used': int,  # Number of devices registered
-                'max_devices': int  # Maximum devices allowed
             }
     """
     try:
@@ -626,51 +629,31 @@ def check_license(license_key: str, email: str, supabase_url: str, supabase_key:
             return {
                 'valid': False,
                 'message': 'Unable to identify device hardware ID.',
-                'license_data': None,
-                'hwid_registered': False,
-                'devices_used': 0,
-                'max_devices': 0
+                'license_data': None
             }
         
         # Connect to Supabase
         supabase = create_client(supabase_url, supabase_key)
         
-        # Query licenses table for the provided license key
-        response = supabase.table("licenses").select("*").eq("license_key", license_key).execute()
+        # Query Supabase for a row matching BOTH email AND key
+        response = supabase.table("licenses").select("*").eq("license_key", license_key).eq("email", email).execute()
         
-        # Check if license key exists
+        # If not found -> Return "Invalid Credentials"
         if not response.data or len(response.data) == 0:
             return {
                 'valid': False,
-                'message': 'Invalid license key.',
-                'license_data': None,
-                'hwid_registered': False,
-                'devices_used': 0,
-                'max_devices': 0
+                'message': 'Invalid Credentials',
+                'license_data': None
             }
         
         license_record = response.data[0]
-        
-        # Verify email matches (case-insensitive)
-        if license_record.get('email', '').lower() != email.lower():
-            return {
-                'valid': False,
-                'message': 'License key does not match the provided email address.',
-                'license_data': None,
-                'hwid_registered': False,
-                'devices_used': 0,
-                'max_devices': 0
-            }
         
         # Check if license is banned
         if license_record.get("is_banned") is True:
             return {
                 'valid': False,
                 'message': 'This license has been revoked. Contact support.',
-                'license_data': license_record,
-                'hwid_registered': False,
-                'devices_used': 0,
-                'max_devices': license_record.get('max_devices', 0)
+                'license_data': license_record
             }
         
         # Check if license has expired
@@ -678,64 +661,53 @@ def check_license(license_key: str, email: str, supabase_url: str, supabase_key:
             return {
                 'valid': False,
                 'message': 'This license has expired. Please renew your subscription.',
-                'license_data': license_record,
-                'hwid_registered': False,
-                'devices_used': 0,
-                'max_devices': license_record.get('max_devices', 0)
+                'license_data': license_record
             }
         
-        # Parse used_hwids (JSONB array)
-        used_hwids = parse_hwids_array(license_record.get("used_hwids"))
-        max_devices = license_record.get("max_devices", 1)
+        # Get stored hwid and device_limit from database
+        stored_hwid = license_record.get("hwid")
+        device_limit = license_record.get("device_limit", 1)  # Default is 1
         
-        # Check if current HWID is already registered
-        if current_hwid in used_hwids:
-            # Already activated on this device
+        # Scenario A (Match): If stored hwid == current hwid -> ALLOW ACCESS
+        if stored_hwid and stored_hwid == current_hwid:
             return {
                 'valid': True,
-                'message': 'License is valid and already activated on this device.',
-                'license_data': license_record,
-                'hwid_registered': True,
-                'devices_used': len(used_hwids),
-                'max_devices': max_devices
+                'message': 'License is valid and activated on this device.',
+                'license_data': license_record
             }
         
-        # Check if there's room for a new device
-        if not is_device_limit_reached(used_hwids, max_devices):
-            # Add current HWID to the list
-            used_hwids.append(current_hwid)
-            
-            # Update Supabase with new HWID
+        # Scenario B (New Device): If stored hwid is NULL and limit not reached -> UPDATE database with current hwid -> ALLOW ACCESS
+        if stored_hwid is None or stored_hwid == "":
+            # Update database with current hwid
             supabase.table("licenses").update({
-                "used_hwids": used_hwids
-            }).eq("license_key", license_key).execute()
+                "hwid": current_hwid
+            }).eq("license_key", license_key).eq("email", email).execute()
             
             return {
                 'valid': True,
-                'message': f'License activated successfully! Device {len(used_hwids)}/{max_devices} registered.',
-                'license_data': license_record,
-                'hwid_registered': True,
-                'devices_used': len(used_hwids),
-                'max_devices': max_devices
+                'message': 'License activated successfully on this device.',
+                'license_data': license_record
             }
-        else:
-            # Device limit reached
+        
+        # Scenario C (Limit Reached): If stored hwid != current hwid -> DENY ACCESS
+        if stored_hwid != current_hwid:
             return {
                 'valid': False,
-                'message': f'Device limit reached ({max_devices} devices). Please deactivate a device or upgrade your license.',
-                'license_data': license_record,
-                'hwid_registered': False,
-                'devices_used': len(used_hwids),
-                'max_devices': max_devices
+                'message': 'Device Limit Reached',
+                'license_data': license_record
             }
+        
+        # Fallback - should not reach here
+        return {
+            'valid': False,
+            'message': 'Unexpected error during validation.',
+            'license_data': None
+        }
         
     except Exception as e:
         return {
             'valid': False,
             'message': f'Error validating license: {str(e)}',
-            'license_data': None,
-            'hwid_registered': False,
-            'devices_used': 0,
-            'max_devices': 0
+            'license_data': None
         }
 
