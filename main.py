@@ -278,13 +278,13 @@ class EnterpriseApp(ctk.CTk):
         )
         subtitle_label.pack(pady=(0, 50))
         
-        # Activation frame
+        # Activation frame - height increased to 450 to fit Email + Key + Button
         activation_frame = ctk.CTkFrame(
             center_frame,
             corner_radius=15,
             fg_color=COLORS['sidebar'],
             width=500,
-            height=300
+            height=450
         )
         activation_frame.pack(padx=40, pady=20)
         activation_frame.pack_propagate(False)
@@ -358,27 +358,27 @@ class EnterpriseApp(ctk.CTk):
         add_context_menu(self.activation_email_entry)
         add_context_menu(self.activation_entry)
         
-        # Activate button
-        activate_btn = ctk.CTkButton(
-            activation_frame,
-            text="🔓 Activate License",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            height=50,
-            width=400,
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover'],
-            command=self._on_activate
-        )
-        activate_btn.pack(pady=(0, 10))
-        
-        # Status label
+        # Status label (placed before button so button stays at bottom)
         self.activation_status = ctk.CTkLabel(
             activation_frame,
             text="",
             font=ctk.CTkFont(size=12),
             text_color=COLORS['text_dim']
         )
-        self.activation_status.pack(pady=(10, 20))
+        self.activation_status.pack(pady=(10, 10))
+        
+        # Activate button - Green button packed at bottom with side="bottom" and pady=30
+        activate_btn = ctk.CTkButton(
+            activation_frame,
+            text="🔓 Activate License",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=50,
+            width=400,
+            fg_color="#28a745",  # Green color for activate button
+            hover_color="#218838",  # Darker green on hover
+            command=self._on_activate
+        )
+        activate_btn.pack(side="bottom", pady=30)
     
     def _on_activate(self):
         """Handle license activation."""
@@ -1073,10 +1073,12 @@ class EnterpriseApp(ctk.CTk):
                     # Store the result
                     self.generated_course_data = course_data
                     
-                    # Add email notification log
-                    user_email = os.getenv("USER_EMAIL", "user@example.com")
+                    # Add email notification log - use actual user email from login
+                    user_email = "user@example.com"
+                    if self.license_data and isinstance(self.license_data, dict):
+                        user_email = self.license_data.get('email', user_email)
                     self.after(0, lambda: self._log_message("📦 Packaging course..."))
-                    self.after(EMAIL_LOG_DELAY_MS, lambda: self._log_message(f"📧 Sending copy to {user_email}..."))
+                    self.after(EMAIL_LOG_DELAY_MS, lambda email=user_email: self._log_message(f"📧 Sending copy to {email}..."))
                     
                     # Notify completion on main thread
                     self.after(COMPLETION_DELAY_MS, lambda: self._finish_generation(success=True))
@@ -1097,43 +1099,46 @@ class EnterpriseApp(ctk.CTk):
                 import time
                 
                 try:
-                    # Step 1: Introduction
-                    self.after(0, lambda: self._log_message("📖 Generating Introduction..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Generating Introduction..."))
+                    # Step 1: Initializing AI
+                    self.after(0, lambda: self._log_message("🤖 Initializing AI..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Initializing AI..."))
                     time.sleep(STEP_DELAY_SECONDS)
-                    self.after(0, lambda: self._log_message("✓ Introduction complete"))
+                    self.after(0, lambda: self._log_message("✓ AI initialized"))
                     
-                    # Step 2: Module 1
-                    self.after(0, lambda: self._log_message("📚 Generating Module 1..."))
+                    # Step 2: Generating Module structure
+                    self.after(0, lambda: self._log_message("📚 Generating Module structure..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Generating Module structure..."))
+                    time.sleep(STEP_DELAY_SECONDS)
+                    self.after(0, lambda: self._log_message("✓ Module structure complete"))
+                    
+                    # Step 3: Module 1
+                    self.after(0, lambda: self._log_message("📖 Generating Module 1..."))
                     self.after(0, lambda: self.progress_label.configure(text="Generating Module 1..."))
                     time.sleep(STEP_DELAY_SECONDS)
                     self.after(0, lambda: self._log_message("✓ Module 1 complete"))
                     
-                    # Step 3: Module 2
-                    self.after(0, lambda: self._log_message("📚 Generating Module 2..."))
+                    # Step 4: Module 2
+                    self.after(0, lambda: self._log_message("📖 Generating Module 2..."))
                     self.after(0, lambda: self.progress_label.configure(text="Generating Module 2..."))
                     time.sleep(STEP_DELAY_SECONDS)
                     self.after(0, lambda: self._log_message("✓ Module 2 complete"))
                     
-                    # Step 4: Module 3
-                    self.after(0, lambda: self._log_message("📚 Generating Module 3..."))
+                    # Step 5: Module 3
+                    self.after(0, lambda: self._log_message("📖 Generating Module 3..."))
                     self.after(0, lambda: self.progress_label.configure(text="Generating Module 3..."))
                     time.sleep(STEP_DELAY_SECONDS)
                     self.after(0, lambda: self._log_message("✓ Module 3 complete"))
-                    
-                    # Step 5: Conclusion
-                    self.after(0, lambda: self._log_message("🏁 Generating Conclusion..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Generating Conclusion..."))
-                    time.sleep(STEP_DELAY_SECONDS)
-                    self.after(0, lambda: self._log_message("✓ Conclusion complete"))
                     
                     # Step 6: Packaging and email
                     self.after(0, lambda: self._log_message("📦 Packaging course..."))
                     self.after(0, lambda: self.progress_label.configure(text="Packaging course..."))
                     time.sleep(PACKAGING_DELAY_SECONDS)
                     
-                    user_email = os.getenv("USER_EMAIL", "user@example.com")
-                    self.after(0, lambda: self._log_message(f"📧 Sending copy to {user_email}..."))
+                    # Get user email from license data (actual email used in login)
+                    user_email = "user@example.com"
+                    if self.license_data and isinstance(self.license_data, dict):
+                        user_email = self.license_data.get('email', user_email)
+                    self.after(0, lambda email=user_email: self._log_message(f"📧 Sending copy to {email}..."))
                     time.sleep(PACKAGING_DELAY_SECONDS * 0.5)  # Half of packaging delay
                     
                     # Create simulated course data

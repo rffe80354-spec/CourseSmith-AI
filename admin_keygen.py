@@ -147,6 +147,7 @@ class AdminKeygenApp(ctk.CTk):
         self._search_after_id = None  # Track scheduled search callbacks
         self.displayed_count = 0  # Track how many licenses are currently displayed (for lazy loading)
         self.total_licenses = []  # Store licenses to be displayed in batches
+        self.current_offset = 0  # Track current pagination offset for database queries
         
         # Create UI
         self._create_ui()
@@ -711,11 +712,13 @@ class AdminKeygenApp(ctk.CTk):
             return False
     
     def _load_all_licenses_async(self):
-        """Load all licenses from Supabase asynchronously (non-blocking)."""
+        """Load licenses from Supabase asynchronously (non-blocking). Resets pagination."""
         if self.is_loading:
             return  # Prevent multiple simultaneous loads
         
         self.is_loading = True
+        self.current_offset = 0  # Reset pagination offset
+        self.all_licenses = []  # Clear existing licenses
         self.loading_label.configure(text="⏳ Loading...")
         self.refresh_db_btn.configure(state="disabled")
         
@@ -724,7 +727,7 @@ class AdminKeygenApp(ctk.CTk):
         thread.start()
     
     def _fetch_all_licenses(self):
-        """Fetch all licenses from Supabase (runs in background thread)."""
+        """Fetch licenses from Supabase with pagination (runs in background thread)."""
         client = get_supabase_client()
         
         if not client:
@@ -733,11 +736,13 @@ class AdminKeygenApp(ctk.CTk):
             return
         
         try:
-            # Fetch ALL licenses from Supabase, ordered by creation date
-            response = client.table("licenses").select("*").order("created_at", desc=True).execute()
+            # STRICT PAGINATION: Fetch only first 30 licenses to prevent lag
+            # Use Supabase pagination with .range(0, 30)
+            response = client.table("licenses").select("*").order("created_at", desc=True).range(0, 30).execute()
             
             if response.data:
                 self.all_licenses = response.data
+                self.current_offset = len(response.data)
                 self.filtered_licenses = self.all_licenses.copy()
                 # Update UI on main thread
                 self.after(0, lambda: self._display_licenses(self.filtered_licenses))
@@ -750,6 +755,46 @@ class AdminKeygenApp(ctk.CTk):
             error_msg = str(e)
             print(f"Error fetching all licenses: {error_msg}")
             self.after(0, lambda: self._display_error(f"Error loading licenses:\n{error_msg}"))
+        
+        finally:
+            self.after(0, lambda: self._finish_loading())
+    
+    def _load_more_licenses_async(self):
+        """Load more licenses from Supabase (pagination - next 30 rows)."""
+        if self.is_loading:
+            return
+        
+        self.is_loading = True
+        self.loading_label.configure(text="⏳ Loading more...")
+        
+        # Run database fetch in separate thread
+        thread = threading.Thread(target=self._fetch_more_licenses, daemon=True)
+        thread.start()
+    
+    def _fetch_more_licenses(self):
+        """Fetch next batch of licenses from Supabase (runs in background thread)."""
+        client = get_supabase_client()
+        
+        if not client:
+            self.after(0, lambda: self._finish_loading())
+            return
+        
+        try:
+            # Fetch next 30 licenses starting from current offset
+            end_offset = self.current_offset + 30
+            response = client.table("licenses").select("*").order("created_at", desc=True).range(self.current_offset, end_offset - 1).execute()
+            
+            if response.data:
+                # Append to existing licenses
+                self.all_licenses.extend(response.data)
+                self.current_offset = self.current_offset + len(response.data)
+                self.filtered_licenses = self.all_licenses.copy()
+                # Update UI on main thread (re-display all)
+                self.after(0, lambda: self._display_licenses(self.filtered_licenses))
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Error fetching more licenses: {error_msg}")
         
         finally:
             self.after(0, lambda: self._finish_loading())
@@ -846,7 +891,7 @@ class AdminKeygenApp(ctk.CTk):
         
         self.displayed_count = end_idx
         
-        # Add "Load More" button if there are more licenses
+        # Add "Load More" button if there are more licenses in local cache
         if self.displayed_count < len(self.total_licenses):
             if not hasattr(self, 'load_more_btn') or not self.load_more_btn.winfo_exists():
                 self.load_more_btn = ctk.CTkButton(
@@ -866,9 +911,25 @@ class AdminKeygenApp(ctk.CTk):
                     text=f"📥 Load More ({len(self.total_licenses) - self.displayed_count} remaining)"
                 )
         else:
-            # All licenses displayed, remove button if it exists
+            # All cached licenses displayed, remove the render more button
             if hasattr(self, 'load_more_btn') and self.load_more_btn.winfo_exists():
                 self.load_more_btn.pack_forget()
+            
+            # Add "Load More from Database" button if we have exactly 30 licenses
+            # (indicating there might be more in the database)
+            if len(self.all_licenses) >= 30 and len(self.all_licenses) == self.current_offset:
+                if not hasattr(self, 'load_more_db_btn') or not self.load_more_db_btn.winfo_exists():
+                    self.load_more_db_btn = ctk.CTkButton(
+                        self.explorer_frame,
+                        text="📥 Load More from Database",
+                        font=ctk.CTkFont(size=14, weight="bold"),
+                        height=45,
+                        corner_radius=10,
+                        fg_color=COLORS['sidebar'],
+                        hover_color=COLORS['accent'],
+                        command=self._load_more_licenses_async
+                    )
+                    self.load_more_db_btn.pack(fill="x", pady=(20, 10), padx=2)
     
     def _create_selectable_text_widget(self, parent, text, font, text_color, row_color, width=None, height=25):
         """
