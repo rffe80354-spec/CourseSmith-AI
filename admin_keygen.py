@@ -87,6 +87,9 @@ DURATION_MAP = {
     'lifetime': 'lifetime'
 }
 
+# Lazy loading configuration
+LAZY_LOAD_BATCH_SIZE = 30  # Number of license rows to render per batch
+
 
 def get_supabase_client():
     """Get Supabase client instance."""
@@ -142,6 +145,8 @@ class AdminKeygenApp(ctk.CTk):
         self.is_loading = False  # Track loading state
         self.search_thread = None  # Track search thread
         self._search_after_id = None  # Track scheduled search callbacks
+        self.displayed_count = 0  # Track how many licenses are currently displayed (for lazy loading)
+        self.total_licenses = []  # Store licenses to be displayed in batches
         
         # Create UI
         self._create_ui()
@@ -771,7 +776,7 @@ class AdminKeygenApp(ctk.CTk):
         error_label.pack(pady=50)
     
     def _display_licenses(self, licenses):
-        """Display licenses in the Global Key Explorer."""
+        """Display licenses in the Global Key Explorer with lazy loading (first 30 rows)."""
         # Clear existing widgets
         for widget in self.explorer_frame.winfo_children():
             widget.destroy()
@@ -814,9 +819,57 @@ class AdminKeygenApp(ctk.CTk):
             )
             header_label.grid(row=0, column=idx, padx=10, pady=10, sticky="ew")
         
-        # Create row for each license
-        for idx, license_record in enumerate(licenses):
+        # LAZY LOADING: Render first 30 rows initially
+        self.displayed_count = 0
+        self.total_licenses = licenses
+        self._render_next_batch()
+    
+    def _render_next_batch(self):
+        """
+        Render the next batch of licenses using lazy loading.
+        
+        This method implements pagination by rendering licenses in batches of
+        LAZY_LOAD_BATCH_SIZE (default: 30) to improve performance when dealing
+        with large numbers of licenses (e.g., 165+ rows). After each batch,
+        a "Load More" button appears to load the next batch on demand.
+        
+        This approach prevents UI freezing that would occur if all licenses
+        were rendered simultaneously.
+        """
+        batch_size = LAZY_LOAD_BATCH_SIZE
+        start_idx = self.displayed_count
+        end_idx = min(start_idx + batch_size, len(self.total_licenses))
+        
+        # Create row for each license in this batch
+        for idx in range(start_idx, end_idx):
+            license_record = self.total_licenses[idx]
             self._create_license_row(license_record, idx)
+        
+        self.displayed_count = end_idx
+        
+        # Add "Load More" button if there are more licenses
+        if self.displayed_count < len(self.total_licenses):
+            if not hasattr(self, 'load_more_btn') or not self.load_more_btn.winfo_exists():
+                self.load_more_btn = ctk.CTkButton(
+                    self.explorer_frame,
+                    text=f"📥 Load More ({len(self.total_licenses) - self.displayed_count} remaining)",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    height=45,
+                    corner_radius=10,
+                    fg_color=COLORS['accent'],
+                    hover_color=COLORS['accent_hover'],
+                    command=self._render_next_batch
+                )
+                self.load_more_btn.pack(fill="x", pady=(20, 10), padx=2)
+            else:
+                # Update button text
+                self.load_more_btn.configure(
+                    text=f"📥 Load More ({len(self.total_licenses) - self.displayed_count} remaining)"
+                )
+        else:
+            # All licenses displayed, remove button if it exists
+            if hasattr(self, 'load_more_btn') and self.load_more_btn.winfo_exists():
+                self.load_more_btn.pack_forget()
     
     def _create_selectable_text_widget(self, parent, text, font, text_color, row_color, width=None, height=25):
         """
@@ -967,7 +1020,7 @@ class AdminKeygenApp(ctk.CTk):
         )
         date_textbox.grid(row=0, column=4, padx=10, pady=5, sticky="ew")
         
-        # HWIDs preview - selectable textbox
+        # HWIDs preview - selectable textbox with right-click menu
         hwid_textbox = self._create_selectable_text_widget(
             row_frame,
             hwid_preview,
@@ -977,6 +1030,10 @@ class AdminKeygenApp(ctk.CTk):
             width=150
         )
         hwid_textbox.grid(row=0, column=5, padx=10, pady=5, sticky="ew")
+        
+        # Add "Reset HWID" context menu to HWID textbox
+        if used_hwids and len(used_hwids) > 0:
+            self._add_hwid_context_menu(hwid_textbox, license_record)
         
         # Action buttons frame
         action_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
@@ -1021,6 +1078,104 @@ class AdminKeygenApp(ctk.CTk):
                 command=lambda h=used_hwids[0]: self._copy_to_clipboard(h, "HWID")
             )
             copy_hwid_btn.pack(side="left", padx=2)
+    
+    def _add_hwid_context_menu(self, widget, license_record):
+        """
+        Add right-click context menu to HWID widget with "Reset HWID" option.
+        
+        Args:
+            widget: The HWID textbox widget
+            license_record: The license record containing HWID data
+        """
+        from tkinter import Menu
+        
+        # Get underlying Tk widget
+        tk_widget = widget._textbox if hasattr(widget, '_textbox') else widget
+        
+        # Create context menu
+        context_menu = Menu(tk_widget, tearoff=0)
+        context_menu.add_command(
+            label="Reset HWID",
+            command=lambda: self._reset_hwid(license_record)
+        )
+        context_menu.add_separator()
+        context_menu.add_command(
+            label="Copy HWID",
+            command=lambda: self._copy_first_hwid(license_record)
+        )
+        
+        # Bind right-click to show menu
+        def show_context_menu(event):
+            try:
+                context_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                context_menu.grab_release()
+            return "break"
+        
+        tk_widget.bind("<Button-3>", show_context_menu)
+    
+    def _reset_hwid(self, license_record):
+        """
+        Reset (clear) all HWIDs for a license.
+        
+        Args:
+            license_record: The license record to reset
+        """
+        email = license_record.get('email', 'N/A')
+        license_key = license_record.get('license_key', 'N/A')
+        used_hwids = license_record.get('used_hwids', [])
+        
+        # Confirm with user
+        if not messagebox.askyesno(
+            "Confirm Reset HWID",
+            f"Are you sure you want to reset all HWIDs for:\n\n"
+            f"Email: {email}\n"
+            f"License: {license_key}\n\n"
+            f"Current HWIDs: {len(used_hwids)}\n\n"
+            f"This will allow the license to be re-activated on new devices."
+        ):
+            return
+        
+        # Update Supabase
+        client = get_supabase_client()
+        if not client:
+            messagebox.showerror("Error", "Supabase client not available.")
+            return
+        
+        try:
+            # Reset used_hwids to empty array
+            client.table("licenses").update({
+                "used_hwids": []
+            }).eq("license_key", license_key).execute()
+            
+            messagebox.showinfo(
+                "Success",
+                f"HWIDs reset successfully for license:\n{license_key}\n\n"
+                f"The license can now be activated on new devices."
+            )
+            
+            # Refresh the license list
+            self._load_all_licenses_async()
+            
+        except Exception as e:
+            error_msg = str(e)
+            messagebox.showerror(
+                "Reset Failed",
+                f"Failed to reset HWIDs:\n{error_msg}"
+            )
+    
+    def _copy_first_hwid(self, license_record):
+        """
+        Copy the first HWID to clipboard.
+        
+        Args:
+            license_record: The license record
+        """
+        used_hwids = license_record.get('used_hwids', [])
+        if used_hwids and len(used_hwids) > 0:
+            self._copy_to_clipboard(used_hwids[0], "HWID")
+        else:
+            messagebox.showinfo("No HWID", "No HWID registered for this license.")
     
     def _copy_to_clipboard(self, text, label):
         """Copy text to clipboard with feedback."""
