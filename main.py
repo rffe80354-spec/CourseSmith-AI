@@ -1141,15 +1141,13 @@ class EnterpriseApp(ctk.CTk):
                     self.after(0, lambda email=user_email: self._log_message(f"📧 Sending copy to {email}..."))
                     time.sleep(PACKAGING_DELAY_SECONDS * 0.5)  # Half of packaging delay
                     
-                    # Create simulated course data
+                    # Create simulated course data - modules match log steps
                     course_data = {
                         'title': f"Course: {instruction[:50]}",
                         'chapters': [
-                            {'title': 'Introduction', 'content': 'Simulated introduction content'},
                             {'title': 'Module 1', 'content': 'Simulated module 1 content'},
                             {'title': 'Module 2', 'content': 'Simulated module 2 content'},
                             {'title': 'Module 3', 'content': 'Simulated module 3 content'},
-                            {'title': 'Conclusion', 'content': 'Simulated conclusion content'},
                         ],
                         'language': 'en'
                     }

@@ -148,6 +148,7 @@ class AdminKeygenApp(ctk.CTk):
         self.displayed_count = 0  # Track how many licenses are currently displayed (for lazy loading)
         self.total_licenses = []  # Store licenses to be displayed in batches
         self.current_offset = 0  # Track current pagination offset for database queries
+        self.has_more_licenses = False  # Track if more licenses are available in database
         
         # Create UI
         self._create_ui()
@@ -737,18 +738,21 @@ class AdminKeygenApp(ctk.CTk):
         
         try:
             # STRICT PAGINATION: Fetch only first 30 licenses to prevent lag
-            # Use Supabase pagination with .range(0, 30)
-            response = client.table("licenses").select("*").order("created_at", desc=True).range(0, 30).execute()
+            # Use Supabase pagination with .range(0, 29) for exactly 30 records (0-indexed)
+            response = client.table("licenses").select("*").order("created_at", desc=True).range(0, 29).execute()
             
             if response.data:
                 self.all_licenses = response.data
                 self.current_offset = len(response.data)
+                # Track if there might be more licenses (exactly 30 returned suggests more exist)
+                self.has_more_licenses = len(response.data) >= 30
                 self.filtered_licenses = self.all_licenses.copy()
                 # Update UI on main thread
                 self.after(0, lambda: self._display_licenses(self.filtered_licenses))
             else:
                 self.all_licenses = []
                 self.filtered_licenses = []
+                self.has_more_licenses = False
                 self.after(0, lambda: self._display_error("No licenses found in database."))
             
         except Exception as e:
@@ -781,15 +785,22 @@ class AdminKeygenApp(ctk.CTk):
         
         try:
             # Fetch next 30 licenses starting from current offset
-            end_offset = self.current_offset + 30
-            response = client.table("licenses").select("*").order("created_at", desc=True).range(self.current_offset, end_offset - 1).execute()
+            # .range(start, end) is inclusive, so end = start + 29 for 30 records
+            end_offset = self.current_offset + 29
+            response = client.table("licenses").select("*").order("created_at", desc=True).range(self.current_offset, end_offset).execute()
             
             if response.data:
                 # Append to existing licenses
                 self.all_licenses.extend(response.data)
-                self.current_offset = self.current_offset + len(response.data)
+                self.current_offset += len(response.data)
+                # Track if there might be more licenses
+                self.has_more_licenses = len(response.data) >= 30
                 self.filtered_licenses = self.all_licenses.copy()
                 # Update UI on main thread (re-display all)
+                self.after(0, lambda: self._display_licenses(self.filtered_licenses))
+            else:
+                # No more licenses available
+                self.has_more_licenses = False
                 self.after(0, lambda: self._display_licenses(self.filtered_licenses))
             
         except Exception as e:
@@ -915,21 +926,23 @@ class AdminKeygenApp(ctk.CTk):
             if hasattr(self, 'load_more_btn') and self.load_more_btn.winfo_exists():
                 self.load_more_btn.pack_forget()
             
-            # Add "Load More from Database" button if we have exactly 30 licenses
-            # (indicating there might be more in the database)
-            if len(self.all_licenses) >= 30 and len(self.all_licenses) == self.current_offset:
-                if not hasattr(self, 'load_more_db_btn') or not self.load_more_db_btn.winfo_exists():
-                    self.load_more_db_btn = ctk.CTkButton(
-                        self.explorer_frame,
-                        text="📥 Load More from Database",
-                        font=ctk.CTkFont(size=14, weight="bold"),
-                        height=45,
-                        corner_radius=10,
-                        fg_color=COLORS['sidebar'],
-                        hover_color=COLORS['accent'],
-                        command=self._load_more_licenses_async
-                    )
-                    self.load_more_db_btn.pack(fill="x", pady=(20, 10), padx=2)
+            # Remove old "Load More from Database" button if it exists
+            if hasattr(self, 'load_more_db_btn') and self.load_more_db_btn.winfo_exists():
+                self.load_more_db_btn.pack_forget()
+            
+            # Add "Load More from Database" button only if there are more licenses available
+            if self.has_more_licenses:
+                self.load_more_db_btn = ctk.CTkButton(
+                    self.explorer_frame,
+                    text="📥 Load More from Database",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    height=45,
+                    corner_radius=10,
+                    fg_color=COLORS['sidebar'],
+                    hover_color=COLORS['accent'],
+                    command=self._load_more_licenses_async
+                )
+                self.load_more_db_btn.pack(fill="x", pady=(20, 10), padx=2)
     
     def _create_selectable_text_widget(self, parent, text, font, text_color, row_color, width=None, height=25):
         """
