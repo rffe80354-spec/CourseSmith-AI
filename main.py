@@ -511,12 +511,20 @@ class EnterpriseApp(ctk.CTk):
             else:
                 expiry_text = "Lifetime"
         
+        # Determine tier color based on tier level
+        tier_colors = {
+            "PROFESSIONAL": "#FFD700",  # Gold
+            "EXTENDED": "#FFA500",       # Orange
+            "STANDARD": "#A0A0A0"        # Gray/Silver
+        }
+        tier_color = tier_colors.get(tier_text, COLORS['accent'])
+        
         # Tier label
         tier_label = ctk.CTkLabel(
             license_info_frame,
             text=f"🎫 Tier: {tier_text}",
             font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#FFD700" if tier_text == "PROFESSIONAL" else ("#FFA500" if tier_text == "EXTENDED" else COLORS['accent'])
+            text_color=tier_color
         )
         tier_label.pack(pady=(10, 5), padx=10, anchor="w")
         
@@ -979,7 +987,7 @@ class EnterpriseApp(ctk.CTk):
     def _generate_pdf_file(self, course_data: dict) -> str:
         """
         Generate a real PDF file from course data and save to Downloads folder.
-        Uses reportlab's SimpleDocTemplate for PDF generation.
+        Uses the shared generate_pdf utility function from utils module.
         
         Args:
             course_data: Dictionary containing 'title' and 'chapters' list
@@ -987,95 +995,8 @@ class EnterpriseApp(ctk.CTk):
         Returns:
             str: Path to the generated PDF file
         """
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import inch
-        from reportlab.lib.enums import TA_CENTER
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-        from reportlab.lib.colors import HexColor
-        from xml.sax.saxutils import escape
-        
-        # Determine Downloads folder path (cross-platform)
-        if sys.platform == "win32":
-            # Windows: C:\Users\{Username}\Downloads\
-            downloads_dir = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'Downloads')
-        else:
-            # Linux/Mac: ~/Downloads/
-            downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
-        
-        # Ensure Downloads directory exists
-        os.makedirs(downloads_dir, exist_ok=True)
-        
-        # Create filename from title and timestamp
-        title = course_data.get('title', 'Untitled Course')
-        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-        safe_title = safe_title[:50] if safe_title else "Course"
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{safe_title}_{timestamp}.pdf"
-        filepath = os.path.join(downloads_dir, filename)
-        
-        # Create PDF document
-        doc = SimpleDocTemplate(filepath, pagesize=letter)
-        styles = getSampleStyleSheet()
-        
-        # Create custom styles
-        title_style = ParagraphStyle(
-            'CourseTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            alignment=TA_CENTER,
-            spaceAfter=30,
-            textColor=HexColor('#1a1a2e'),
-            fontName='Helvetica-Bold'
-        )
-        
-        chapter_style = ParagraphStyle(
-            'ChapterTitle',
-            parent=styles['Heading2'],
-            fontSize=18,
-            spaceAfter=12,
-            spaceBefore=20,
-            textColor=HexColor('#4a4a6a'),
-            fontName='Helvetica-Bold'
-        )
-        
-        content_style = ParagraphStyle(
-            'ContentText',
-            parent=styles['Normal'],
-            fontSize=12,
-            spaceAfter=12,
-            leading=16,
-            fontName='Helvetica'
-        )
-        
-        # Build document content
-        story = []
-        
-        # Add course title (H1, Bold) - escape HTML entities
-        story.append(Paragraph(escape(title), title_style))
-        story.append(Spacer(1, 0.5 * inch))
-        
-        # Add each chapter/module (H2) with content
-        chapters = course_data.get('chapters', [])
-        for i, chapter in enumerate(chapters):
-            chapter_title = chapter.get('title', f'Module {i+1}')
-            chapter_content = chapter.get('content', '')
-            
-            # Add chapter title (H2) - escape HTML entities
-            story.append(Paragraph(escape(chapter_title), chapter_style))
-            
-            # Add chapter content with line breaks preserved - escape HTML entities
-            for paragraph in chapter_content.split('\n\n'):
-                if paragraph.strip():
-                    story.append(Paragraph(escape(paragraph.strip()), content_style))
-                    story.append(Spacer(1, 0.1 * inch))
-            
-            story.append(Spacer(1, 0.3 * inch))
-        
-        # Build the PDF
-        doc.build(story)
-        
-        return filepath
+        from utils import generate_pdf
+        return generate_pdf(course_data)
     
     def _start_generation(self):
         """Start course generation with animated progress and detailed logging."""

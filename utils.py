@@ -736,7 +736,7 @@ def generate_pdf(course_data: Dict[str, Any], output_path: Optional[str] = None)
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
     from reportlab.lib.enums import TA_CENTER
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
     from reportlab.lib.colors import HexColor
     from xml.sax.saxutils import escape
     
@@ -758,8 +758,10 @@ def generate_pdf(course_data: Dict[str, Any], output_path: Optional[str] = None)
         filename = f"{safe_title}_{timestamp}.pdf"
         output_path = os.path.join(downloads_dir, filename)
     
-    # Ensure parent directory exists
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # Ensure parent directory exists if output_path contains a directory
+    parent_dir = os.path.dirname(output_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
     
     # Create PDF document
     doc = SimpleDocTemplate(output_path, pagesize=letter)
