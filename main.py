@@ -461,15 +461,16 @@ class EnterpriseApp(ctk.CTk):
         Maximize the window (cross-platform compatible).
         Uses self.state('zoomed') for Windows, with fallbacks for other platforms.
         """
+        from tkinter import TclError
         try:
             # Try Windows-specific zoomed state
             self.state('zoomed')
-        except Exception:
+        except (TclError, AttributeError):
             # Fallback for other platforms
             try:
                 # Try macOS
                 self.attributes('-zoomed', True)
-            except Exception:
+            except (TclError, AttributeError):
                 # Fallback: set large geometry
                 screen_width = self.winfo_screenwidth()
                 screen_height = self.winfo_screenheight()

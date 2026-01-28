@@ -724,6 +724,7 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
             - 'title': Course title (required)
             - 'chapters': List of chapter dicts with 'title' and 'content' keys
         page_count: Target number of pages (5-50). The generator will loop content to fill pages.
+                   Values outside this range will be clamped.
         output_path: Optional custom output path. If None, saves to Downloads folder.
         
     Returns:
@@ -740,6 +741,9 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
     from reportlab.lib.colors import HexColor
     from xml.sax.saxutils import escape
+    
+    # Validate and clamp page_count to acceptable range (5-50)
+    page_count = max(5, min(50, int(page_count)))
     
     # Determine output path - default to Downloads folder
     if output_path is None:
@@ -809,38 +813,43 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
     # Add each chapter/module (H2) with content
     chapters = course_data.get('chapters', [])
     
-    # Calculate approximate content needed per page
-    # Each page can hold roughly 45-50 lines of text with standard styles
-    # We'll loop content to fill the requested page_count
-    content_loops = max(1, page_count // max(len(chapters), 1))
-    
-    for loop_iteration in range(content_loops):
-        for i, chapter in enumerate(chapters):
-            chapter_title = chapter.get('title', f'Module {i+1}')
-            chapter_content = chapter.get('content', '')
-            
-            # For looped content, add section number
-            if content_loops > 1:
-                section_num = loop_iteration * len(chapters) + i + 1
-                chapter_title = f"Section {section_num}: {chapter_title}"
-            
-            # Add chapter title (H2) - escape HTML entities
-            story.append(Paragraph(escape(chapter_title), chapter_style))
-            
-            # Add chapter content with line breaks preserved - escape HTML entities
-            for paragraph in chapter_content.split('\n\n'):
-                if paragraph.strip():
-                    story.append(Paragraph(escape(paragraph.strip()), content_style))
-                    story.append(Spacer(1, 0.1 * inch))
-            
-            story.append(Spacer(1, 0.3 * inch))
+    # Handle empty chapters edge case
+    if not chapters:
+        # Add a placeholder message for empty courses
+        placeholder_text = "No content has been generated for this course yet."
+        story.append(Paragraph(escape(placeholder_text), content_style))
+        story.append(Spacer(1, 0.5 * inch))
+    else:
+        # Calculate content loops to approximate target page count
+        # Note: This is an approximation - actual page count may vary based on content length
+        content_loops = max(1, page_count // max(len(chapters), 1))
         
-        # Add page break between loops if not the last iteration
-        if loop_iteration < content_loops - 1:
-            story.append(PageBreak())
+        for loop_iteration in range(content_loops):
+            for i, chapter in enumerate(chapters):
+                chapter_title = chapter.get('title', f'Module {i+1}')
+                chapter_content = chapter.get('content', '')
+                
+                # For looped content, add section number
+                if content_loops > 1:
+                    section_num = loop_iteration * len(chapters) + i + 1
+                    chapter_title = f"Section {section_num}: {chapter_title}"
+                
+                # Add chapter title (H2) - escape HTML entities
+                story.append(Paragraph(escape(chapter_title), chapter_style))
+                
+                # Add chapter content with line breaks preserved - escape HTML entities
+                for paragraph in chapter_content.split('\n\n'):
+                    if paragraph.strip():
+                        story.append(Paragraph(escape(paragraph.strip()), content_style))
+                        story.append(Spacer(1, 0.1 * inch))
+                
+                story.append(Spacer(1, 0.3 * inch))
+            
+            # Add page break between loops if not the last iteration
+            if loop_iteration < content_loops - 1:
+                story.append(PageBreak())
     
     # Build the PDF
     doc.build(story)
     
     return output_path
-
