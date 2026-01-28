@@ -1048,6 +1048,7 @@ class EnterpriseApp(ctk.CTk):
         from reportlab.lib.enums import TA_CENTER
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
         from reportlab.lib.colors import HexColor
+        from xml.sax.saxutils import escape
         
         # Determine Downloads folder path (cross-platform)
         if sys.platform == "win32":
@@ -1105,8 +1106,8 @@ class EnterpriseApp(ctk.CTk):
         # Build document content
         story = []
         
-        # Add course title (H1, Bold)
-        story.append(Paragraph(title, title_style))
+        # Add course title (H1, Bold) - escape HTML entities
+        story.append(Paragraph(escape(title), title_style))
         story.append(Spacer(1, 0.5 * inch))
         
         # Add each chapter/module (H2) with content
@@ -1115,13 +1116,13 @@ class EnterpriseApp(ctk.CTk):
             chapter_title = chapter.get('title', f'Module {i+1}')
             chapter_content = chapter.get('content', '')
             
-            # Add chapter title (H2)
-            story.append(Paragraph(chapter_title, chapter_style))
+            # Add chapter title (H2) - escape HTML entities
+            story.append(Paragraph(escape(chapter_title), chapter_style))
             
-            # Add chapter content with line breaks preserved
+            # Add chapter content with line breaks preserved - escape HTML entities
             for paragraph in chapter_content.split('\n\n'):
                 if paragraph.strip():
-                    story.append(Paragraph(paragraph.strip(), content_style))
+                    story.append(Paragraph(escape(paragraph.strip()), content_style))
                     story.append(Spacer(1, 0.1 * inch))
             
             story.append(Spacer(1, 0.3 * inch))
@@ -1163,6 +1164,7 @@ class EnterpriseApp(ctk.CTk):
         
         # Store generated course data
         self.generated_course_data = None
+        self.generated_pdf_path = None  # Initialize PDF path for consistency
         
         # Determine if using real or simulated generation
         if has_api_key:
@@ -1262,8 +1264,9 @@ class EnterpriseApp(ctk.CTk):
                     # Generate real PDF file to Downloads folder
                     pdf_path = self._generate_pdf_file(course_data)
                     
-                    # Step 7: File saved to Downloads
-                    self.after(0, lambda p=pdf_path: self._log_message(f"[System]: File saved to Downloads."))
+                    # Step 7: File saved to Downloads (include filename)
+                    pdf_filename = os.path.basename(pdf_path)
+                    self.after(0, lambda fn=pdf_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     
                     # Store PDF path for success message

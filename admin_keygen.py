@@ -831,7 +831,7 @@ class AdminKeygenApp(ctk.CTk):
         error_label.pack(pady=50)
     
     def _display_licenses(self, licenses):
-        """Display licenses in the Global Key Explorer with lazy loading (first 30 rows)."""
+        """Display licenses in the Global Key Explorer with lazy loading (first 50 rows)."""
         # Clear existing widgets
         for widget in self.explorer_frame.winfo_children():
             widget.destroy()
@@ -874,7 +874,7 @@ class AdminKeygenApp(ctk.CTk):
             )
             header_label.grid(row=0, column=idx, padx=10, pady=10, sticky="ew")
         
-        # LAZY LOADING: Render first 30 rows initially
+        # LAZY LOADING: Render first 50 rows initially
         self.displayed_count = 0
         self.total_licenses = licenses
         self._render_next_batch()
@@ -884,7 +884,7 @@ class AdminKeygenApp(ctk.CTk):
         Render the next batch of licenses using lazy loading.
         
         This method implements pagination by rendering licenses in batches of
-        LAZY_LOAD_BATCH_SIZE (default: 30) to improve performance when dealing
+        LAZY_LOAD_BATCH_SIZE (default: 50) to improve performance when dealing
         with large numbers of licenses (e.g., 165+ rows). After each batch,
         a "Load More" button appears to load the next batch on demand.
         
