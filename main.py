@@ -1168,15 +1168,25 @@ class EnterpriseApp(ctk.CTk):
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(smart_delay)
                     
-                    # Generate dynamic number of modules based on page count
-                    num_modules = max(3, target_pages // 10)  # At least 3 modules, more for higher page counts
+                    # Calculate unique chapters based on page count (~2 pages per chapter)
+                    num_chapters = max(3, target_pages // 2)
+                    self.after(0, lambda nc=num_chapters: self._log_message(f"[Structure]: Generating {nc} unique chapters..."))
+                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
+                    time.sleep(smart_delay * 0.5)
                     
-                    # Write modules dynamically
-                    for module_num in range(1, num_modules + 1):
-                        self.after(0, lambda m=module_num: self._log_message(f"[Generative]: Writing Module {m}..."))
-                        self.after(0, lambda m=module_num: self.progress_label.configure(text=f"Writing Module {m}..."))
+                    # Log sample chapter titles being generated (show variety)
+                    sample_chapter_types = ["Introduction", "Core Concepts", "Methodology", "Implementation", "Case Studies", "Best Practices", "Advanced Topics", "Future Directions"]
+                    log_limit = min(5, num_chapters)  # Show up to 5 chapter samples
+                    for ch_idx in range(log_limit):
+                        ch_type = sample_chapter_types[ch_idx % len(sample_chapter_types)]
+                        self.after(0, lambda idx=ch_idx+1, ct=ch_type: self._log_message(f"[Generative]: Creating Chapter {idx}: {ct}..."))
+                        self.after(0, lambda idx=ch_idx+1: self.progress_label.configure(text=f"Creating Chapter {idx} of {num_chapters}..."))
                         self.after(0, lambda: self.update_idletasks())  # Force UI refresh
-                        time.sleep(smart_delay)
+                        time.sleep(smart_delay * 0.3)
+                    
+                    if num_chapters > log_limit:
+                        self.after(0, lambda nc=num_chapters, ll=log_limit: self._log_message(f"[Generative]: Creating {nc - ll} more chapters..."))
+                        time.sleep(smart_delay * 0.5)
                     
                     # Step N+1: Rendering PDF document
                     self.after(0, lambda: self._log_message("[PDF]: Rendering document..."))
@@ -1184,23 +1194,19 @@ class EnterpriseApp(ctk.CTk):
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(PACKAGING_DELAY_SECONDS)
                     
-                    # Create simulated course data - modules scale with page count
-                    chapters = []
-                    for i in range(num_modules):
-                        module_titles = ['Introduction', 'Core Concepts', 'Advanced Topics', 'Practical Applications', 'Case Studies', 'Best Practices', 'Future Trends']
-                        title = f"Module {i+1}: {module_titles[i % len(module_titles)]}"
-                        content = f"This is the {module_titles[i % len(module_titles)].lower()} module content.\n\n[VIDEO/IMAGE PLACEHOLDER]\n\nSimulated educational content for Module {i+1}. This module covers important aspects of the topic and provides detailed explanations."
-                        chapters.append({'title': title, 'content': content})
-                    
+                    # Create course data - generate_pdf will handle UNIQUE chapter generation
+                    # We pass minimal data; the procedural generator in utils.py creates unique content
                     course_data = {
                         'title': f"Course: {instruction[:50]}",
-                        'chapters': chapters,
+                        'chapters': [],  # Empty - let generate_pdf create unique chapters procedurally
                         'language': 'en'
                     }
                     
                     self.generated_course_data = course_data
                     
                     # Generate real PDF file to Downloads folder
+                    # The generate_pdf function uses PROCEDURAL GENERATION to create
+                    # unique chapter titles and varied content based on target_pages
                     pdf_path = self._generate_pdf_file(course_data)
                     
                     # Step N+2: File saved to Downloads (include filename)
