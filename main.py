@@ -7,13 +7,15 @@ Features enterprise sidebar navigation and modern animations.
 import os
 import sys
 import json
-import subprocess
 import threading
 from datetime import datetime, timezone
 import customtkinter as ctk
 from tkinter import messagebox
 from dotenv import load_dotenv
 from supabase import create_client, Client
+
+# Import HWID and license utilities from utils module
+from utils import get_hwid, parse_hwids_array
 
 
 # Suppress stdout/stderr for --noconsole mode with log file fallback
@@ -54,51 +56,6 @@ COLORS = {
 }
 
 
-def get_hwid():
-    """
-    Get the Windows Hardware ID (UUID) using wmic command with robust fallback.
-    
-    Returns:
-        str: The hardware UUID or "UNKNOWN_ID" if an error occurs.
-    """
-    try:
-        # Primary method: Get system UUID using wmic csproduct
-        result = subprocess.check_output(
-            ['wmic', 'csproduct', 'get', 'uuid'],
-            timeout=5
-        ).decode()
-        
-        # Parse output - UUID is on second line
-        lines = result.strip().split('\n')
-        if len(lines) >= 2:
-            uuid = lines[1].strip()
-            if uuid and uuid != "UUID":
-                return uuid
-        
-    except Exception as e:
-        print(f"Primary HWID method failed: {e}")
-    
-    # Fallback method: Try disk drive serial number
-    try:
-        result = subprocess.check_output(
-            ['wmic', 'diskdrive', 'get', 'serialnumber'],
-            timeout=5
-        ).decode()
-        
-        # Parse output - Serial number is on second line
-        lines = result.strip().split('\n')
-        if len(lines) >= 2:
-            serial = lines[1].strip()
-            if serial and serial != "SerialNumber":
-                return serial
-                
-    except Exception as e:
-        print(f"Fallback HWID method failed: {e}")
-    
-    # If both methods fail, return UNKNOWN_ID
-    return "UNKNOWN_ID"
-
-
 def check_remote_ban():
     """
     Check if the current HWID is authorized for license activation.
@@ -131,7 +88,7 @@ def check_remote_ban():
         license_record = None
         for record in response.data if response.data else []:
             # Parse used_hwids (JSONB array)
-            used_hwids = _parse_hwids_array(record.get("used_hwids"))
+            used_hwids = parse_hwids_array(record.get("used_hwids"))
             
             # Check if current HWID is already registered
             if current_hwid in used_hwids:
@@ -178,28 +135,6 @@ def check_remote_ban():
     except Exception:
         # Allow offline usage - if connection fails, don't block the app
         pass
-
-
-def _parse_hwids_array(hwids_value) -> list:
-    """
-    Helper function to safely parse used_hwids JSONB array.
-    
-    Args:
-        hwids_value: The value from the database (could be list, None, or string)
-        
-    Returns:
-        list: Parsed list of HWIDs, or empty list if None/invalid
-    """
-    if hwids_value is None:
-        return []
-    if isinstance(hwids_value, list):
-        return hwids_value
-    if isinstance(hwids_value, str):
-        try:
-            return json.loads(hwids_value)
-        except:
-            return []
-    return []
 
 
 def validate_license_key(license_key: str) -> dict:
@@ -266,7 +201,7 @@ def validate_license_key(license_key: str) -> dict:
                 pass
         
         # Parse used_hwids (JSONB array)
-        used_hwids = _parse_hwids_array(license_record.get("used_hwids"))
+        used_hwids = parse_hwids_array(license_record.get("used_hwids"))
         max_devices = license_record.get("max_devices", 1)
         
         # Check if current HWID is already registered
@@ -369,7 +304,7 @@ class EnterpriseApp(ctk.CTk):
             
             # Find license that matches this HWID
             for record in response.data if response.data else []:
-                used_hwids = _parse_hwids_array(record.get("used_hwids"))
+                used_hwids = parse_hwids_array(record.get("used_hwids"))
                 
                 if current_hwid in used_hwids:
                     # Found matching license, validate it
