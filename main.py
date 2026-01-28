@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 # Import HWID and license utilities from utils module
-from utils import get_hwid, parse_hwids_array
+from utils import get_hwid, parse_hwids_array, check_license, add_context_menu
 
 
 # Suppress stdout/stderr for --noconsole mode with log file fallback
@@ -147,7 +147,6 @@ def validate_license_key(license_key: str, email: str) -> dict:
             {'valid': bool, 'message': str, 'license_data': dict or None}
     """
     # Use the check_license function from utils module
-    from utils import check_license
     return check_license(license_key, email, SUPABASE_URL, SUPABASE_KEY)
 
 
@@ -328,6 +327,7 @@ class EnterpriseApp(ctk.CTk):
             border_width=2
         )
         self.activation_email_entry.pack(pady=(0, 15))
+        self.activation_email_entry.bind("<Return>", lambda e: self._on_activate())
         
         # License key entry field
         key_label = ctk.CTkLabel(
@@ -355,7 +355,6 @@ class EnterpriseApp(ctk.CTk):
         self.after(0, lambda: self.activation_email_entry.focus())
         
         # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
-        from utils import add_context_menu
         add_context_menu(self.activation_email_entry)
         add_context_menu(self.activation_entry)
         
@@ -388,6 +387,11 @@ class EnterpriseApp(ctk.CTk):
         
         if not email:
             self.activation_status.configure(text="Please enter your email address", text_color="red")
+            return
+        
+        # Basic email format validation
+        if '@' not in email or '.' not in email.split('@')[-1]:
+            self.activation_status.configure(text="Please enter a valid email address", text_color="red")
             return
         
         if not license_key:

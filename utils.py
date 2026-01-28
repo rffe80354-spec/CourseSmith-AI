@@ -484,12 +484,16 @@ def get_hwid() -> str:
     Get the Windows Hardware ID (UUID) using wmic command with robust fallback.
     This is the primary method for identifying unique devices for license management.
     
+    SECURITY NOTE: This function uses shell=True as specified in requirements.
+    This is less secure than shell=False with argument list. The command is hardcoded
+    to prevent injection attacks, but consider using shell=False if requirements allow.
+    
     Returns:
         str: The hardware UUID or "UNKNOWN_ID" if an error occurs.
     """
     try:
         # Primary method: Get system UUID using wmic csproduct
-        # Using shell=True as specified in requirements
+        # Using shell=True as specified in requirements (hardcoded command - no user input)
         result = subprocess.check_output(
             'wmic csproduct get uuid',
             timeout=5,
@@ -664,19 +668,22 @@ def check_license(license_key: str, email: str, supabase_url: str, supabase_key:
                 'license_data': license_record
             }
         
-        # Get stored hwid and device_limit from database
+        # Get stored hwid from database
         stored_hwid = license_record.get("hwid")
-        device_limit = license_record.get("device_limit", 1)  # Default is 1
+        
+        # Normalize HWIDs for comparison (case-insensitive)
+        stored_hwid_normalized = stored_hwid.lower() if stored_hwid else None
+        current_hwid_normalized = current_hwid.lower() if current_hwid else None
         
         # Scenario A (Match): If stored hwid == current hwid -> ALLOW ACCESS
-        if stored_hwid and stored_hwid == current_hwid:
+        if stored_hwid_normalized and stored_hwid_normalized == current_hwid_normalized:
             return {
                 'valid': True,
                 'message': 'License is valid and activated on this device.',
                 'license_data': license_record
             }
         
-        # Scenario B (New Device): If stored hwid is NULL and limit not reached -> UPDATE database with current hwid -> ALLOW ACCESS
+        # Scenario B (New Device): If stored hwid is NULL -> UPDATE database with current hwid -> ALLOW ACCESS
         if stored_hwid is None or stored_hwid == "":
             # Update database with current hwid
             supabase.table("licenses").update({
@@ -690,19 +697,12 @@ def check_license(license_key: str, email: str, supabase_url: str, supabase_key:
             }
         
         # Scenario C (Limit Reached): If stored hwid != current hwid -> DENY ACCESS
-        if stored_hwid != current_hwid:
+        if stored_hwid_normalized != current_hwid_normalized:
             return {
                 'valid': False,
                 'message': 'Device Limit Reached',
                 'license_data': license_record
             }
-        
-        # Fallback - should not reach here
-        return {
-            'valid': False,
-            'message': 'Unexpected error during validation.',
-            'license_data': None
-        }
         
     except Exception as e:
         return {
