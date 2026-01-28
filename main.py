@@ -169,6 +169,9 @@ class EnterpriseApp(ctk.CTk):
         self.geometry("1200x800")
         self.minsize(1000, 600)
         
+        # FULL SCREEN / MAXIMIZED MODE - Launch maximized immediately
+        self._maximize_window()
+        
         # Configure colors
         self.configure(fg_color=COLORS['background'])
         
@@ -252,13 +255,14 @@ class EnterpriseApp(ctk.CTk):
         return True
     
     def _create_activation_ui(self):
-        """Create the license activation screen with expanded 550x850 geometry."""
-        # Set window size for login screen (expanded to ensure Activate button is fully visible)
-        self.geometry("550x850")
-        self.minsize(550, 850)
-        self.resizable(False, False)
+        """Create the license activation screen with full screen background and centered login card."""
+        # Keep the window maximized (full screen background)
+        # Login card will be centered on the full screen
+        self.geometry("1200x800")
+        self.minsize(800, 600)
+        self.resizable(True, True)
         
-        # Main container
+        # Main container (full screen background)
         container = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
         container.pack(fill="both", expand=True)
         
@@ -450,8 +454,7 @@ class EnterpriseApp(ctk.CTk):
         Create the main enterprise UI with sidebar (after license validation).
         Uses delayed rendering to prevent RecursionError during initialization.
         """
-        # Maximize the window immediately on main UI creation
-        self._maximize_window()
+        # Window is already maximized from __init__, no need to call _maximize_window() again
         
         # Use after() for initial rendering to prevent RecursionError
         self.after(UI_RENDER_DELAY_MS, self._render_main_ui)
@@ -511,13 +514,24 @@ class EnterpriseApp(ctk.CTk):
         )
         logo_label.pack(pady=(30, 20))
         
-        # License Info Frame - Display Tier and Expiration in Sidebar
+        # Navigation buttons
+        self.nav_buttons = {}
+        
+        self.nav_buttons['forge'] = self._create_nav_button("🔥 Forge", "forge")
+        self.nav_buttons['library'] = self._create_nav_button("📚 Library", "library")
+        self.nav_buttons['settings'] = self._create_nav_button("⚙️ Settings", "settings")
+        
+        # Spacer
+        spacer = ctk.CTkFrame(self.sidebar, fg_color="transparent", height=20)
+        spacer.pack(fill="both", expand=True)
+        
+        # License Info Frame - Display "TIER: {tier} | EXP: {date}" at BOTTOM of sidebar
         license_info_frame = ctk.CTkFrame(
             self.sidebar,
             fg_color=COLORS['background'],
             corner_radius=10
         )
-        license_info_frame.pack(fill="x", padx=15, pady=(0, 30))
+        license_info_frame.pack(fill="x", padx=15, pady=(0, 10))
         
         # Get license tier and expiration from license_data
         tier_text = "Unknown"
@@ -542,34 +556,14 @@ class EnterpriseApp(ctk.CTk):
         }
         tier_color = tier_colors.get(tier_text, COLORS['accent'])
         
-        # Tier label
-        tier_label = ctk.CTkLabel(
+        # Combined Tier and Expiration label in one line: "TIER: {tier} | EXP: {date}"
+        tier_exp_label = ctk.CTkLabel(
             license_info_frame,
-            text=f"🎫 Tier: {tier_text}",
-            font=ctk.CTkFont(size=11, weight="bold"),
+            text=f"TIER: {tier_text} | EXP: {expiry_text}",
+            font=ctk.CTkFont(size=10, weight="bold"),
             text_color=tier_color
         )
-        tier_label.pack(pady=(10, 5), padx=10, anchor="w")
-        
-        # Expiration label
-        expiry_label = ctk.CTkLabel(
-            license_info_frame,
-            text=f"📅 Expires: {expiry_text}",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS['text_dim']
-        )
-        expiry_label.pack(pady=(0, 10), padx=10, anchor="w")
-        
-        # Navigation buttons
-        self.nav_buttons = {}
-        
-        self.nav_buttons['forge'] = self._create_nav_button("🔥 Forge", "forge")
-        self.nav_buttons['library'] = self._create_nav_button("📚 Library", "library")
-        self.nav_buttons['settings'] = self._create_nav_button("⚙️ Settings", "settings")
-        
-        # Spacer
-        spacer = ctk.CTkFrame(self.sidebar, fg_color="transparent", height=20)
-        spacer.pack(fill="both", expand=True)
+        tier_exp_label.pack(pady=10, padx=10)
         
         # Version label at bottom
         version_label = ctk.CTkLabel(
@@ -735,12 +729,12 @@ class EnterpriseApp(ctk.CTk):
         )
         self.page_count_label.pack(anchor="w", pady=(0, 10))
         
-        # Page Count slider (Range: 5 to 50)
+        # Page Count slider (Range: 5 to 100 pages)
         self.page_count_slider = ctk.CTkSlider(
             page_count_frame,
             from_=5,
-            to=50,
-            number_of_steps=45,
+            to=100,
+            number_of_steps=95,
             variable=self.page_count_var,
             width=400,
             height=20,
@@ -1174,15 +1168,25 @@ class EnterpriseApp(ctk.CTk):
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(smart_delay)
                     
-                    # Generate dynamic number of modules based on page count
-                    num_modules = max(3, target_pages // 10)  # At least 3 modules, more for higher page counts
+                    # Calculate unique chapters based on page count (~2 pages per chapter)
+                    num_chapters = max(3, target_pages // 2)
+                    self.after(0, lambda nc=num_chapters: self._log_message(f"[Structure]: Generating {nc} unique chapters..."))
+                    self.after(0, lambda: self.update_idletasks())  # Force UI refresh
+                    time.sleep(smart_delay * 0.5)
                     
-                    # Write modules dynamically
-                    for module_num in range(1, num_modules + 1):
-                        self.after(0, lambda m=module_num: self._log_message(f"[Generative]: Writing Module {m}..."))
-                        self.after(0, lambda m=module_num: self.progress_label.configure(text=f"Writing Module {m}..."))
+                    # Log sample chapter titles being generated (show variety)
+                    sample_chapter_types = ["Introduction", "Core Concepts", "Methodology", "Implementation", "Case Studies", "Best Practices", "Advanced Topics", "Future Directions"]
+                    log_limit = min(5, num_chapters)  # Show up to 5 chapter samples
+                    for ch_idx in range(log_limit):
+                        ch_type = sample_chapter_types[ch_idx % len(sample_chapter_types)]
+                        self.after(0, lambda idx=ch_idx+1, ct=ch_type: self._log_message(f"[Generative]: Creating Chapter {idx}: {ct}..."))
+                        self.after(0, lambda idx=ch_idx+1: self.progress_label.configure(text=f"Creating Chapter {idx} of {num_chapters}..."))
                         self.after(0, lambda: self.update_idletasks())  # Force UI refresh
-                        time.sleep(smart_delay)
+                        time.sleep(smart_delay * 0.3)
+                    
+                    if num_chapters > log_limit:
+                        self.after(0, lambda nc=num_chapters, ll=log_limit: self._log_message(f"[Generative]: Creating {nc - ll} more chapters..."))
+                        time.sleep(smart_delay * 0.5)
                     
                     # Step N+1: Rendering PDF document
                     self.after(0, lambda: self._log_message("[PDF]: Rendering document..."))
@@ -1190,23 +1194,19 @@ class EnterpriseApp(ctk.CTk):
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(PACKAGING_DELAY_SECONDS)
                     
-                    # Create simulated course data - modules scale with page count
-                    chapters = []
-                    for i in range(num_modules):
-                        module_titles = ['Introduction', 'Core Concepts', 'Advanced Topics', 'Practical Applications', 'Case Studies', 'Best Practices', 'Future Trends']
-                        title = f"Module {i+1}: {module_titles[i % len(module_titles)]}"
-                        content = f"This is the {module_titles[i % len(module_titles)].lower()} module content.\n\n[VIDEO/IMAGE PLACEHOLDER]\n\nSimulated educational content for Module {i+1}. This module covers important aspects of the topic and provides detailed explanations."
-                        chapters.append({'title': title, 'content': content})
-                    
+                    # Create course data - generate_pdf will handle UNIQUE chapter generation
+                    # We pass minimal data; the procedural generator in utils.py creates unique content
                     course_data = {
                         'title': f"Course: {instruction[:50]}",
-                        'chapters': chapters,
+                        'chapters': [],  # Empty - let generate_pdf create unique chapters procedurally
                         'language': 'en'
                     }
                     
                     self.generated_course_data = course_data
                     
                     # Generate real PDF file to Downloads folder
+                    # The generate_pdf function uses PROCEDURAL GENERATION to create
+                    # unique chapter titles and varied content based on target_pages
                     pdf_path = self._generate_pdf_file(course_data)
                     
                     # Step N+2: File saved to Downloads (include filename)
