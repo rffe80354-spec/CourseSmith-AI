@@ -1000,7 +1000,7 @@ class AdminKeygenApp(ctk.CTk):
         email = license_record.get('email', 'N/A')
         key = license_record.get('license_key', 'N/A')
         tier = license_record.get('tier', 'N/A')
-        device_limit = license_record.get('device_limit', 1)
+        device_limit = license_record.get('max_devices', 1)
         hwid = license_record.get('hwid', None)
         created = license_record.get('created_at', 'N/A')
         

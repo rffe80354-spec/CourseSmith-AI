@@ -714,15 +714,16 @@ def check_license(license_key: str, email: str, supabase_url: str, supabase_key:
 
 # ==================== PDF GENERATION UTILITIES ====================
 
-def generate_pdf(course_data: Dict[str, Any], output_path: Optional[str] = None) -> str:
+def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path: Optional[str] = None) -> str:
     """
     Generate a styled PDF document from course data using reportlab.
-    Saves to the user's Downloads folder by default.
+    Saves to the user's Downloads folder by default on Windows (C:\\Users\\{User}\\Downloads\\).
     
     Args:
         course_data: Dictionary containing:
             - 'title': Course title (required)
             - 'chapters': List of chapter dicts with 'title' and 'content' keys
+        page_count: Target number of pages (5-50). The generator will loop content to fill pages.
         output_path: Optional custom output path. If None, saves to Downloads folder.
         
     Returns:
@@ -736,13 +737,13 @@ def generate_pdf(course_data: Dict[str, Any], output_path: Optional[str] = None)
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
     from reportlab.lib.enums import TA_CENTER
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
     from reportlab.lib.colors import HexColor
     from xml.sax.saxutils import escape
     
-    # Determine output path
+    # Determine output path - default to Downloads folder
     if output_path is None:
-        # Default to Downloads folder (cross-platform)
+        # Default to Downloads folder (Windows: C:\Users\{User}\Downloads\)
         if sys.platform == "win32":
             downloads_dir = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'Downloads')
         else:
@@ -807,20 +808,36 @@ def generate_pdf(course_data: Dict[str, Any], output_path: Optional[str] = None)
     
     # Add each chapter/module (H2) with content
     chapters = course_data.get('chapters', [])
-    for i, chapter in enumerate(chapters):
-        chapter_title = chapter.get('title', f'Module {i+1}')
-        chapter_content = chapter.get('content', '')
+    
+    # Calculate approximate content needed per page
+    # Each page can hold roughly 45-50 lines of text with standard styles
+    # We'll loop content to fill the requested page_count
+    content_loops = max(1, page_count // max(len(chapters), 1))
+    
+    for loop_iteration in range(content_loops):
+        for i, chapter in enumerate(chapters):
+            chapter_title = chapter.get('title', f'Module {i+1}')
+            chapter_content = chapter.get('content', '')
+            
+            # For looped content, add section number
+            if content_loops > 1:
+                section_num = loop_iteration * len(chapters) + i + 1
+                chapter_title = f"Section {section_num}: {chapter_title}"
+            
+            # Add chapter title (H2) - escape HTML entities
+            story.append(Paragraph(escape(chapter_title), chapter_style))
+            
+            # Add chapter content with line breaks preserved - escape HTML entities
+            for paragraph in chapter_content.split('\n\n'):
+                if paragraph.strip():
+                    story.append(Paragraph(escape(paragraph.strip()), content_style))
+                    story.append(Spacer(1, 0.1 * inch))
+            
+            story.append(Spacer(1, 0.3 * inch))
         
-        # Add chapter title (H2) - escape HTML entities
-        story.append(Paragraph(escape(chapter_title), chapter_style))
-        
-        # Add chapter content with line breaks preserved - escape HTML entities
-        for paragraph in chapter_content.split('\n\n'):
-            if paragraph.strip():
-                story.append(Paragraph(escape(paragraph.strip()), content_style))
-                story.append(Spacer(1, 0.1 * inch))
-        
-        story.append(Spacer(1, 0.3 * inch))
+        # Add page break between loops if not the last iteration
+        if loop_iteration < content_loops - 1:
+            story.append(PageBreak())
     
     # Build the PDF
     doc.build(story)
