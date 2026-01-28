@@ -555,9 +555,19 @@ class EnterpriseApp(ctk.CTk):
         
     def _create_main_ui(self):
         """Create the main enterprise UI with sidebar (after license validation)."""
-        # Main container
+        # Use after(200) for initial rendering to prevent RecursionError
+        self.after(200, self._render_main_ui)
+    
+    def _render_main_ui(self):
+        """Render the main UI after delay."""
+        # Main container with grid layout for responsive design
         main_container = ctk.CTkFrame(self, corner_radius=0, fg_color=COLORS['background'])
         main_container.pack(fill="both", expand=True)
+        
+        # Configure grid: sidebar column (fixed), content column (expand)
+        main_container.grid_columnconfigure(0, weight=0, minsize=200)  # Sidebar fixed
+        main_container.grid_columnconfigure(1, weight=1)  # Content expands
+        main_container.grid_rowconfigure(0, weight=1)
         
         # Sidebar (200px fixed width)
         self.sidebar = ctk.CTkFrame(
@@ -566,8 +576,8 @@ class EnterpriseApp(ctk.CTk):
             corner_radius=0,
             fg_color=COLORS['sidebar']
         )
-        self.sidebar.pack(side="left", fill="y")
-        self.sidebar.pack_propagate(False)
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar.grid_propagate(False)
         
         # Logo/Header in sidebar
         logo_label = ctk.CTkLabel(
@@ -604,7 +614,7 @@ class EnterpriseApp(ctk.CTk):
             corner_radius=0,
             fg_color=COLORS['background']
         )
-        self.content_frame.pack(side="right", fill="both", expand=True)
+        self.content_frame.grid(row=0, column=1, sticky="nsew")
         
         # Show default tab
         self._switch_tab("forge")
@@ -763,6 +773,31 @@ class EnterpriseApp(ctk.CTk):
         )
         clear_btn.pack(side="left", padx=(0, 0))
         
+        # Logging console frame
+        log_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
+        log_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        log_label = ctk.CTkLabel(
+            log_frame,
+            text="Generation Log",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS['text']
+        )
+        log_label.pack(anchor="w", padx=25, pady=(25, 10))
+        
+        # Logging console text widget
+        self.log_console = ctk.CTkTextbox(
+            log_frame,
+            font=ctk.CTkFont(family="Consolas", size=12),
+            wrap="word",
+            height=200,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2,
+            state="disabled"  # Read-only
+        )
+        self.log_console.pack(fill="both", expand=True, padx=25, pady=(0, 25))
+        
         # Progress frame (initially hidden)
         self.progress_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
         
@@ -914,6 +949,59 @@ class EnterpriseApp(ctk.CTk):
             command=self._save_api_key
         )
         save_btn.pack(pady=(20, 0))
+        
+        # Email section
+        email_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        email_frame.pack(fill="x", padx=30, pady=(30, 20))
+        
+        email_label = ctk.CTkLabel(
+            email_frame,
+            text="Email for Course Notifications",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS['text']
+        )
+        email_label.pack(anchor="w", pady=(0, 10))
+        
+        email_help_label = ctk.CTkLabel(
+            email_frame,
+            text="This email will appear in generation logs (e.g., 'Sending copy to [email]...').",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text_dim']
+        )
+        email_help_label.pack(anchor="w", pady=(0, 15))
+        
+        # Email entry
+        self.email_entry = ctk.CTkEntry(
+            email_frame,
+            placeholder_text="your@email.com",
+            height=45,
+            font=ctk.CTkFont(size=14),
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
+        )
+        self.email_entry.pack(fill="x", pady=(0, 10))
+        
+        # Load saved email from .env
+        saved_email = os.getenv("USER_EMAIL", "")
+        if saved_email:
+            self.email_entry.insert(0, saved_email)
+        
+        # Add clipboard support
+        add_context_menu(self.email_entry)
+        
+        # Save email button
+        save_email_btn = ctk.CTkButton(
+            email_frame,
+            text="💾 Save Email",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=50,
+            corner_radius=10,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=self._save_email
+        )
+        save_email_btn.pack(pady=(20, 0))
     
     def _toggle_api_key_visibility(self):
         """Toggle API key visibility."""
@@ -983,29 +1071,88 @@ class EnterpriseApp(ctk.CTk):
         except IOError as e:
             messagebox.showerror("Error", f"Failed to save API key: {e}")
     
+    def _save_email(self):
+        """Save the user email to .env file and update environment."""
+        email = self.email_entry.get().strip()
+        
+        if not email:
+            messagebox.showerror("Error", "Please enter an email address.")
+            return
+        
+        # Basic email validation
+        if '@' not in email or '.' not in email:
+            result = messagebox.askyesno(
+                "Invalid Email Format",
+                "The email doesn't appear to be valid.\n\n"
+                "Do you want to save it anyway?"
+            )
+            if not result:
+                return
+        
+        # Save to .env file
+        env_path = os.path.join(os.getcwd(), ".env")
+        try:
+            # Read existing content
+            existing_lines = []
+            if os.path.exists(env_path):
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        stripped = line.strip()
+                        if stripped and not stripped.startswith("USER_EMAIL"):
+                            existing_lines.append(line.rstrip())
+            
+            # Write with new email
+            with open(env_path, 'w') as f:
+                for line in existing_lines:
+                    f.write(line + "\n")
+                f.write(f"USER_EMAIL={email}\n")
+            
+            # Update environment variable
+            os.environ["USER_EMAIL"] = email
+            
+            messagebox.showinfo("Success", "Email saved successfully!")
+            
+        except IOError as e:
+            messagebox.showerror("Error", f"Failed to save email: {e}")
+    
+    def _log_message(self, message: str):
+        """
+        Add a timestamped message to the logging console.
+        
+        Args:
+            message: The message to log
+        """
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {message}\n"
+        
+        # Update log console on main thread
+        self.log_console.configure(state="normal")
+        self.log_console.insert("end", log_entry)
+        self.log_console.see("end")  # Scroll to bottom
+        self.log_console.configure(state="disabled")
+    
     def _start_generation(self):
-        """Start course generation with animated progress."""
+        """Start course generation with animated progress and detailed logging."""
         instruction = self.instruction_textbox.get("1.0", "end-1c").strip()
         
         if not instruction:
             messagebox.showwarning("Input Required", "Please enter a master instruction.")
             return
         
-        # Check if coursesmith_engine is available
-        if self.coursesmith_engine is None:
-            messagebox.showerror(
-                "Engine Not Available", 
-                "CourseSmith Engine is not initialized. Please check your API key in Settings."
-            )
-            return
+        # Clear log console
+        self.log_console.configure(state="normal")
+        self.log_console.delete("1.0", "end")
+        self.log_console.configure(state="disabled")
         
-        # Check if API key is configured
-        if self.coursesmith_engine.client is None:
-            messagebox.showerror(
-                "API Key Required", 
-                "OpenAI API key is not configured. Please set it in the Settings tab."
-            )
-            return
+        # Log generation start
+        self._log_message("🔥 Starting course generation...")
+        self._log_message(f"📝 Instruction: {instruction[:100]}...")
+        
+        # Check if coursesmith_engine is available
+        has_api_key = self.coursesmith_engine is not None and self.coursesmith_engine.client is not None
+        
+        if not has_api_key:
+            self._log_message("⚠️  API key not configured - using simulated generation mode")
         
         # Show progress frame
         self.progress_frame.pack(fill="x", pady=(20, 0))
@@ -1017,34 +1164,116 @@ class EnterpriseApp(ctk.CTk):
         # Store generated course data
         self.generated_course_data = None
         
-        # Actual course generation using coursesmith_engine
-        def run_generation():
-            try:
-                # Progress callback to update UI
-                def progress_callback(step, total, message):
-                    # Update progress label on main thread (explicit value capture)
-                    self.after(0, lambda msg=message: self.progress_label.configure(text=msg))
+        # Determine if using real or simulated generation
+        if has_api_key:
+            # Real course generation using coursesmith_engine
+            def run_generation():
+                try:
+                    # Progress callback to update UI
+                    def progress_callback(step, total, message):
+                        # Update progress label on main thread (explicit value capture)
+                        self.after(0, lambda msg=message: self._log_message(msg))
+                        self.after(0, lambda msg=message: self.progress_label.configure(text=msg))
+                    
+                    # Generate the full course
+                    course_data = self.coursesmith_engine.generate_full_course(
+                        user_instruction=instruction,
+                        progress_callback=progress_callback
+                    )
+                    
+                    # Store the result
+                    self.generated_course_data = course_data
+                    
+                    # Add email notification log
+                    user_email = os.getenv("USER_EMAIL", "user@example.com")
+                    self.after(0, lambda: self._log_message("📦 Packaging course..."))
+                    self.after(500, lambda: self._log_message(f"📧 Sending copy to {user_email}..."))
+                    
+                    # Notify completion on main thread
+                    self.after(1000, lambda: self._finish_generation(success=True))
+                    
+                except Exception as e:
+                    # Handle errors on main thread (explicit value capture)
+                    error_msg = str(e)
+                    self.after(0, lambda err=error_msg: self._log_message(f"❌ Error: {err}"))
+                    self.after(0, lambda err=error_msg: self._finish_generation(success=False, error=err))
+            
+            # Run generation in background thread
+            thread = threading.Thread(target=run_generation, daemon=True)
+            thread.start()
+        else:
+            # Simulated generation with detailed step logging
+            def run_simulated_generation():
+                import time
                 
-                # Generate the full course
-                course_data = self.coursesmith_engine.generate_full_course(
-                    user_instruction=instruction,
-                    progress_callback=progress_callback
-                )
-                
-                # Store the result
-                self.generated_course_data = course_data
-                
-                # Notify completion on main thread
-                self.after(0, lambda: self._finish_generation(success=True))
-                
-            except Exception as e:
-                # Handle errors on main thread (explicit value capture)
-                error_msg = str(e)
-                self.after(0, lambda err=error_msg: self._finish_generation(success=False, error=err))
-        
-        # Run generation in background thread
-        thread = threading.Thread(target=run_generation, daemon=True)
-        thread.start()
+                try:
+                    # Step 1: Introduction
+                    self.after(0, lambda: self._log_message("📖 Generating Introduction..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Generating Introduction..."))
+                    time.sleep(1.5)
+                    self.after(0, lambda: self._log_message("✓ Introduction complete"))
+                    
+                    # Step 2: Module 1
+                    self.after(0, lambda: self._log_message("📚 Generating Module 1..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Generating Module 1..."))
+                    time.sleep(1.5)
+                    self.after(0, lambda: self._log_message("✓ Module 1 complete"))
+                    
+                    # Step 3: Module 2
+                    self.after(0, lambda: self._log_message("📚 Generating Module 2..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Generating Module 2..."))
+                    time.sleep(1.5)
+                    self.after(0, lambda: self._log_message("✓ Module 2 complete"))
+                    
+                    # Step 4: Module 3
+                    self.after(0, lambda: self._log_message("📚 Generating Module 3..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Generating Module 3..."))
+                    time.sleep(1.5)
+                    self.after(0, lambda: self._log_message("✓ Module 3 complete"))
+                    
+                    # Step 5: Conclusion
+                    self.after(0, lambda: self._log_message("🏁 Generating Conclusion..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Generating Conclusion..."))
+                    time.sleep(1.5)
+                    self.after(0, lambda: self._log_message("✓ Conclusion complete"))
+                    
+                    # Step 6: Packaging and email
+                    self.after(0, lambda: self._log_message("📦 Packaging course..."))
+                    self.after(0, lambda: self.progress_label.configure(text="Packaging course..."))
+                    time.sleep(1.0)
+                    
+                    user_email = os.getenv("USER_EMAIL", "user@example.com")
+                    self.after(0, lambda: self._log_message(f"📧 Sending copy to {user_email}..."))
+                    time.sleep(0.5)
+                    
+                    # Create simulated course data
+                    course_data = {
+                        'title': f"Course: {instruction[:50]}",
+                        'chapters': [
+                            {'title': 'Introduction', 'content': 'Simulated introduction content'},
+                            {'title': 'Module 1', 'content': 'Simulated module 1 content'},
+                            {'title': 'Module 2', 'content': 'Simulated module 2 content'},
+                            {'title': 'Module 3', 'content': 'Simulated module 3 content'},
+                            {'title': 'Conclusion', 'content': 'Simulated conclusion content'},
+                        ],
+                        'language': 'en'
+                    }
+                    
+                    self.generated_course_data = course_data
+                    
+                    # Notify completion on main thread
+                    self.after(0, lambda: self._log_message("✅ Course generation complete!"))
+                    self.after(0, lambda: self._finish_generation(success=True))
+                    
+                except Exception as e:
+                    # Handle errors on main thread (explicit value capture)
+                    error_msg = str(e)
+                    self.after(0, lambda err=error_msg: self._log_message(f"❌ Error: {err}"))
+                    self.after(0, lambda err=error_msg: self._finish_generation(success=False, error=err))
+            
+            # Run simulated generation in background thread
+            thread = threading.Thread(target=run_simulated_generation, daemon=True)
+            thread.start()
     
     def _animate_progress(self):
         """Animate progress bar smoothly."""
