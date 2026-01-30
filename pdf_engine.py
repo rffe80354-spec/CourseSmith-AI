@@ -27,7 +27,7 @@ from reportlab.platypus import (
 from reportlab.lib.colors import HexColor, Color
 from reportlab.pdfgen import canvas
 
-from utils import resource_path
+from utils import resource_path, _register_roboto_fonts
 from session_manager import is_active, get_tier, SecurityError
 from generator import ContentDistributor, distribute_chapter_content
 
@@ -41,7 +41,7 @@ class PDFBuilder:
     - Header with optional logo
     - Footer with page numbers and website URL
     - Markdown header support (# and ##)
-    - Clean typography using Helvetica
+    - Clean typography using Roboto fonts with Unicode support
     """
 
     def __init__(self, filename, tier=None):
@@ -61,16 +61,30 @@ class PDFBuilder:
         self.distributor = None  # Will be created when needed
         self.custom_images = []  # List of custom image paths to embed
         self.styles = getSampleStyleSheet()
+        
+        # Register Roboto fonts for proper Unicode/Cyrillic support
+        self._fonts_available = _register_roboto_fonts()
+        self._font_regular = 'Roboto' if self._fonts_available else 'Helvetica'
+        self._font_bold = 'Roboto-Bold' if self._fonts_available else 'Helvetica-Bold'
+        
         self._setup_custom_styles()
 
     def _setup_custom_styles(self):
         """Setup custom paragraph styles for the document."""
+        # Update base styles to use proper fonts for Unicode support
+        self.styles['Normal'].fontName = self._font_regular
+        self.styles['BodyText'].fontName = self._font_regular
+        self.styles['Title'].fontName = self._font_bold
+        self.styles['Heading1'].fontName = self._font_bold
+        self.styles['Heading2'].fontName = self._font_bold
+        self.styles['Heading3'].fontName = self._font_bold
+        
         # Cover title style
         self.styles.add(
             ParagraphStyle(
                 name="CoverTitle",
                 parent=self.styles["Heading1"],
-                fontName="Helvetica-Bold",
+                fontName=self._font_bold,
                 fontSize=36,
                 leading=44,
                 alignment=TA_CENTER,
@@ -84,7 +98,7 @@ class PDFBuilder:
             ParagraphStyle(
                 name="CoverSubtitle",
                 parent=self.styles["Normal"],
-                fontName="Helvetica",
+                fontName=self._font_regular,
                 fontSize=18,
                 leading=24,
                 alignment=TA_CENTER,
@@ -98,7 +112,7 @@ class PDFBuilder:
             ParagraphStyle(
                 name="ChapterHeader",
                 parent=self.styles["Heading1"],
-                fontName="Helvetica-Bold",
+                fontName=self._font_bold,
                 fontSize=24,
                 leading=30,
                 spaceBefore=20,
@@ -112,7 +126,7 @@ class PDFBuilder:
             ParagraphStyle(
                 name="SectionHeader",
                 parent=self.styles["Heading2"],
-                fontName="Helvetica-Bold",
+                fontName=self._font_bold,
                 fontSize=16,
                 leading=20,
                 spaceBefore=15,
@@ -126,7 +140,7 @@ class PDFBuilder:
             ParagraphStyle(
                 name="CustomBodyText",
                 parent=self.styles["Normal"],
-                fontName="Helvetica",
+                fontName=self._font_regular,
                 fontSize=11,
                 leading=16,
                 alignment=TA_JUSTIFY,
@@ -140,7 +154,7 @@ class PDFBuilder:
             ParagraphStyle(
                 name="Footer",
                 parent=self.styles["Normal"],
-                fontName="Helvetica",
+                fontName=self._font_regular,
                 fontSize=9,
                 leading=11,
                 alignment=TA_CENTER,
@@ -181,7 +195,7 @@ class PDFBuilder:
         
         # Page number on right
         page_num = f"Page {doc.page}"
-        canvas_obj.setFont("Helvetica", 9)
+        canvas_obj.setFont(self._font_regular, 9)
         canvas_obj.setFillColor(HexColor("#666666"))
         canvas_obj.drawRightString(
             self.page_width - self.margin,
