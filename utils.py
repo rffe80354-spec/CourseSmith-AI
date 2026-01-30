@@ -9,6 +9,8 @@ import os
 import sys
 import json
 import subprocess
+import logging
+import threading
 import tkinter as tk
 from tkinter import Menu, TclError
 from datetime import datetime, timezone
@@ -19,8 +21,13 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 
-# Global flag to track if fonts are registered
-_FONTS_REGISTERED = False
+# Set up module logger
+_logger = logging.getLogger(__name__)
+
+# Thread-safe font registration tracking
+_font_registration_lock = threading.Lock()
+_fonts_registered = False
+_fonts_available = False
 
 
 def _register_roboto_fonts():
@@ -31,40 +38,63 @@ def _register_roboto_fonts():
     in ReportLab PDF generation. These fonts support Cyrillic and other
     Unicode characters, fixing the "squares instead of text" issue.
     
-    The function is idempotent - it only registers fonts once.
-    Falls back to Helvetica if fonts are not found.
+    Thread-safe: Uses a lock to prevent duplicate registration attempts
+    when called from multiple threads.
+    
+    Returns:
+        bool: True if Roboto fonts are available for use, False if falling
+              back to Helvetica (either due to missing files or registration error).
+              Subsequent calls return the cached result.
     """
-    global _FONTS_REGISTERED
+    global _fonts_registered, _fonts_available
     
-    if _FONTS_REGISTERED:
-        return True
-    
-    try:
-        # Get the path to fonts directory (works for both dev and PyInstaller)
-        fonts_dir = resource_path('fonts')
+    with _font_registration_lock:
+        # Return cached result if already attempted
+        if _fonts_registered:
+            return _fonts_available
         
-        roboto_regular_path = os.path.join(fonts_dir, 'Roboto-Regular.ttf')
-        roboto_bold_path = os.path.join(fonts_dir, 'Roboto-Bold.ttf')
-        
-        # Check if font files exist
-        if not os.path.exists(roboto_regular_path):
-            print(f"WARNING: Roboto-Regular.ttf not found at {roboto_regular_path}. Using Helvetica fallback.")
+        try:
+            # Get the path to fonts directory (works for both dev and PyInstaller)
+            fonts_dir = resource_path('fonts')
+            
+            roboto_regular_path = os.path.join(fonts_dir, 'Roboto-Regular.ttf')
+            roboto_bold_path = os.path.join(fonts_dir, 'Roboto-Bold.ttf')
+            
+            # Check if font files exist
+            if not os.path.exists(roboto_regular_path):
+                _logger.warning(
+                    "Roboto-Regular.ttf not found at %s. Using Helvetica fallback.",
+                    roboto_regular_path
+                )
+                _fonts_registered = True
+                _fonts_available = False
+                return False
+            
+            if not os.path.exists(roboto_bold_path):
+                _logger.warning(
+                    "Roboto-Bold.ttf not found at %s. Using Helvetica fallback.",
+                    roboto_bold_path
+                )
+                _fonts_registered = True
+                _fonts_available = False
+                return False
+            
+            # Register fonts
+            pdfmetrics.registerFont(TTFont('Roboto', roboto_regular_path))
+            pdfmetrics.registerFont(TTFont('Roboto-Bold', roboto_bold_path))
+            
+            _fonts_registered = True
+            _fonts_available = True
+            return True
+            
+        except Exception as e:
+            _logger.warning(
+                "Failed to register Roboto fonts: %s. Using Helvetica fallback.",
+                e
+            )
+            _fonts_registered = True
+            _fonts_available = False
             return False
-        
-        if not os.path.exists(roboto_bold_path):
-            print(f"WARNING: Roboto-Bold.ttf not found at {roboto_bold_path}. Using Helvetica fallback.")
-            return False
-        
-        # Register fonts
-        pdfmetrics.registerFont(TTFont('Roboto', roboto_regular_path))
-        pdfmetrics.registerFont(TTFont('Roboto-Bold', roboto_bold_path))
-        
-        _FONTS_REGISTERED = True
-        return True
-        
-    except Exception as e:
-        print(f"WARNING: Failed to register Roboto fonts: {e}. Using Helvetica fallback.")
-        return False
 
 
 def resource_path(relative_path):
