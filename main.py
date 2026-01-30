@@ -658,8 +658,13 @@ class EnterpriseApp(ctk.CTk):
     
     def _create_forge_tab(self):
         """Create the Forge tab - main course generation interface."""
-        # Main container with padding
-        container = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        # Main scrollable container with padding for High DPI / scaled displays
+        container = ctk.CTkScrollableFrame(
+            self.content_frame,
+            fg_color="transparent",
+            scrollbar_button_color=COLORS['accent'],
+            scrollbar_button_hover_color=COLORS['accent_hover']
+        )
         container.pack(fill="both", expand=True, padx=40, pady=40)
         
         # Title
