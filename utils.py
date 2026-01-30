@@ -14,6 +14,58 @@ from tkinter import Menu, TclError
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
+# ReportLab imports for font registration
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+
+# Global flag to track if fonts are registered
+_FONTS_REGISTERED = False
+
+
+def _register_roboto_fonts():
+    """
+    Register Roboto fonts for PDF generation with proper Unicode support.
+    
+    This function registers Roboto-Regular and Roboto-Bold fonts for use
+    in ReportLab PDF generation. These fonts support Cyrillic and other
+    Unicode characters, fixing the "squares instead of text" issue.
+    
+    The function is idempotent - it only registers fonts once.
+    Falls back to Helvetica if fonts are not found.
+    """
+    global _FONTS_REGISTERED
+    
+    if _FONTS_REGISTERED:
+        return True
+    
+    try:
+        # Get the path to fonts directory (works for both dev and PyInstaller)
+        fonts_dir = resource_path('fonts')
+        
+        roboto_regular_path = os.path.join(fonts_dir, 'Roboto-Regular.ttf')
+        roboto_bold_path = os.path.join(fonts_dir, 'Roboto-Bold.ttf')
+        
+        # Check if font files exist
+        if not os.path.exists(roboto_regular_path):
+            print(f"WARNING: Roboto-Regular.ttf not found at {roboto_regular_path}. Using Helvetica fallback.")
+            return False
+        
+        if not os.path.exists(roboto_bold_path):
+            print(f"WARNING: Roboto-Bold.ttf not found at {roboto_bold_path}. Using Helvetica fallback.")
+            return False
+        
+        # Register fonts
+        pdfmetrics.registerFont(TTFont('Roboto', roboto_regular_path))
+        pdfmetrics.registerFont(TTFont('Roboto-Bold', roboto_bold_path))
+        
+        _FONTS_REGISTERED = True
+        return True
+        
+    except Exception as e:
+        print(f"WARNING: Failed to register Roboto fonts: {e}. Using Helvetica fallback.")
+        return False
+
 
 def resource_path(relative_path):
     """
@@ -902,6 +954,13 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
     from reportlab.lib.colors import HexColor
     from xml.sax.saxutils import escape
     
+    # Register Roboto fonts for proper Unicode/Cyrillic support
+    fonts_available = _register_roboto_fonts()
+    
+    # Choose font names based on availability
+    font_regular = 'Roboto' if fonts_available else 'Helvetica'
+    font_bold = 'Roboto-Bold' if fonts_available else 'Helvetica-Bold'
+    
     # Validate and clamp page_count to acceptable range (5-100)
     page_count = max(5, min(100, int(page_count)))
     
@@ -930,6 +989,14 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
     doc = SimpleDocTemplate(output_path, pagesize=letter)
     styles = getSampleStyleSheet()
     
+    # Update base styles to use Roboto fonts for proper Unicode support
+    styles['Normal'].fontName = font_regular
+    styles['BodyText'].fontName = font_regular
+    styles['Title'].fontName = font_bold
+    styles['Heading1'].fontName = font_bold
+    styles['Heading2'].fontName = font_bold
+    styles['Heading3'].fontName = font_bold
+    
     # Create custom styles for professional appearance
     title_style = ParagraphStyle(
         'CourseTitle',
@@ -939,7 +1006,7 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
         spaceAfter=40,
         spaceBefore=60,
         textColor=HexColor('#1a1a2e'),
-        fontName='Helvetica-Bold'
+        fontName=font_bold
     )
     
     subtitle_style = ParagraphStyle(
@@ -949,7 +1016,7 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
         alignment=TA_CENTER,
         spaceAfter=30,
         textColor=HexColor('#666666'),
-        fontName='Helvetica-Oblique'
+        fontName=font_regular  # Roboto doesn't have oblique, use regular
     )
     
     chapter_style = ParagraphStyle(
@@ -959,7 +1026,7 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
         spaceAfter=16,
         spaceBefore=24,
         textColor=HexColor('#2c3e50'),
-        fontName='Helvetica-Bold'
+        fontName=font_bold
     )
     
     content_style = ParagraphStyle(
@@ -969,7 +1036,7 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
         spaceAfter=12,
         leading=16,
         alignment=TA_JUSTIFY,
-        fontName='Helvetica'
+        fontName=font_regular
     )
     
     # Build document content
@@ -991,7 +1058,7 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
         alignment=TA_CENTER,
         spaceAfter=30,
         textColor=HexColor('#1a1a2e'),
-        fontName='Helvetica-Bold'
+        fontName=font_bold
     )
     toc_entry_style = ParagraphStyle(
         'TOCEntry',
@@ -999,7 +1066,7 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
         fontSize=12,
         spaceAfter=8,
         leftIndent=20,
-        fontName='Helvetica'
+        fontName=font_regular
     )
     
     story.append(Paragraph("Table of Contents", toc_title_style))
