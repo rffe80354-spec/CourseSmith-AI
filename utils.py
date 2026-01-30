@@ -1045,7 +1045,7 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
             story.append(PageBreak())
     
     # Add media files appendix if any media files were attached
-    if media_files and len(media_files) > 0:
+    if media_files:
         story.append(PageBreak())
         story.append(Paragraph("Attached Media Files", chapter_style))
         story.append(Spacer(1, 0.2 * inch))

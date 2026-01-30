@@ -1119,7 +1119,7 @@ class EnterpriseApp(ctk.CTk):
         
         # Define file types for images, audio, and video
         filetypes = [
-            ("All Media Files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp *.mp3 *.wav *.ogg *.mp4 *.avi *.mov *.mkv *.webm"),
+            ("All Media Files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp *.mp3 *.wav *.ogg *.m4a *.flac *.mp4 *.avi *.mov *.mkv *.webm"),
             ("Images", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
             ("Audio", "*.mp3 *.wav *.ogg *.m4a *.flac"),
             ("Video", "*.mp4 *.avi *.mov *.mkv *.webm"),
@@ -1429,7 +1429,7 @@ class EnterpriseApp(ctk.CTk):
                     if hasattr(self, 'generated_pdf_path') and self.generated_pdf_path:
                         messagebox.showinfo(
                             "Success!", 
-                            f"Success! PDF saved to:\n{self.generated_pdf_path}"
+                            f"PDF saved to:\n{self.generated_pdf_path}"
                         )
                     else:
                         # Fallback if PDF path not available
