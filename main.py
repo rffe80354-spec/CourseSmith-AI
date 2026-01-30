@@ -186,6 +186,10 @@ class EnterpriseApp(ctk.CTk):
         self.license_valid = False  # Track license validation state
         self.license_data = None  # Store validated license data
         
+        # Forge tab state persistence (preserve data when switching tabs)
+        self.saved_prompt_text = ""  # Store instruction textbox content
+        self.saved_log_text = ""  # Store log console content
+        
         # Initialize coursesmith_engine
         self.coursesmith_engine = None
         self._init_coursesmith_engine()
@@ -629,6 +633,10 @@ class EnterpriseApp(ctk.CTk):
     
     def _switch_tab(self, tab_id):
         """Switch to a different tab."""
+        # Save Forge tab state before switching away
+        if self.current_tab == "forge":
+            self._save_forge_state()
+        
         self.current_tab = tab_id
         
         # Update button states
@@ -709,6 +717,13 @@ class EnterpriseApp(ctk.CTk):
             border_width=2
         )
         self.instruction_textbox.pack(fill="both", expand=True, padx=25, pady=(0, 25))
+        
+        # Restore saved prompt text if available
+        if self.saved_prompt_text:
+            self.instruction_textbox.insert("1.0", self.saved_prompt_text)
+        
+        # Bind KeyRelease event to auto-save prompt text
+        self.instruction_textbox.bind("<KeyRelease>", self._on_prompt_change)
         
         # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         from utils import add_context_menu
@@ -806,6 +821,12 @@ class EnterpriseApp(ctk.CTk):
         )
         self.log_console.pack(fill="both", expand=True, padx=25, pady=(0, 25))
         
+        # Restore saved log text if available
+        if self.saved_log_text:
+            self.log_console.configure(state="normal")
+            self.log_console.insert("1.0", self.saved_log_text)
+            self.log_console.configure(state="disabled")
+        
         # Progress frame (initially hidden)
         self.progress_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
         
@@ -826,6 +847,30 @@ class EnterpriseApp(ctk.CTk):
         )
         self.progress_bar.pack(pady=(0, 20))
         self.progress_bar.set(0)
+    
+    def _save_forge_state(self):
+        """Save Forge tab state (prompt and log) for persistence."""
+        try:
+            # Save prompt text
+            if hasattr(self, 'instruction_textbox') and self.instruction_textbox.winfo_exists():
+                self.saved_prompt_text = self.instruction_textbox.get("1.0", "end-1c")
+            
+            # Save log text
+            if hasattr(self, 'log_console') and self.log_console.winfo_exists():
+                self.log_console.configure(state="normal")
+                self.saved_log_text = self.log_console.get("1.0", "end-1c")
+                self.log_console.configure(state="disabled")
+        except Exception:
+            # Widget may have been destroyed
+            pass
+    
+    def _on_prompt_change(self, event=None):
+        """Handle prompt text changes - auto-save to state variable."""
+        try:
+            if hasattr(self, 'instruction_textbox') and self.instruction_textbox.winfo_exists():
+                self.saved_prompt_text = self.instruction_textbox.get("1.0", "end-1c")
+        except Exception:
+            pass
     
     def _create_library_tab(self):
         """Create the Library tab."""
