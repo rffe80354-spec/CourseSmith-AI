@@ -190,6 +190,9 @@ class EnterpriseApp(ctk.CTk):
         self.saved_prompt_text = ""  # Store instruction textbox content
         self.saved_log_text = ""  # Store log console content
         
+        # Media files storage for attachments
+        self.selected_media_files = []
+        
         # Initialize coursesmith_engine
         self.coursesmith_engine = None
         self._init_coursesmith_engine()
@@ -765,6 +768,32 @@ class EnterpriseApp(ctk.CTk):
         )
         self.page_count_slider.pack(anchor="w")
         
+        # Media Import section (below slider)
+        media_frame = ctk.CTkFrame(settings_panel, fg_color="transparent")
+        media_frame.pack(fill="x", padx=25, pady=(10, 20))
+        
+        # Media Import button (blue/gray color to differentiate from Generate)
+        self.media_import_btn = ctk.CTkButton(
+            media_frame,
+            text="📂 Import Images/Audio/Video",
+            font=ctk.CTkFont(size=14),
+            height=40,
+            corner_radius=10,
+            fg_color="#3A7CA5",  # Blue color
+            hover_color="#4A8CB5",
+            command=self._open_media_dialog
+        )
+        self.media_import_btn.pack(side="left", padx=(0, 15))
+        
+        # Media label showing selection status
+        self.media_label = ctk.CTkLabel(
+            media_frame,
+            text="No media selected",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text_dim']
+        )
+        self.media_label.pack(side="left", anchor="w")
+        
         # Action buttons frame
         action_frame = ctk.CTkFrame(container, fg_color="transparent")
         action_frame.pack(fill="x", pady=(0, 20))
@@ -1081,6 +1110,40 @@ class EnterpriseApp(ctk.CTk):
         page_count = int(value)
         self.page_count_label.configure(text=f"Target: {page_count} Pages")
     
+    def _open_media_dialog(self):
+        """
+        Open file dialog to select media files (images, audio, video).
+        Updates self.selected_media_files and the media_label.
+        """
+        from tkinter import filedialog
+        
+        # Define file types for images, audio, and video
+        filetypes = [
+            ("All Media Files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp *.mp3 *.wav *.ogg *.mp4 *.avi *.mov *.mkv *.webm"),
+            ("Images", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
+            ("Audio", "*.mp3 *.wav *.ogg *.m4a *.flac"),
+            ("Video", "*.mp4 *.avi *.mov *.mkv *.webm"),
+            ("All Files", "*.*")
+        ]
+        
+        # Open file dialog allowing multiple file selection
+        selected_files = filedialog.askopenfilenames(
+            title="Select Media Files",
+            filetypes=filetypes
+        )
+        
+        if selected_files:
+            # Update the selected media files list
+            self.selected_media_files = list(selected_files)
+            
+            # Update the label to show count
+            file_count = len(self.selected_media_files)
+            self.media_label.configure(
+                text=f"Attached: {file_count} file{'s' if file_count != 1 else ''}",
+                text_color=COLORS['text']
+            )
+        # If no files selected, keep the current state (don't clear existing selection)
+    
     def _log_message(self, message: str):
         """
         Add a timestamped message to the logging console.
@@ -1097,13 +1160,14 @@ class EnterpriseApp(ctk.CTk):
         self.log_console.see("end")  # Scroll to bottom
         self.log_console.configure(state="disabled")
     
-    def _generate_pdf_file(self, course_data: dict) -> str:
+    def _generate_pdf_file(self, course_data: dict, media_files: list = None) -> str:
         """
         Generate a real PDF file from course data and save to Downloads folder.
         Uses the shared generate_pdf utility function from utils module.
         
         Args:
             course_data: Dictionary containing 'title' and 'chapters' list
+            media_files: Optional list of media file paths to include
             
         Returns:
             str: Path to the generated PDF file
@@ -1112,7 +1176,7 @@ class EnterpriseApp(ctk.CTk):
         # Get page count from slider (default to 10 if not set)
         page_count = getattr(self, 'page_count_var', None)
         target_pages = page_count.get() if page_count else 10
-        return generate_pdf(course_data, page_count=target_pages)
+        return generate_pdf(course_data, page_count=target_pages, media_files=media_files)
     
     def _start_generation(self):
         """Start course generation with animated progress and detailed logging."""
@@ -1172,6 +1236,15 @@ class EnterpriseApp(ctk.CTk):
                     
                     # Store the result
                     self.generated_course_data = course_data
+                    
+                    # Generate PDF file to Downloads folder
+                    self.after(0, lambda: self._log_message("📄 Rendering PDF document..."))
+                    pdf_path = self._generate_pdf_file(course_data, media_files=self.selected_media_files)
+                    self.generated_pdf_path = pdf_path
+                    
+                    # Log PDF save location
+                    pdf_filename = os.path.basename(pdf_path)
+                    self.after(0, lambda fn=pdf_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
                     
                     # Add email notification log - use actual user email from login
                     user_email = "user@example.com"
@@ -1257,7 +1330,7 @@ class EnterpriseApp(ctk.CTk):
                     # Generate real PDF file to Downloads folder
                     # The generate_pdf function uses PROCEDURAL GENERATION to create
                     # unique chapter titles and varied content based on target_pages
-                    pdf_path = self._generate_pdf_file(course_data)
+                    pdf_path = self._generate_pdf_file(course_data, media_files=self.selected_media_files)
                     
                     # Step N+2: File saved to Downloads (include filename)
                     pdf_filename = os.path.basename(pdf_path)
@@ -1352,23 +1425,23 @@ class EnterpriseApp(ctk.CTk):
                     with open(filepath, 'w', encoding='utf-8') as f:
                         json.dump(self.generated_course_data, f, indent=2, ensure_ascii=False)
                     
-                    # Show success message with course info (include PDF path if generated)
-                    course_title = self.generated_course_data.get('title', 'Course')
-                    chapter_count = len(self.generated_course_data.get('chapters', []))
-                    
-                    # Include PDF path in message if available
-                    pdf_info = ""
+                    # Show success message with PDF path prominently displayed
                     if hasattr(self, 'generated_pdf_path') and self.generated_pdf_path:
-                        pdf_info = f"\n\nPDF saved to:\n{self.generated_pdf_path}"
-                    
-                    messagebox.showinfo(
-                        "Success", 
-                        f"Course generated successfully!\n\n"
-                        f"Title: {course_title}\n"
-                        f"Chapters: {chapter_count}\n"
-                        f"Language: {self.generated_course_data.get('language', 'en')}"
-                        f"{pdf_info}"
-                    )
+                        messagebox.showinfo(
+                            "Success!", 
+                            f"Success! PDF saved to:\n{self.generated_pdf_path}"
+                        )
+                    else:
+                        # Fallback if PDF path not available
+                        course_title = self.generated_course_data.get('title', 'Course')
+                        chapter_count = len(self.generated_course_data.get('chapters', []))
+                        messagebox.showinfo(
+                            "Success", 
+                            f"Course generated successfully!\n\n"
+                            f"Title: {course_title}\n"
+                            f"Chapters: {chapter_count}\n"
+                            f"Language: {self.generated_course_data.get('language', 'en')}"
+                        )
                 except Exception as save_error:
                     # Still show success but mention save error
                     messagebox.showwarning(

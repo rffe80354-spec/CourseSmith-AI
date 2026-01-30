@@ -871,7 +871,7 @@ def _generate_chapter_content(chapter_num: int, total_chapters: int, chapter_tit
     return "\n\n".join(content_parts)
 
 
-def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path: Optional[str] = None) -> str:
+def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path: Optional[str] = None, media_files: list = None) -> str:
     """
     Generate a styled PDF document from course data using reportlab.
     Uses PROCEDURAL GENERATION to create unique chapter titles and varied content.
@@ -885,6 +885,7 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
         page_count: Target number of pages (5-100). Determines unique chapter count.
                    Formula: 1 chapter per 2 pages (page_count // 2).
         output_path: Optional custom output path. If None, saves to Downloads folder.
+        media_files: Optional list of media file paths for reference (listed at end of PDF).
         
     Returns:
         str: Path to the generated PDF file
@@ -1042,6 +1043,18 @@ def generate_pdf(course_data: Dict[str, Any], page_count: int = 10, output_path:
         # Add page break between chapters (except last)
         if chapter_num < num_chapters:
             story.append(PageBreak())
+    
+    # Add media files appendix if any media files were attached
+    if media_files and len(media_files) > 0:
+        story.append(PageBreak())
+        story.append(Paragraph("Attached Media Files", chapter_style))
+        story.append(Spacer(1, 0.2 * inch))
+        
+        for idx, media_path in enumerate(media_files, 1):
+            filename = os.path.basename(media_path)
+            story.append(Paragraph(f"{idx}. {escape(filename)}", content_style))
+        
+        story.append(Spacer(1, 0.3 * inch))
     
     # Build the PDF
     doc.build(story)
