@@ -90,6 +90,9 @@ DURATION_MAP = {
 # Lazy loading configuration
 LAZY_LOAD_BATCH_SIZE = 50  # Number of license rows to render per batch
 
+# HWID display truncation length
+HWID_TRUNCATE_LENGTH = 25
+
 
 def get_supabase_client():
     """Get Supabase client instance."""
@@ -917,7 +920,7 @@ class AdminKeygenApp(ctk.CTk):
         
         # Format HWID display
         if hwid:
-            hwid_preview = hwid[:25] + "..." if len(hwid) > 25 else hwid
+            hwid_preview = hwid[:HWID_TRUNCATE_LENGTH] + "..." if len(hwid) > HWID_TRUNCATE_LENGTH else hwid
         else:
             hwid_preview = 'Not Bound'
         
@@ -1235,7 +1238,14 @@ Send this key to the buyer for activation.
                 return
             
             # Execute: UPDATE licenses SET credits = credits + X WHERE license_key = ...
-            new_credits = current_credits + amount
+            # Re-fetch current credits to minimize race condition window
+            fresh_response = client.table("licenses").select("credits").eq("license_key", license_key).execute()
+            if fresh_response.data and len(fresh_response.data) > 0:
+                fresh_credits = fresh_response.data[0].get('credits', 0)
+            else:
+                fresh_credits = current_credits
+            
+            new_credits = fresh_credits + amount
             client.table("licenses").update({
                 "credits": new_credits
             }).eq("license_key", license_key).execute()
@@ -1244,7 +1254,7 @@ Send this key to the buyer for activation.
                 "Success",
                 f"Credits refilled successfully!\n\n"
                 f"Key: {license_key}\n"
-                f"Previous credits: {current_credits}\n"
+                f"Previous credits: {fresh_credits}\n"
                 f"Added: +{amount}\n"
                 f"New total: {new_credits}"
             )
@@ -1338,7 +1348,7 @@ Send this key to the buyer for activation.
         info_frame = ctk.CTkFrame(manage_window, corner_radius=8, fg_color=COLORS['sidebar'])
         info_frame.pack(fill="x", padx=20, pady=10)
         
-        hwid_display = hwid[:30] + "..." if hwid and len(hwid) > 30 else (hwid or "Not Bound")
+        hwid_display = hwid[:HWID_TRUNCATE_LENGTH] + "..." if hwid and len(hwid) > HWID_TRUNCATE_LENGTH else (hwid or "Not Bound")
         key_info = ctk.CTkLabel(
             info_frame,
             text=f"Key: {license_key}\nEmail: {email}\nCredits: {credits}\nHWID: {hwid_display}\nBanned: {'Yes' if is_banned else 'No'}",
@@ -1533,7 +1543,7 @@ Send this key to the buyer for activation.
             "Confirm Reset HWID",
             f"Are you sure you want to reset the HWID for this license?\n\n"
             f"Key: {license_key}\n"
-            f"Current HWID: {current_hwid[:30]}...\n\n"
+            f"Current HWID: {current_hwid[:HWID_TRUNCATE_LENGTH]}...\n\n"
             f"This will allow the license to be activated on a new device."
         ):
             return
