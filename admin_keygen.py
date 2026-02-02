@@ -240,105 +240,26 @@ class AdminKeygenApp(ctk.CTk):
         # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.email_entry)
         
-        # Tier selection (now always visible - no God Mode)
-        tier_label = ctk.CTkLabel(
+        # Initial Credits input (NEW SIMPLIFIED SCHEMA)
+        credits_label = ctk.CTkLabel(
             input_scroll,
-            text="License Tier:",
+            text="Initial Credits:",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS['text']
         )
-        tier_label.pack(pady=(5, 5), padx=20, anchor="w")
+        credits_label.pack(pady=(5, 5), padx=20, anchor="w")
         
-        self.tier_var = ctk.StringVar(value="standard")
-        
-        tier_options = ctk.CTkFrame(input_scroll, fg_color="transparent")
-        tier_options.pack(fill="x", padx=20, pady=(0, 15))
-        
-        tier_radio1 = ctk.CTkRadioButton(
-            tier_options,
-            text="Standard - Basic Features",
-            variable=self.tier_var,
-            value="standard",
-            font=ctk.CTkFont(size=12),
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover']
-        )
-        tier_radio1.pack(anchor="w", pady=4)
-        
-        tier_radio2 = ctk.CTkRadioButton(
-            tier_options,
-            text="Extended - Full Branding",
-            variable=self.tier_var,
-            value="extended",
-            font=ctk.CTkFont(size=12),
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover']
-        )
-        tier_radio2.pack(anchor="w", pady=4)
-        
-        tier_radio3 = ctk.CTkRadioButton(
-            tier_options,
-            text="Professional - Premium Support",
-            variable=self.tier_var,
-            value="professional",
-            font=ctk.CTkFont(size=12),
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover']
-        )
-        tier_radio3.pack(anchor="w", pady=4)
-        
-        # Duration input (NEW)
-        duration_label = ctk.CTkLabel(
+        credits_help = ctk.CTkLabel(
             input_scroll,
-            text="Duration (Days):",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=COLORS['text']
-        )
-        duration_label.pack(pady=(5, 5), padx=20, anchor="w")
-        
-        duration_help = ctk.CTkLabel(
-            input_scroll,
-            text="Enter days (3, 30, 90, 180, 365) or 'lifetime' (case-insensitive)",
+            text="Number of generation credits for this license (e.g., 10, 50, 100)",
             font=ctk.CTkFont(size=11),
             text_color=COLORS['text_dim']
         )
-        duration_help.pack(pady=(0, 5), padx=20, anchor="w")
+        credits_help.pack(pady=(0, 5), padx=20, anchor="w")
         
-        self.duration_entry = ctk.CTkEntry(
+        self.credits_entry = ctk.CTkEntry(
             input_scroll,
-            placeholder_text="lifetime",
-            font=ctk.CTkFont(size=12),
-            height=38,
-            fg_color=COLORS['background'],
-            border_color=COLORS['accent'],
-            border_width=2
-        )
-        self.duration_entry.pack(fill="x", padx=20, pady=(0, 15))
-        self.duration_entry.insert(0, "lifetime")
-        
-        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
-        add_context_menu(self.duration_entry)
-        
-        # Device Limit input
-        device_label = ctk.CTkLabel(
-            input_scroll,
-            text="Max Devices (HWID Limit):",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=COLORS['text']
-        )
-        device_label.pack(pady=(5, 5), padx=20, anchor="w")
-        
-        device_help = ctk.CTkLabel(
-            input_scroll,
-            text="Number of devices that can use this license",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS['text_dim']
-        )
-        device_help.pack(pady=(0, 5), padx=20, anchor="w")
-        
-        self.device_limit_entry = ctk.CTkEntry(
-            input_scroll,
-            placeholder_text="3",
+            placeholder_text="10",
             font=ctk.CTkFont(size=12),
             height=38,
             width=120,
@@ -346,11 +267,11 @@ class AdminKeygenApp(ctk.CTk):
             border_color=COLORS['accent'],
             border_width=2
         )
-        self.device_limit_entry.pack(padx=20, pady=(0, 15), anchor="w")
-        self.device_limit_entry.insert(0, "3")
+        self.credits_entry.pack(padx=20, pady=(0, 15), anchor="w")
+        self.credits_entry.insert(0, "10")
         
         # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
-        add_context_menu(self.device_limit_entry)
+        add_context_menu(self.credits_entry)
         
         # Generate button
         self.generate_btn = ctk.CTkButton(
@@ -413,6 +334,18 @@ class AdminKeygenApp(ctk.CTk):
         )
         self.manage_key_btn.pack(fill="x", padx=20, pady=(0, 15))
         
+        # Refill Key button (NEW - Credit System)
+        self.refill_key_btn = ctk.CTkButton(
+            input_scroll,
+            text="💰 Refill Key",
+            font=ctk.CTkFont(size=12),
+            height=35,
+            fg_color=COLORS['sidebar'],
+            hover_color=COLORS['accent'],
+            command=self._on_refill_key
+        )
+        self.refill_key_btn.pack(fill="x", padx=20, pady=(0, 15))
+        
         # Status bar
         self.status_label = ctk.CTkLabel(
             left_column,
@@ -452,7 +385,7 @@ class AdminKeygenApp(ctk.CTk):
         
         self.search_entry = ctk.CTkEntry(
             search_frame,
-            placeholder_text="Search by Email, HWID, License Key, or Creation Date (YYYY-MM-DD)",
+            placeholder_text="Search by Email, HWID, or License Key",
             font=ctk.CTkFont(size=12),
             height=38,
             fg_color=COLORS['sidebar'],
@@ -541,7 +474,7 @@ class AdminKeygenApp(ctk.CTk):
         self.search_thread.start()
     
     def _search_licenses(self, search_term):
-        """Search licenses by Email, HWID, License Key, or Creation Date (runs in background thread)."""
+        """Search licenses by Email, HWID, or License Key (runs in background thread)."""
         # Create a local copy to avoid race conditions
         licenses_to_search = list(self.all_licenses)
         filtered = []
@@ -549,14 +482,12 @@ class AdminKeygenApp(ctk.CTk):
         for license_record in licenses_to_search:
             email = str(license_record.get('email', '')).lower()
             key = str(license_record.get('license_key', '')).lower()
-            created = str(license_record.get('created_at', '')).lower()
             hwid = str(license_record.get('hwid', '') or '').lower()
             
-            # Check if search term matches any field
+            # Check if search term matches any field (simplified schema)
             matches = any([
                 search_term in email,
                 search_term in key,
-                search_term in created,
                 search_term in hwid
             ])
             
@@ -578,10 +509,9 @@ class AdminKeygenApp(ctk.CTk):
             self.loading_label.configure(text=f"✓ Loaded {len(self.all_licenses)} license(s)")
     
     def _on_generate(self):
-        """Handle generate button click with Supabase sync."""
+        """Handle generate button click with Supabase sync (Credit System)."""
         email_input = self.email_entry.get().strip()
-        duration_input = self.duration_entry.get().strip().lower()
-        device_limit_input = self.device_limit_entry.get().strip()
+        credits_input = self.credits_entry.get().strip()
         
         if not email_input:
             messagebox.showerror("Error", "Please enter a buyer email.")
@@ -594,55 +524,26 @@ class AdminKeygenApp(ctk.CTk):
             messagebox.showerror("Error", "Please enter a valid email address.")
             return
         
-        # Validate device limit
+        # Validate credits
         try:
-            device_limit = int(device_limit_input) if device_limit_input else 3
-            if device_limit < 1 or device_limit > 100:
-                messagebox.showerror("Error", "Device limit must be between 1 and 100.")
+            credits = int(credits_input) if credits_input else 10
+            if credits < 1:
+                messagebox.showerror("Error", "Credits must be at least 1.")
                 return
         except ValueError:
-            messagebox.showerror("Error", "Device limit must be a valid number.")
+            messagebox.showerror("Error", "Credits must be a valid number.")
             return
-        
-        # Parse duration input
-        duration_code = 'lifetime'
-        if duration_input in DURATION_MAP:
-            duration_code = DURATION_MAP[duration_input]
-        elif duration_input.isdigit():
-            days = int(duration_input)
-            # Map custom days to closest duration
-            if days <= 3:
-                duration_code = '3_day'
-            elif days <= 30:
-                duration_code = '1_month'
-            elif days <= 90:
-                duration_code = '3_month'
-            elif days <= 180:
-                duration_code = '6_month'
-            elif days <= 365:
-                duration_code = '1_year'
-            else:
-                duration_code = 'lifetime'
-        else:
-            # Invalid input - show warning and default to lifetime
-            messagebox.showwarning(
-                "Invalid Duration",
-                f"'{duration_input}' is not a valid duration. Defaulting to 'lifetime'.\n\n"
-                "Valid inputs: 3, 30, 90, 180, 365, or 'lifetime'"
-            )
-        
-        # Get tier
-        tier = self.tier_var.get()
         
         # Generate license key using the actual generate_key function
         try:
-            license_key, expires_at = generate_key(email_input, tier, duration_code)
+            # Use 'standard' tier and 'lifetime' as defaults (no longer configurable)
+            license_key, _ = generate_key(email_input, 'standard', 'lifetime')
             
-            # Sync to Supabase database with device limit
-            sync_success = self._sync_to_supabase(email_input, license_key, tier, expires_at, device_limit)
+            # Sync to Supabase database with credits
+            sync_success = self._sync_to_supabase(email_input, license_key, credits)
             
             # Display the license
-            self._display_license(email_input, tier, license_key, device_limit, duration_input, sync_success)
+            self._display_license(email_input, license_key, credits, sync_success)
             
             # Update status
             sync_status = "✓ Synced to Supabase" if sync_success else "⚠ Local only (Supabase unavailable)"
@@ -659,16 +560,21 @@ class AdminKeygenApp(ctk.CTk):
             messagebox.showerror("Error", f"Failed to generate license: {str(e)}")
             self.status_label.configure(text="Generation failed", text_color="red")
     
-    def _sync_to_supabase(self, email, license_key, tier, expires_at, device_limit=3):
+    def _sync_to_supabase(self, email, license_key, credits):
         """
-        Sync generated license to Supabase database.
+        Sync generated license to Supabase database (Simplified Credit System Schema).
+        
+        New Schema:
+        - license_key (Text, Unique)
+        - credits (Integer)
+        - hwid (Text)
+        - is_banned (Boolean)
+        - email (Text)
         
         Args:
             email: Buyer email
             license_key: Generated license key
-            tier: License tier
-            expires_at: Expiration date (ISO format) or None for lifetime
-            device_limit: Maximum number of devices (default: 3)
+            credits: Initial credits for this license
             
         Returns:
             bool: True if sync successful, False otherwise
@@ -689,24 +595,20 @@ class AdminKeygenApp(ctk.CTk):
                 )
                 return False
             
-            # Prepare license data with device_limit
-            from datetime import datetime, timezone
+            # Prepare license data with NEW simplified schema
             license_data = {
                 'license_key': license_key,
                 'email': email,
-                'tier': tier,  # Ensure tier is correctly set
-                'valid_until': expires_at,
-                'is_banned': False,
-                'used_hwids': [],  # Empty array for new licenses
-                'max_devices': device_limit,  # Use the specified device limit
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'credits': credits,
+                'hwid': None,  # Will be set on first activation
+                'is_banned': False
             }
             
             # Insert into Supabase
             response = client.table("licenses").insert(license_data).execute()
             
             if response.data:
-                print(f"Successfully synced license {license_key} to Supabase with {device_limit} device limit")
+                print(f"Successfully synced license {license_key} to Supabase with {credits} credits")
                 return True
             else:
                 print("Failed to sync to Supabase: No data returned")
@@ -749,9 +651,8 @@ class AdminKeygenApp(ctk.CTk):
             return
         
         try:
-            # Fixed query: Use limit(50) instead of broken pagination
-            # This fetches the first 50 licenses ordered by creation date (most recent first)
-            response = client.table("licenses").select("*").order("created_at", desc=True).limit(50).execute()
+            # Simplified schema - order by license_key instead of created_at
+            response = client.table("licenses").select("*").order("license_key", desc=True).limit(50).execute()
             
             if response.data:
                 self.all_licenses = response.data
@@ -799,7 +700,7 @@ class AdminKeygenApp(ctk.CTk):
             # Fetch next 50 licenses starting from current offset
             # .range(start, end) is inclusive, so end = start + 49 for 50 records
             end_offset = self.current_offset + 49
-            response = client.table("licenses").select("*").order("created_at", desc=True).range(self.current_offset, end_offset).execute()
+            response = client.table("licenses").select("*").order("license_key", desc=True).range(self.current_offset, end_offset).execute()
             
             if response.data:
                 # Append to existing licenses
@@ -860,7 +761,7 @@ class AdminKeygenApp(ctk.CTk):
         else:
             self.loading_label.configure(text=f"✓ Loaded {count} license(s)")
         
-        # Create header row
+        # Create header row (SIMPLIFIED SCHEMA: Email, Key, Credits, HWID, Banned, Actions)
         header_frame = ctk.CTkFrame(
             self.explorer_frame,
             corner_radius=6,
@@ -868,15 +769,14 @@ class AdminKeygenApp(ctk.CTk):
             height=45
         )
         header_frame.pack(fill="x", pady=(0, 10), padx=2)
-        header_frame.grid_columnconfigure(0, weight=2, minsize=200)  # Email - with minsize
-        header_frame.grid_columnconfigure(1, weight=2, minsize=300)  # Key - with minsize
-        header_frame.grid_columnconfigure(2, weight=1)  # Tier
-        header_frame.grid_columnconfigure(3, weight=1)  # Devices
-        header_frame.grid_columnconfigure(4, weight=1)  # Created
-        header_frame.grid_columnconfigure(5, weight=1)  # HWIDs
-        header_frame.grid_columnconfigure(6, weight=0)  # Actions
+        header_frame.grid_columnconfigure(0, weight=2, minsize=200)  # Email
+        header_frame.grid_columnconfigure(1, weight=2, minsize=280)  # License Key
+        header_frame.grid_columnconfigure(2, weight=1)  # Credits
+        header_frame.grid_columnconfigure(3, weight=1, minsize=150)  # HWID
+        header_frame.grid_columnconfigure(4, weight=1)  # Banned
+        header_frame.grid_columnconfigure(5, weight=0)  # Actions
         
-        headers = ["Email", "License Key", "Tier", "Devices", "Created", "HWIDs", "Actions"]
+        headers = ["Email", "License Key", "Credits", "HWID", "Banned", "Actions"]
         for idx, header_text in enumerate(headers):
             header_label = ctk.CTkLabel(
                 header_frame,
@@ -1008,30 +908,18 @@ class AdminKeygenApp(ctk.CTk):
         return textbox
     
     def _create_license_row(self, license_record, idx):
-        """Create a row for a single license in the explorer."""
+        """Create a row for a single license in the explorer (SIMPLIFIED SCHEMA)."""
         email = license_record.get('email', 'N/A')
         key = license_record.get('license_key', 'N/A')
-        tier = license_record.get('tier', 'N/A')
-        device_limit = license_record.get('max_devices', 1)
+        credits = license_record.get('credits', 0)
         hwid = license_record.get('hwid', None)
-        created = license_record.get('created_at', 'N/A')
+        is_banned = license_record.get('is_banned', False)
         
-        # Parse and format date
-        try:
-            from datetime import datetime
-            if created != 'N/A':
-                dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
-                created = dt.strftime("%Y-%m-%d %H:%M")
-        except (ValueError, TypeError):
-            created = 'Invalid Date'
-        
-        # Determine device usage
+        # Format HWID display
         if hwid:
-            device_usage = f"1/{device_limit}"
-            hwid_preview = hwid[:20] + "..." if len(hwid) > 20 else hwid
+            hwid_preview = hwid[:25] + "..." if len(hwid) > 25 else hwid
         else:
-            device_usage = f"0/{device_limit}"
-            hwid_preview = 'None'
+            hwid_preview = 'Not Bound'
         
         # Row background (alternating)
         row_color = COLORS['sidebar'] if idx % 2 == 0 else COLORS['background']
@@ -1043,13 +931,12 @@ class AdminKeygenApp(ctk.CTk):
             height=50
         )
         row_frame.pack(fill="x", pady=3, padx=2)
-        row_frame.grid_columnconfigure(0, weight=2, minsize=200)  # Email - with minsize
-        row_frame.grid_columnconfigure(1, weight=2, minsize=300)  # Key - with minsize
-        row_frame.grid_columnconfigure(2, weight=1)
-        row_frame.grid_columnconfigure(3, weight=1)
-        row_frame.grid_columnconfigure(4, weight=1)
-        row_frame.grid_columnconfigure(5, weight=1)
-        row_frame.grid_columnconfigure(6, weight=0)
+        row_frame.grid_columnconfigure(0, weight=2, minsize=200)  # Email
+        row_frame.grid_columnconfigure(1, weight=2, minsize=280)  # License Key
+        row_frame.grid_columnconfigure(2, weight=1)  # Credits
+        row_frame.grid_columnconfigure(3, weight=1, minsize=150)  # HWID
+        row_frame.grid_columnconfigure(4, weight=1)  # Banned
+        row_frame.grid_columnconfigure(5, weight=0)  # Actions
         
         # Email - selectable textbox
         email_display = email[:35] + "..." if len(email) > 35 else email
@@ -1072,38 +959,18 @@ class AdminKeygenApp(ctk.CTk):
         )
         key_textbox.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
         
-        # Tier - selectable textbox
-        tier_color = "#FFD700" if tier == "professional" else ("#FFA500" if tier == "extended" else "#A0A0A0")
-        tier_textbox = self._create_selectable_text_widget(
+        # Credits - with color coding
+        credits_color = "#00FF00" if credits > 10 else ("#FFA500" if credits > 0 else "#FF0000")
+        credits_textbox = self._create_selectable_text_widget(
             row_frame,
-            tier.upper() if tier != 'N/A' else tier,
+            str(credits),
             ctk.CTkFont(size=11, weight="bold"),
-            tier_color,
+            credits_color,
             row_color
         )
-        tier_textbox.grid(row=0, column=2, padx=10, pady=5, sticky="ew")
+        credits_textbox.grid(row=0, column=2, padx=10, pady=5, sticky="ew")
         
-        # Device usage - selectable textbox
-        device_textbox = self._create_selectable_text_widget(
-            row_frame,
-            device_usage,
-            ctk.CTkFont(size=11),
-            COLORS['text'],
-            row_color
-        )
-        device_textbox.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
-        
-        # Created date - selectable textbox
-        date_textbox = self._create_selectable_text_widget(
-            row_frame,
-            created,
-            ctk.CTkFont(size=10),
-            COLORS['text_dim'],
-            row_color
-        )
-        date_textbox.grid(row=0, column=4, padx=10, pady=5, sticky="ew")
-        
-        # HWIDs preview - selectable textbox with right-click menu
+        # HWID preview - selectable textbox with right-click menu
         hwid_textbox = self._create_selectable_text_widget(
             row_frame,
             hwid_preview,
@@ -1112,14 +979,26 @@ class AdminKeygenApp(ctk.CTk):
             row_color,
             width=150
         )
-        hwid_textbox.grid(row=0, column=5, padx=10, pady=5, sticky="ew")
+        hwid_textbox.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
         
         # Add "Reset HWID" context menu to HWID textbox (always show menu)
         self._add_hwid_context_menu(hwid_textbox, license_record)
         
+        # Banned status
+        banned_text = "🚫 Yes" if is_banned else "✓ No"
+        banned_color = "#FF0000" if is_banned else "#00FF00"
+        banned_textbox = self._create_selectable_text_widget(
+            row_frame,
+            banned_text,
+            ctk.CTkFont(size=10, weight="bold"),
+            banned_color,
+            row_color
+        )
+        banned_textbox.grid(row=0, column=4, padx=10, pady=5, sticky="ew")
+        
         # Action buttons frame
         action_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
-        action_frame.grid(row=0, column=6, padx=10, pady=10)
+        action_frame.grid(row=0, column=5, padx=10, pady=10)
         
         # Copy Email button
         copy_email_btn = ctk.CTkButton(
@@ -1271,9 +1150,8 @@ class AdminKeygenApp(ctk.CTk):
             else f"✓ Found {len(self.filtered_licenses)} match(es)"
         ))
     
-    def _display_license(self, email, tier, license_key, device_limit, duration, sync_success):
-        """Display the generated license."""
-        tier_label = tier.capitalize()
+    def _display_license(self, email, license_key, credits, sync_success):
+        """Display the generated license (Simplified Credit System Schema)."""
         sync_status = "✓ Synced to Supabase" if sync_success else "⚠ Local only"
         
         output = f"""
@@ -1282,10 +1160,8 @@ class AdminKeygenApp(ctk.CTk):
 {'=' * 65}
 
 Email:         {email}
-Tier:          {tier_label}
-Duration:      {duration}
-Key:           {license_key}
-Device Limit:  {device_limit} device(s)
+License Key:   {license_key}
+Credits:       {credits}
 Status:        {sync_status}
 
 Send this key to the buyer for activation.
@@ -1307,6 +1183,82 @@ Send this key to the buyer for activation.
             self.clipboard_append(self.last_license_key)
             messagebox.showinfo("Copied", "License key copied to clipboard!")
             self.status_label.configure(text="License key copied to clipboard", text_color=COLORS['accent'])
+    
+    def _on_refill_key(self):
+        """Handle Refill Key button click - adds credits to an existing license."""
+        # Ask for license key
+        key_dialog = ctk.CTkInputDialog(
+            text="Enter the License Key to refill:",
+            title="Refill Key - Step 1"
+        )
+        license_key = key_dialog.get_input()
+        
+        if not license_key or not license_key.strip():
+            return
+        
+        license_key = license_key.strip()
+        
+        # Look up the key in the database
+        client = get_supabase_client()
+        if not client:
+            messagebox.showerror("Error", "Supabase client not available.")
+            return
+        
+        try:
+            response = client.table("licenses").select("*").eq("license_key", license_key).execute()
+            
+            if not response.data or len(response.data) == 0:
+                messagebox.showerror("Not Found", f"License key not found:\n{license_key}")
+                return
+            
+            license_record = response.data[0]
+            current_credits = license_record.get('credits', 0)
+            email = license_record.get('email', 'N/A')
+            
+            # Ask for amount to add
+            amount_dialog = ctk.CTkInputDialog(
+                text=f"Current credits: {current_credits}\nEmail: {email}\n\nEnter amount to ADD:",
+                title="Refill Key - Step 2"
+            )
+            amount_str = amount_dialog.get_input()
+            
+            if not amount_str or not amount_str.strip():
+                return
+            
+            try:
+                amount = int(amount_str.strip())
+                if amount <= 0:
+                    messagebox.showerror("Error", "Amount must be a positive number.")
+                    return
+            except ValueError:
+                messagebox.showerror("Error", "Please enter a valid number.")
+                return
+            
+            # Execute: UPDATE licenses SET credits = credits + X WHERE license_key = ...
+            new_credits = current_credits + amount
+            client.table("licenses").update({
+                "credits": new_credits
+            }).eq("license_key", license_key).execute()
+            
+            messagebox.showinfo(
+                "Success",
+                f"Credits refilled successfully!\n\n"
+                f"Key: {license_key}\n"
+                f"Previous credits: {current_credits}\n"
+                f"Added: +{amount}\n"
+                f"New total: {new_credits}"
+            )
+            
+            self.status_label.configure(
+                text=f"Refilled {amount} credits to {email}",
+                text_color=COLORS['accent']
+            )
+            
+            # Refresh the explorer
+            self._load_all_licenses_async()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to refill credits:\n{str(e)}")
     
     def _on_manage_key(self):
         """Handle Edit/Manage Key button click - opens dialog to enter existing key."""
@@ -1345,20 +1297,21 @@ Send this key to the buyer for activation.
     
     def _show_manage_key_menu(self, license_record):
         """
-        Show sub-menu dialog for managing an existing key.
+        Show sub-menu dialog for managing an existing key (Simplified Credit Schema).
         
         Args:
             license_record: The license record from the database
         """
         license_key = license_record.get('license_key', 'N/A')
         email = license_record.get('email', 'N/A')
-        max_devices = license_record.get('max_devices', 3)
-        is_private = license_record.get('is_private', False)
+        credits = license_record.get('credits', 0)
+        hwid = license_record.get('hwid', None)
+        is_banned = license_record.get('is_banned', False)
         
         # Create management dialog window
         manage_window = ctk.CTkToplevel(self)
         manage_window.title(f"Manage Key: {license_key}")
-        manage_window.geometry("450x400")
+        manage_window.geometry("450x450")
         manage_window.resizable(False, False)
         manage_window.configure(fg_color=COLORS['background'])
         
@@ -1369,7 +1322,7 @@ Send this key to the buyer for activation.
         # Center the dialog on the parent window
         manage_window.update_idletasks()
         x = self.winfo_x() + (self.winfo_width() // 2) - (450 // 2)
-        y = self.winfo_y() + (self.winfo_height() // 2) - (400 // 2)
+        y = self.winfo_y() + (self.winfo_height() // 2) - (450 // 2)
         manage_window.geometry(f"+{x}+{y}")
         
         # Header
@@ -1381,13 +1334,14 @@ Send this key to the buyer for activation.
         )
         header_label.pack(pady=(20, 10))
         
-        # Key info
+        # Key info (simplified schema)
         info_frame = ctk.CTkFrame(manage_window, corner_radius=8, fg_color=COLORS['sidebar'])
         info_frame.pack(fill="x", padx=20, pady=10)
         
+        hwid_display = hwid[:30] + "..." if hwid and len(hwid) > 30 else (hwid or "Not Bound")
         key_info = ctk.CTkLabel(
             info_frame,
-            text=f"Key: {license_key}\nEmail: {email}\nDevices: {max_devices}\nPrivate: {'Yes' if is_private else 'No'}",
+            text=f"Key: {license_key}\nEmail: {email}\nCredits: {credits}\nHWID: {hwid_display}\nBanned: {'Yes' if is_banned else 'No'}",
             font=ctk.CTkFont(size=12),
             text_color=COLORS['text'],
             justify="left"
@@ -1398,31 +1352,44 @@ Send this key to the buyer for activation.
         btn_frame = ctk.CTkFrame(manage_window, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=10)
         
-        # 1. Change Device Limit
-        device_btn = ctk.CTkButton(
+        # 1. Set Credits
+        credits_btn = ctk.CTkButton(
             btn_frame,
-            text="📱 Change Device Limit",
+            text="💰 Set Credits",
             font=ctk.CTkFont(size=13, weight="bold"),
             height=45,
             fg_color=COLORS['accent'],
             hover_color=COLORS['accent_hover'],
-            command=lambda: self._change_device_limit(license_record, manage_window)
+            command=lambda: self._set_credits(license_record, manage_window)
         )
-        device_btn.pack(fill="x", pady=5)
+        credits_btn.pack(fill="x", pady=5)
         
-        # 2. Toggle Privacy
-        privacy_btn = ctk.CTkButton(
+        # 2. Toggle Ban Status
+        ban_text = "✅ Unban Key" if is_banned else "🚫 Ban Key"
+        ban_btn = ctk.CTkButton(
             btn_frame,
-            text="🔒 Toggle Privacy",
+            text=ban_text,
             font=ctk.CTkFont(size=13, weight="bold"),
             height=45,
             fg_color=COLORS['accent'],
             hover_color=COLORS['accent_hover'],
-            command=lambda: self._toggle_privacy(license_record, manage_window)
+            command=lambda: self._toggle_ban(license_record, manage_window)
         )
-        privacy_btn.pack(fill="x", pady=5)
+        ban_btn.pack(fill="x", pady=5)
         
-        # 3. Delete Key
+        # 3. Reset HWID
+        reset_hwid_btn = ctk.CTkButton(
+            btn_frame,
+            text="🔄 Reset HWID",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=45,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=lambda: self._reset_hwid_from_menu(license_record, manage_window)
+        )
+        reset_hwid_btn.pack(fill="x", pady=5)
+        
+        # 4. Delete Key
         delete_btn = ctk.CTkButton(
             btn_frame,
             text="🗑️ Delete Key",
@@ -1446,31 +1413,31 @@ Send this key to the buyer for activation.
         )
         cancel_btn.pack(fill="x", pady=(15, 5))
     
-    def _change_device_limit(self, license_record, parent_window):
+    def _set_credits(self, license_record, parent_window):
         """
-        Change the device limit (max_devices) for a license key.
+        Set the credits value for a license key.
         
         Args:
             license_record: The license record from the database
             parent_window: The parent dialog window to close after completion
         """
         license_key = license_record.get('license_key')
-        current_limit = license_record.get('max_devices', 3)
+        current_credits = license_record.get('credits', 0)
         
-        # Ask for new device limit
+        # Ask for new credits value
         dialog = ctk.CTkInputDialog(
-            text=f"Current limit: {current_limit}\n\nEnter new device limit (1-100):",
-            title="Change Device Limit"
+            text=f"Current credits: {current_credits}\n\nEnter new credits value:",
+            title="Set Credits"
         )
-        new_limit_str = dialog.get_input()
+        new_credits_str = dialog.get_input()
         
-        if not new_limit_str or not new_limit_str.strip():
+        if not new_credits_str or not new_credits_str.strip():
             return
         
         try:
-            new_limit = int(new_limit_str.strip())
-            if new_limit < 1 or new_limit > 100:
-                messagebox.showerror("Error", "Device limit must be between 1 and 100.")
+            new_credits = int(new_credits_str.strip())
+            if new_credits < 0:
+                messagebox.showerror("Error", "Credits cannot be negative.")
                 return
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid number.")
@@ -1484,159 +1451,115 @@ Send this key to the buyer for activation.
         
         try:
             client.table("licenses").update({
-                "max_devices": new_limit
+                "credits": new_credits
             }).eq("license_key", license_key).execute()
             
             messagebox.showinfo(
                 "Success",
-                f"Device limit updated successfully!\n\n"
+                f"Credits updated successfully!\n\n"
                 f"Key: {license_key}\n"
-                f"New limit: {new_limit} device(s)"
+                f"Previous: {current_credits}\n"
+                f"New: {new_credits}"
             )
             
             parent_window.destroy()
             self._load_all_licenses_async()  # Refresh the explorer
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to update device limit:\n{str(e)}")
+            messagebox.showerror("Error", f"Failed to update credits:\n{str(e)}")
     
-    def _toggle_privacy(self, license_record, parent_window):
+    def _toggle_ban(self, license_record, parent_window):
         """
-        Toggle the privacy setting for a license key.
+        Toggle the ban status for a license key.
         
         Args:
             license_record: The license record from the database
             parent_window: The parent dialog window to close after completion
         """
         license_key = license_record.get('license_key')
-        current_private = license_record.get('is_private', False)
-        current_password = license_record.get('password', None)
+        current_banned = license_record.get('is_banned', False)
+        new_banned = not current_banned
         
-        # Create a privacy dialog
-        privacy_window = ctk.CTkToplevel(parent_window)
-        privacy_window.title("Toggle Privacy")
-        privacy_window.geometry("400x250")
-        privacy_window.resizable(False, False)
-        privacy_window.configure(fg_color=COLORS['background'])
+        action = "ban" if new_banned else "unban"
         
-        # Make dialog modal
-        privacy_window.transient(parent_window)
-        privacy_window.grab_set()
+        # Confirm action
+        if not messagebox.askyesno(
+            f"Confirm {action.title()}",
+            f"Are you sure you want to {action} this license?\n\n"
+            f"Key: {license_key}"
+        ):
+            return
         
-        # Center the dialog
-        privacy_window.update_idletasks()
-        x = parent_window.winfo_x() + (parent_window.winfo_width() // 2) - (400 // 2)
-        y = parent_window.winfo_y() + (parent_window.winfo_height() // 2) - (250 // 2)
-        privacy_window.geometry(f"+{x}+{y}")
+        # Update the database
+        client = get_supabase_client()
+        if not client:
+            messagebox.showerror("Error", "Supabase client not available.")
+            return
         
-        # Header
-        header_label = ctk.CTkLabel(
-            privacy_window,
-            text="🔒 Toggle Privacy",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=COLORS['accent']
-        )
-        header_label.pack(pady=(20, 10))
-        
-        # Current status
-        status_text = f"Current status: {'Private' if current_private else 'Public'}"
-        if current_private and current_password:
-            status_text += "\nPassword: ****"  # Fixed asterisks to avoid revealing length
-        
-        status_label = ctk.CTkLabel(
-            privacy_window,
-            text=status_text,
-            font=ctk.CTkFont(size=12),
-            text_color=COLORS['text']
-        )
-        status_label.pack(pady=10)
-        
-        # Password entry
-        password_label = ctk.CTkLabel(
-            privacy_window,
-            text="Enter password to make private (leave empty to make public):",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS['text_dim']
-        )
-        password_label.pack(pady=(10, 5), padx=20)
-        
-        password_entry = ctk.CTkEntry(
-            privacy_window,
-            placeholder_text="Enter password...",
-            font=ctk.CTkFont(size=12),
-            height=38,
-            fg_color=COLORS['sidebar'],
-            border_color=COLORS['accent'],
-            border_width=2,
-            show="*"
-        )
-        password_entry.pack(fill="x", padx=20, pady=5)
-        add_context_menu(password_entry)
-        
-        def apply_privacy():
-            password = password_entry.get().strip()
+        try:
+            client.table("licenses").update({
+                "is_banned": new_banned
+            }).eq("license_key", license_key).execute()
             
-            client = get_supabase_client()
-            if not client:
-                messagebox.showerror("Error", "Supabase client not available.")
-                return
+            status = "banned" if new_banned else "unbanned"
+            messagebox.showinfo(
+                "Success",
+                f"License key {status} successfully!\n\nKey: {license_key}"
+            )
             
-            try:
-                if password:
-                    # Set password and make private
-                    client.table("licenses").update({
-                        "password": password,
-                        "is_private": True
-                    }).eq("license_key", license_key).execute()
-                    
-                    messagebox.showinfo(
-                        "Success",
-                        f"License key is now private with password protection.\n\nKey: {license_key}"
-                    )
-                else:
-                    # Clear password and make public
-                    client.table("licenses").update({
-                        "password": None,
-                        "is_private": False
-                    }).eq("license_key", license_key).execute()
-                    
-                    messagebox.showinfo(
-                        "Success",
-                        f"License key is now public (no password).\n\nKey: {license_key}"
-                    )
-                
-                privacy_window.destroy()
-                parent_window.destroy()
-                self._load_all_licenses_async()  # Refresh the explorer
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to update privacy:\n{str(e)}")
+            parent_window.destroy()
+            self._load_all_licenses_async()  # Refresh the explorer
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to {action} license:\n{str(e)}")
+    
+    def _reset_hwid_from_menu(self, license_record, parent_window):
+        """
+        Reset (clear) HWID for a license key from the management menu.
         
-        # Button frame
-        btn_frame = ctk.CTkFrame(privacy_window, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=15)
+        Args:
+            license_record: The license record from the database
+            parent_window: The parent dialog window to close after completion
+        """
+        license_key = license_record.get('license_key')
+        current_hwid = license_record.get('hwid', None)
         
-        apply_btn = ctk.CTkButton(
-            btn_frame,
-            text="Apply",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            height=35,
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover'],
-            command=apply_privacy
-        )
-        apply_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
+        if not current_hwid:
+            messagebox.showinfo("Info", "This license has no HWID bound yet.")
+            return
         
-        cancel_btn = ctk.CTkButton(
-            btn_frame,
-            text="Cancel",
-            font=ctk.CTkFont(size=12),
-            height=35,
-            fg_color=COLORS['sidebar'],
-            hover_color=COLORS['accent'],
-            command=privacy_window.destroy
-        )
-        cancel_btn.pack(side="left", expand=True, fill="x", padx=(5, 0))
+        # Confirm reset
+        if not messagebox.askyesno(
+            "Confirm Reset HWID",
+            f"Are you sure you want to reset the HWID for this license?\n\n"
+            f"Key: {license_key}\n"
+            f"Current HWID: {current_hwid[:30]}...\n\n"
+            f"This will allow the license to be activated on a new device."
+        ):
+            return
+        
+        # Update the database
+        client = get_supabase_client()
+        if not client:
+            messagebox.showerror("Error", "Supabase client not available.")
+            return
+        
+        try:
+            client.table("licenses").update({
+                "hwid": None
+            }).eq("license_key", license_key).execute()
+            
+            messagebox.showinfo(
+                "Success",
+                f"HWID reset successfully!\n\nKey: {license_key}\n\n"
+                f"The license can now be activated on a new device."
+            )
+            
+            parent_window.destroy()
+            self._load_all_licenses_async()  # Refresh the explorer
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to reset HWID:\n{str(e)}")
     
     def _delete_key(self, license_record, parent_window):
         """
