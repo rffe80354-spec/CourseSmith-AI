@@ -243,7 +243,119 @@ class AdminKeygenApp(ctk.CTk):
         # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
         add_context_menu(self.email_entry)
         
-        # Initial Credits input (NEW SIMPLIFIED SCHEMA)
+        # Tier selection
+        tier_label = ctk.CTkLabel(
+            input_scroll,
+            text="License Tier:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        )
+        tier_label.pack(pady=(5, 5), padx=20, anchor="w")
+        
+        self.tier_var = ctk.StringVar(value="standard")
+        
+        tier_options = ctk.CTkFrame(input_scroll, fg_color="transparent")
+        tier_options.pack(fill="x", padx=20, pady=(0, 15))
+        
+        tier_radio1 = ctk.CTkRadioButton(
+            tier_options,
+            text="Standard - Basic Features",
+            variable=self.tier_var,
+            value="standard",
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover']
+        )
+        tier_radio1.pack(anchor="w", pady=4)
+        
+        tier_radio2 = ctk.CTkRadioButton(
+            tier_options,
+            text="Extended - Full Branding",
+            variable=self.tier_var,
+            value="extended",
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover']
+        )
+        tier_radio2.pack(anchor="w", pady=4)
+        
+        tier_radio3 = ctk.CTkRadioButton(
+            tier_options,
+            text="Professional - Premium Support",
+            variable=self.tier_var,
+            value="professional",
+            font=ctk.CTkFont(size=12),
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover']
+        )
+        tier_radio3.pack(anchor="w", pady=4)
+        
+        # Duration input
+        duration_label = ctk.CTkLabel(
+            input_scroll,
+            text="Duration (Days):",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        )
+        duration_label.pack(pady=(5, 5), padx=20, anchor="w")
+        
+        duration_help = ctk.CTkLabel(
+            input_scroll,
+            text="Enter days (3, 30, 90, 180, 365) or 'lifetime' (case-insensitive)",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_dim']
+        )
+        duration_help.pack(pady=(0, 5), padx=20, anchor="w")
+        
+        self.duration_entry = ctk.CTkEntry(
+            input_scroll,
+            placeholder_text="lifetime",
+            font=ctk.CTkFont(size=12),
+            height=38,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
+        )
+        self.duration_entry.pack(fill="x", padx=20, pady=(0, 15))
+        self.duration_entry.insert(0, "lifetime")
+        
+        # Add clipboard support
+        add_context_menu(self.duration_entry)
+        
+        # Device Limit input
+        device_label = ctk.CTkLabel(
+            input_scroll,
+            text="Max Devices (HWID Limit):",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        )
+        device_label.pack(pady=(5, 5), padx=20, anchor="w")
+        
+        device_help = ctk.CTkLabel(
+            input_scroll,
+            text="Number of devices that can use this license",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_dim']
+        )
+        device_help.pack(pady=(0, 5), padx=20, anchor="w")
+        
+        self.device_limit_entry = ctk.CTkEntry(
+            input_scroll,
+            placeholder_text="3",
+            font=ctk.CTkFont(size=12),
+            height=38,
+            width=120,
+            fg_color=COLORS['background'],
+            border_color=COLORS['accent'],
+            border_width=2
+        )
+        self.device_limit_entry.pack(padx=20, pady=(0, 15), anchor="w")
+        self.device_limit_entry.insert(0, "3")
+        
+        # Add clipboard support
+        add_context_menu(self.device_limit_entry)
+        
+        # Initial Credits input (NEW - Credit System)
         credits_label = ctk.CTkLabel(
             input_scroll,
             text="Initial Credits:",
@@ -388,7 +500,7 @@ class AdminKeygenApp(ctk.CTk):
         
         self.search_entry = ctk.CTkEntry(
             search_frame,
-            placeholder_text="Search by Email, HWID, or License Key",
+            placeholder_text="Search by Email, HWID, License Key, Tier, or Date",
             font=ctk.CTkFont(size=12),
             height=38,
             fg_color=COLORS['sidebar'],
@@ -477,7 +589,7 @@ class AdminKeygenApp(ctk.CTk):
         self.search_thread.start()
     
     def _search_licenses(self, search_term):
-        """Search licenses by Email, HWID, or License Key (runs in background thread)."""
+        """Search licenses by Email, HWID, License Key, Tier, or Creation Date (runs in background thread)."""
         # Create a local copy to avoid race conditions
         licenses_to_search = list(self.all_licenses)
         filtered = []
@@ -486,12 +598,16 @@ class AdminKeygenApp(ctk.CTk):
             email = str(license_record.get('email', '')).lower()
             key = str(license_record.get('license_key', '')).lower()
             hwid = str(license_record.get('hwid', '') or '').lower()
+            tier = str(license_record.get('tier', '')).lower()
+            created = str(license_record.get('created_at', '')).lower()
             
-            # Check if search term matches any field (simplified schema)
+            # Check if search term matches any field
             matches = any([
                 search_term in email,
                 search_term in key,
-                search_term in hwid
+                search_term in hwid,
+                search_term in tier,
+                search_term in created
             ])
             
             if matches:
@@ -512,9 +628,11 @@ class AdminKeygenApp(ctk.CTk):
             self.loading_label.configure(text=f"✓ Loaded {len(self.all_licenses)} license(s)")
     
     def _on_generate(self):
-        """Handle generate button click with Supabase sync (Credit System)."""
+        """Handle generate button click with Supabase sync (Full Schema with Credits)."""
         email_input = self.email_entry.get().strip()
         credits_input = self.credits_entry.get().strip()
+        duration_input = self.duration_entry.get().strip().lower()
+        device_limit_input = self.device_limit_entry.get().strip()
         
         if not email_input:
             messagebox.showerror("Error", "Please enter a buyer email.")
@@ -537,16 +655,55 @@ class AdminKeygenApp(ctk.CTk):
             messagebox.showerror("Error", "Credits must be a valid number.")
             return
         
+        # Validate device limit
+        try:
+            device_limit = int(device_limit_input) if device_limit_input else 3
+            if device_limit < 1 or device_limit > 100:
+                messagebox.showerror("Error", "Device limit must be between 1 and 100.")
+                return
+        except ValueError:
+            messagebox.showerror("Error", "Device limit must be a valid number.")
+            return
+        
+        # Parse duration input
+        duration_code = 'lifetime'
+        if duration_input in DURATION_MAP:
+            duration_code = DURATION_MAP[duration_input]
+        elif duration_input.isdigit():
+            days = int(duration_input)
+            # Map custom days to closest duration
+            if days <= 3:
+                duration_code = '3_day'
+            elif days <= 30:
+                duration_code = '1_month'
+            elif days <= 90:
+                duration_code = '3_month'
+            elif days <= 180:
+                duration_code = '6_month'
+            elif days <= 365:
+                duration_code = '1_year'
+            else:
+                duration_code = 'lifetime'
+        else:
+            # Invalid input - show warning and default to lifetime
+            messagebox.showwarning(
+                "Invalid Duration",
+                f"'{duration_input}' is not a valid duration. Defaulting to 'lifetime'.\n\n"
+                "Valid inputs: 3, 30, 90, 180, 365, or 'lifetime'"
+            )
+        
+        # Get tier
+        tier = self.tier_var.get()
+        
         # Generate license key using the actual generate_key function
         try:
-            # Use 'standard' tier and 'lifetime' as defaults (no longer configurable)
-            license_key, _ = generate_key(email_input, 'standard', 'lifetime')
+            license_key, expires_at = generate_key(email_input, tier, duration_code)
             
-            # Sync to Supabase database with credits
-            sync_success = self._sync_to_supabase(email_input, license_key, credits)
+            # Sync to Supabase database with ALL fields including credits
+            sync_success = self._sync_to_supabase(email_input, license_key, tier, expires_at, device_limit, credits)
             
             # Display the license
-            self._display_license(email_input, license_key, credits, sync_success)
+            self._display_license(email_input, tier, license_key, device_limit, credits, duration_input, sync_success)
             
             # Update status
             sync_status = "✓ Synced to Supabase" if sync_success else "⚠ Local only (Supabase unavailable)"
@@ -563,20 +720,29 @@ class AdminKeygenApp(ctk.CTk):
             messagebox.showerror("Error", f"Failed to generate license: {str(e)}")
             self.status_label.configure(text="Generation failed", text_color="red")
     
-    def _sync_to_supabase(self, email, license_key, credits):
+    def _sync_to_supabase(self, email, license_key, tier, expires_at, device_limit, credits):
         """
-        Sync generated license to Supabase database (Simplified Credit System Schema).
+        Sync generated license to Supabase database (Full Schema with Credits).
         
-        New Schema:
+        Full Schema:
         - license_key (Text, Unique)
-        - credits (Integer)
-        - hwid (Text)
-        - is_banned (Boolean)
-        - email (Text)
+        - credits (int4, NEW)
+        - email (text)
+        - is_banned (bool)
+        - hwid (text)
+        - used_hwids (jsonb)
+        - max_devices (int4)
+        - valid_until (timestamptz)
+        - created_at (timestamptz)
+        - tier (text)
+        - page_limit (int4)
         
         Args:
             email: Buyer email
             license_key: Generated license key
+            tier: License tier (standard/extended/professional)
+            expires_at: Expiration date (ISO format) or None for lifetime
+            device_limit: Maximum number of devices
             credits: Initial credits for this license
             
         Returns:
@@ -598,20 +764,34 @@ class AdminKeygenApp(ctk.CTk):
                 )
                 return False
             
-            # Prepare license data with NEW simplified schema
+            # Determine page limit based on tier
+            page_limit_map = {
+                'standard': 50,
+                'extended': 150,
+                'professional': 300
+            }
+            page_limit = page_limit_map.get(tier, 50)
+            
+            # Prepare license data with FULL schema + credits
             license_data = {
                 'license_key': license_key,
                 'email': email,
-                'credits': credits,
-                'hwid': None,  # Will be set on first activation
-                'is_banned': False
+                'tier': tier,
+                'valid_until': expires_at,
+                'is_banned': False,
+                'hwid': None,  # Single device HWID - set on first activation
+                'used_hwids': [],  # Empty array for multi-device support
+                'max_devices': device_limit,
+                'credits': credits,  # NEW - Credit system
+                'page_limit': page_limit,
+                'created_at': datetime.now(timezone.utc).isoformat()
             }
             
             # Insert into Supabase
             response = client.table("licenses").insert(license_data).execute()
             
             if response.data:
-                print(f"Successfully synced license {license_key} to Supabase with {credits} credits")
+                print(f"Successfully synced license {license_key} to Supabase with {credits} credits, tier={tier}")
                 return True
             else:
                 print("Failed to sync to Supabase: No data returned")
@@ -654,8 +834,8 @@ class AdminKeygenApp(ctk.CTk):
             return
         
         try:
-            # Simplified schema - order by license_key instead of created_at
-            response = client.table("licenses").select("*").order("license_key", desc=True).limit(50).execute()
+            # Order by created_at (most recent first)
+            response = client.table("licenses").select("*").order("created_at", desc=True).limit(50).execute()
             
             if response.data:
                 self.all_licenses = response.data
@@ -703,7 +883,7 @@ class AdminKeygenApp(ctk.CTk):
             # Fetch next 50 licenses starting from current offset
             # .range(start, end) is inclusive, so end = start + 49 for 50 records
             end_offset = self.current_offset + 49
-            response = client.table("licenses").select("*").order("license_key", desc=True).range(self.current_offset, end_offset).execute()
+            response = client.table("licenses").select("*").order("created_at", desc=True).range(self.current_offset, end_offset).execute()
             
             if response.data:
                 # Append to existing licenses
@@ -764,7 +944,7 @@ class AdminKeygenApp(ctk.CTk):
         else:
             self.loading_label.configure(text=f"✓ Loaded {count} license(s)")
         
-        # Create header row (SIMPLIFIED SCHEMA: Email, Key, Credits, HWID, Banned, Actions)
+        # Create header row (FULL SCHEMA: Email, Key, Tier, Credits, Devices, Valid Until, Actions)
         header_frame = ctk.CTkFrame(
             self.explorer_frame,
             corner_radius=6,
@@ -772,14 +952,15 @@ class AdminKeygenApp(ctk.CTk):
             height=45
         )
         header_frame.pack(fill="x", pady=(0, 10), padx=2)
-        header_frame.grid_columnconfigure(0, weight=2, minsize=200)  # Email
-        header_frame.grid_columnconfigure(1, weight=2, minsize=280)  # License Key
-        header_frame.grid_columnconfigure(2, weight=1)  # Credits
-        header_frame.grid_columnconfigure(3, weight=1, minsize=150)  # HWID
-        header_frame.grid_columnconfigure(4, weight=1)  # Banned
-        header_frame.grid_columnconfigure(5, weight=0)  # Actions
+        header_frame.grid_columnconfigure(0, weight=2, minsize=180)  # Email
+        header_frame.grid_columnconfigure(1, weight=2, minsize=240)  # License Key
+        header_frame.grid_columnconfigure(2, weight=1)  # Tier
+        header_frame.grid_columnconfigure(3, weight=1)  # Credits
+        header_frame.grid_columnconfigure(4, weight=1)  # Devices
+        header_frame.grid_columnconfigure(5, weight=1, minsize=120)  # Valid Until
+        header_frame.grid_columnconfigure(6, weight=0)  # Actions
         
-        headers = ["Email", "License Key", "Credits", "HWID", "Banned", "Actions"]
+        headers = ["Email", "License Key", "Tier", "Credits", "Devices", "Valid Until", "Actions"]
         for idx, header_text in enumerate(headers):
             header_label = ctk.CTkLabel(
                 header_frame,
@@ -911,18 +1092,30 @@ class AdminKeygenApp(ctk.CTk):
         return textbox
     
     def _create_license_row(self, license_record, idx):
-        """Create a row for a single license in the explorer (SIMPLIFIED SCHEMA)."""
+        """Create a row for a single license in the explorer (FULL SCHEMA with Credits)."""
         email = license_record.get('email', 'N/A')
         key = license_record.get('license_key', 'N/A')
+        tier = license_record.get('tier', 'N/A')
         credits = license_record.get('credits', 0)
+        device_limit = license_record.get('max_devices', 1)
         hwid = license_record.get('hwid', None)
-        is_banned = license_record.get('is_banned', False)
+        valid_until = license_record.get('valid_until', None)
         
-        # Format HWID display
+        # Determine device usage
         if hwid:
-            hwid_preview = hwid[:HWID_TRUNCATE_LENGTH] + "..." if len(hwid) > HWID_TRUNCATE_LENGTH else hwid
+            device_usage = f"1/{device_limit}"
         else:
-            hwid_preview = 'Not Bound'
+            device_usage = f"0/{device_limit}"
+        
+        # Format valid_until
+        try:
+            if valid_until:
+                dt = datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
+                valid_str = dt.strftime("%Y-%m-%d")
+            else:
+                valid_str = "Lifetime"
+        except (ValueError, TypeError):
+            valid_str = "N/A"
         
         # Row background (alternating)
         row_color = COLORS['sidebar'] if idx % 2 == 0 else COLORS['background']
@@ -934,15 +1127,16 @@ class AdminKeygenApp(ctk.CTk):
             height=50
         )
         row_frame.pack(fill="x", pady=3, padx=2)
-        row_frame.grid_columnconfigure(0, weight=2, minsize=200)  # Email
-        row_frame.grid_columnconfigure(1, weight=2, minsize=280)  # License Key
-        row_frame.grid_columnconfigure(2, weight=1)  # Credits
-        row_frame.grid_columnconfigure(3, weight=1, minsize=150)  # HWID
-        row_frame.grid_columnconfigure(4, weight=1)  # Banned
-        row_frame.grid_columnconfigure(5, weight=0)  # Actions
+        row_frame.grid_columnconfigure(0, weight=2, minsize=180)  # Email
+        row_frame.grid_columnconfigure(1, weight=2, minsize=240)  # License Key
+        row_frame.grid_columnconfigure(2, weight=1)  # Tier
+        row_frame.grid_columnconfigure(3, weight=1)  # Credits
+        row_frame.grid_columnconfigure(4, weight=1)  # Devices
+        row_frame.grid_columnconfigure(5, weight=1, minsize=120)  # Valid Until
+        row_frame.grid_columnconfigure(6, weight=0)  # Actions
         
         # Email - selectable textbox
-        email_display = email[:35] + "..." if len(email) > 35 else email
+        email_display = email[:30] + "..." if len(email) > 30 else email
         email_textbox = self._create_selectable_text_widget(
             row_frame,
             email_display,
@@ -956,11 +1150,22 @@ class AdminKeygenApp(ctk.CTk):
         key_textbox = self._create_selectable_text_widget(
             row_frame,
             key,
-            ctk.CTkFont(family="Courier New", size=11),
+            ctk.CTkFont(family="Courier New", size=10),
             COLORS['accent'],
             row_color
         )
         key_textbox.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
+        
+        # Tier - with color coding
+        tier_color = "#FFD700" if tier == "professional" else ("#FFA500" if tier == "extended" else "#A0A0A0")
+        tier_textbox = self._create_selectable_text_widget(
+            row_frame,
+            tier.upper() if tier != 'N/A' else tier,
+            ctk.CTkFont(size=10, weight="bold"),
+            tier_color,
+            row_color
+        )
+        tier_textbox.grid(row=0, column=2, padx=10, pady=5, sticky="ew")
         
         # Credits - with color coding
         credits_color = "#00FF00" if credits > 10 else ("#FFA500" if credits > 0 else "#FF0000")
@@ -971,37 +1176,31 @@ class AdminKeygenApp(ctk.CTk):
             credits_color,
             row_color
         )
-        credits_textbox.grid(row=0, column=2, padx=10, pady=5, sticky="ew")
+        credits_textbox.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
         
-        # HWID preview - selectable textbox with right-click menu
-        hwid_textbox = self._create_selectable_text_widget(
+        # Devices
+        device_textbox = self._create_selectable_text_widget(
             row_frame,
-            hwid_preview,
-            ctk.CTkFont(size=9),
-            COLORS['text_dim'],
-            row_color,
-            width=150
-        )
-        hwid_textbox.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
-        
-        # Add "Reset HWID" context menu to HWID textbox (always show menu)
-        self._add_hwid_context_menu(hwid_textbox, license_record)
-        
-        # Banned status
-        banned_text = "🚫 Yes" if is_banned else "✓ No"
-        banned_color = "#FF0000" if is_banned else "#00FF00"
-        banned_textbox = self._create_selectable_text_widget(
-            row_frame,
-            banned_text,
-            ctk.CTkFont(size=10, weight="bold"),
-            banned_color,
+            device_usage,
+            ctk.CTkFont(size=10),
+            COLORS['text'],
             row_color
         )
-        banned_textbox.grid(row=0, column=4, padx=10, pady=5, sticky="ew")
+        device_textbox.grid(row=0, column=4, padx=10, pady=5, sticky="ew")
+        
+        # Valid Until
+        valid_textbox = self._create_selectable_text_widget(
+            row_frame,
+            valid_str,
+            ctk.CTkFont(size=10),
+            COLORS['text_dim'],
+            row_color
+        )
+        valid_textbox.grid(row=0, column=5, padx=10, pady=5, sticky="ew")
         
         # Action buttons frame
         action_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
-        action_frame.grid(row=0, column=5, padx=10, pady=10)
+        action_frame.grid(row=0, column=6, padx=10, pady=10)
         
         # Copy Email button
         copy_email_btn = ctk.CTkButton(
@@ -1153,8 +1352,9 @@ class AdminKeygenApp(ctk.CTk):
             else f"✓ Found {len(self.filtered_licenses)} match(es)"
         ))
     
-    def _display_license(self, email, license_key, credits, sync_success):
-        """Display the generated license (Simplified Credit System Schema)."""
+    def _display_license(self, email, tier, license_key, device_limit, credits, duration, sync_success):
+        """Display the generated license (Full Schema with Credits)."""
+        tier_label = tier.capitalize()
         sync_status = "✓ Synced to Supabase" if sync_success else "⚠ Local only"
         
         output = f"""
@@ -1163,7 +1363,10 @@ class AdminKeygenApp(ctk.CTk):
 {'=' * 65}
 
 Email:         {email}
-License Key:   {license_key}
+Tier:          {tier_label}
+Duration:      {duration}
+Key:           {license_key}
+Device Limit:  {device_limit} device(s)
 Credits:       {credits}
 Status:        {sync_status}
 
@@ -1307,21 +1510,34 @@ Send this key to the buyer for activation.
     
     def _show_manage_key_menu(self, license_record):
         """
-        Show sub-menu dialog for managing an existing key (Simplified Credit Schema).
+        Show sub-menu dialog for managing an existing key (Full Schema with Credits).
         
         Args:
             license_record: The license record from the database
         """
         license_key = license_record.get('license_key', 'N/A')
         email = license_record.get('email', 'N/A')
+        tier = license_record.get('tier', 'N/A')
         credits = license_record.get('credits', 0)
+        max_devices = license_record.get('max_devices', 1)
         hwid = license_record.get('hwid', None)
         is_banned = license_record.get('is_banned', False)
+        valid_until = license_record.get('valid_until', None)
+        
+        # Format valid_until
+        try:
+            if valid_until:
+                dt = datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
+                valid_str = dt.strftime("%Y-%m-%d")
+            else:
+                valid_str = "Lifetime"
+        except (ValueError, TypeError):
+            valid_str = "N/A"
         
         # Create management dialog window
         manage_window = ctk.CTkToplevel(self)
         manage_window.title(f"Manage Key: {license_key}")
-        manage_window.geometry("450x450")
+        manage_window.geometry("500x550")
         manage_window.resizable(False, False)
         manage_window.configure(fg_color=COLORS['background'])
         
@@ -1331,8 +1547,8 @@ Send this key to the buyer for activation.
         
         # Center the dialog on the parent window
         manage_window.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - (450 // 2)
-        y = self.winfo_y() + (self.winfo_height() // 2) - (450 // 2)
+        x = self.winfo_x() + (self.winfo_width() // 2) - (500 // 2)
+        y = self.winfo_y() + (self.winfo_height() // 2) - (550 // 2)
         manage_window.geometry(f"+{x}+{y}")
         
         # Header
@@ -1344,14 +1560,15 @@ Send this key to the buyer for activation.
         )
         header_label.pack(pady=(20, 10))
         
-        # Key info (simplified schema)
+        # Key info (full schema)
         info_frame = ctk.CTkFrame(manage_window, corner_radius=8, fg_color=COLORS['sidebar'])
         info_frame.pack(fill="x", padx=20, pady=10)
         
         hwid_display = hwid[:HWID_TRUNCATE_LENGTH] + "..." if hwid and len(hwid) > HWID_TRUNCATE_LENGTH else (hwid or "Not Bound")
+        device_usage = "1" if hwid else "0"
         key_info = ctk.CTkLabel(
             info_frame,
-            text=f"Key: {license_key}\nEmail: {email}\nCredits: {credits}\nHWID: {hwid_display}\nBanned: {'Yes' if is_banned else 'No'}",
+            text=f"Key: {license_key}\nEmail: {email}\nTier: {tier.upper() if tier != 'N/A' else tier}\nCredits: {credits}\nDevices: {device_usage}/{max_devices}\nValid Until: {valid_str}\nHWID: {hwid_display}\nBanned: {'Yes' if is_banned else 'No'}",
             font=ctk.CTkFont(size=12),
             text_color=COLORS['text'],
             justify="left"
