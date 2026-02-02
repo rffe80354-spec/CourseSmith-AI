@@ -401,6 +401,18 @@ class AdminKeygenApp(ctk.CTk):
         )
         self.copy_btn.pack(fill="x", padx=20, pady=(0, 15))
         
+        # Edit/Manage Key button
+        self.manage_key_btn = ctk.CTkButton(
+            input_scroll,
+            text="✏️ Edit/Manage Key",
+            font=ctk.CTkFont(size=12),
+            height=35,
+            fg_color=COLORS['sidebar'],
+            hover_color=COLORS['accent'],
+            command=self._on_manage_key
+        )
+        self.manage_key_btn.pack(fill="x", padx=20, pady=(0, 15))
+        
         # Status bar
         self.status_label = ctk.CTkLabel(
             left_column,
@@ -1295,6 +1307,386 @@ Send this key to the buyer for activation.
             self.clipboard_append(self.last_license_key)
             messagebox.showinfo("Copied", "License key copied to clipboard!")
             self.status_label.configure(text="License key copied to clipboard", text_color=COLORS['accent'])
+    
+    def _on_manage_key(self):
+        """Handle Edit/Manage Key button click - opens dialog to enter existing key."""
+        # Create a dialog window to enter existing license key
+        dialog = ctk.CTkInputDialog(
+            text="Enter the License Key to manage:",
+            title="Edit/Manage Key"
+        )
+        license_key = dialog.get_input()
+        
+        if not license_key or not license_key.strip():
+            return
+        
+        license_key = license_key.strip()
+        
+        # Look up the key in the database
+        client = get_supabase_client()
+        if not client:
+            messagebox.showerror("Error", "Supabase client not available.")
+            return
+        
+        try:
+            response = client.table("licenses").select("*").eq("license_key", license_key).execute()
+            
+            if not response.data or len(response.data) == 0:
+                messagebox.showerror("Not Found", f"License key not found:\n{license_key}")
+                return
+            
+            license_record = response.data[0]
+            
+            # Show the management sub-menu dialog
+            self._show_manage_key_menu(license_record)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to look up license:\n{str(e)}")
+    
+    def _show_manage_key_menu(self, license_record):
+        """
+        Show sub-menu dialog for managing an existing key.
+        
+        Args:
+            license_record: The license record from the database
+        """
+        license_key = license_record.get('license_key', 'N/A')
+        email = license_record.get('email', 'N/A')
+        max_devices = license_record.get('max_devices', 3)
+        is_private = license_record.get('is_private', False)
+        
+        # Create management dialog window
+        manage_window = ctk.CTkToplevel(self)
+        manage_window.title(f"Manage Key: {license_key}")
+        manage_window.geometry("450x400")
+        manage_window.resizable(False, False)
+        manage_window.configure(fg_color=COLORS['background'])
+        
+        # Make dialog modal
+        manage_window.transient(self)
+        manage_window.grab_set()
+        
+        # Center the dialog on the parent window
+        manage_window.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - (450 // 2)
+        y = self.winfo_y() + (self.winfo_height() // 2) - (400 // 2)
+        manage_window.geometry(f"+{x}+{y}")
+        
+        # Header
+        header_label = ctk.CTkLabel(
+            manage_window,
+            text="🔧 Manage License Key",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=COLORS['accent']
+        )
+        header_label.pack(pady=(20, 10))
+        
+        # Key info
+        info_frame = ctk.CTkFrame(manage_window, corner_radius=8, fg_color=COLORS['sidebar'])
+        info_frame.pack(fill="x", padx=20, pady=10)
+        
+        key_info = ctk.CTkLabel(
+            info_frame,
+            text=f"Key: {license_key}\nEmail: {email}\nDevices: {max_devices}\nPrivate: {'Yes' if is_private else 'No'}",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text'],
+            justify="left"
+        )
+        key_info.pack(pady=15, padx=15)
+        
+        # Option buttons
+        btn_frame = ctk.CTkFrame(manage_window, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=10)
+        
+        # 1. Change Device Limit
+        device_btn = ctk.CTkButton(
+            btn_frame,
+            text="📱 Change Device Limit",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=45,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=lambda: self._change_device_limit(license_record, manage_window)
+        )
+        device_btn.pack(fill="x", pady=5)
+        
+        # 2. Toggle Privacy
+        privacy_btn = ctk.CTkButton(
+            btn_frame,
+            text="🔒 Toggle Privacy",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=45,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=lambda: self._toggle_privacy(license_record, manage_window)
+        )
+        privacy_btn.pack(fill="x", pady=5)
+        
+        # 3. Delete Key
+        delete_btn = ctk.CTkButton(
+            btn_frame,
+            text="🗑️ Delete Key",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=45,
+            fg_color="#8B0000",  # Dark red
+            hover_color="#B22222",  # Lighter red on hover
+            command=lambda: self._delete_key(license_record, manage_window)
+        )
+        delete_btn.pack(fill="x", pady=5)
+        
+        # Cancel button
+        cancel_btn = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            font=ctk.CTkFont(size=12),
+            height=35,
+            fg_color=COLORS['sidebar'],
+            hover_color=COLORS['accent'],
+            command=manage_window.destroy
+        )
+        cancel_btn.pack(fill="x", pady=(15, 5))
+    
+    def _change_device_limit(self, license_record, parent_window):
+        """
+        Change the device limit (max_devices) for a license key.
+        
+        Args:
+            license_record: The license record from the database
+            parent_window: The parent dialog window to close after completion
+        """
+        license_key = license_record.get('license_key')
+        current_limit = license_record.get('max_devices', 3)
+        
+        # Ask for new device limit
+        dialog = ctk.CTkInputDialog(
+            text=f"Current limit: {current_limit}\n\nEnter new device limit (1-100):",
+            title="Change Device Limit"
+        )
+        new_limit_str = dialog.get_input()
+        
+        if not new_limit_str or not new_limit_str.strip():
+            return
+        
+        try:
+            new_limit = int(new_limit_str.strip())
+            if new_limit < 1 or new_limit > 100:
+                messagebox.showerror("Error", "Device limit must be between 1 and 100.")
+                return
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid number.")
+            return
+        
+        # Update the database
+        client = get_supabase_client()
+        if not client:
+            messagebox.showerror("Error", "Supabase client not available.")
+            return
+        
+        try:
+            client.table("licenses").update({
+                "max_devices": new_limit
+            }).eq("license_key", license_key).execute()
+            
+            messagebox.showinfo(
+                "Success",
+                f"Device limit updated successfully!\n\n"
+                f"Key: {license_key}\n"
+                f"New limit: {new_limit} device(s)"
+            )
+            
+            parent_window.destroy()
+            self._load_all_licenses_async()  # Refresh the explorer
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update device limit:\n{str(e)}")
+    
+    def _toggle_privacy(self, license_record, parent_window):
+        """
+        Toggle the privacy setting for a license key.
+        
+        Args:
+            license_record: The license record from the database
+            parent_window: The parent dialog window to close after completion
+        """
+        license_key = license_record.get('license_key')
+        current_private = license_record.get('is_private', False)
+        current_password = license_record.get('password', None)
+        
+        # Create a privacy dialog
+        privacy_window = ctk.CTkToplevel(parent_window)
+        privacy_window.title("Toggle Privacy")
+        privacy_window.geometry("400x250")
+        privacy_window.resizable(False, False)
+        privacy_window.configure(fg_color=COLORS['background'])
+        
+        # Make dialog modal
+        privacy_window.transient(parent_window)
+        privacy_window.grab_set()
+        
+        # Center the dialog
+        privacy_window.update_idletasks()
+        x = parent_window.winfo_x() + (parent_window.winfo_width() // 2) - (400 // 2)
+        y = parent_window.winfo_y() + (parent_window.winfo_height() // 2) - (250 // 2)
+        privacy_window.geometry(f"+{x}+{y}")
+        
+        # Header
+        header_label = ctk.CTkLabel(
+            privacy_window,
+            text="🔒 Toggle Privacy",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS['accent']
+        )
+        header_label.pack(pady=(20, 10))
+        
+        # Current status
+        status_text = f"Current status: {'Private' if current_private else 'Public'}"
+        if current_private and current_password:
+            status_text += "\nPassword: ****"  # Fixed asterisks to avoid revealing length
+        
+        status_label = ctk.CTkLabel(
+            privacy_window,
+            text=status_text,
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text']
+        )
+        status_label.pack(pady=10)
+        
+        # Password entry
+        password_label = ctk.CTkLabel(
+            privacy_window,
+            text="Enter password to make private (leave empty to make public):",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_dim']
+        )
+        password_label.pack(pady=(10, 5), padx=20)
+        
+        password_entry = ctk.CTkEntry(
+            privacy_window,
+            placeholder_text="Enter password...",
+            font=ctk.CTkFont(size=12),
+            height=38,
+            fg_color=COLORS['sidebar'],
+            border_color=COLORS['accent'],
+            border_width=2,
+            show="*"
+        )
+        password_entry.pack(fill="x", padx=20, pady=5)
+        add_context_menu(password_entry)
+        
+        def apply_privacy():
+            password = password_entry.get().strip()
+            
+            client = get_supabase_client()
+            if not client:
+                messagebox.showerror("Error", "Supabase client not available.")
+                return
+            
+            try:
+                if password:
+                    # Set password and make private
+                    client.table("licenses").update({
+                        "password": password,
+                        "is_private": True
+                    }).eq("license_key", license_key).execute()
+                    
+                    messagebox.showinfo(
+                        "Success",
+                        f"License key is now private with password protection.\n\nKey: {license_key}"
+                    )
+                else:
+                    # Clear password and make public
+                    client.table("licenses").update({
+                        "password": None,
+                        "is_private": False
+                    }).eq("license_key", license_key).execute()
+                    
+                    messagebox.showinfo(
+                        "Success",
+                        f"License key is now public (no password).\n\nKey: {license_key}"
+                    )
+                
+                privacy_window.destroy()
+                parent_window.destroy()
+                self._load_all_licenses_async()  # Refresh the explorer
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to update privacy:\n{str(e)}")
+        
+        # Button frame
+        btn_frame = ctk.CTkFrame(privacy_window, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=15)
+        
+        apply_btn = ctk.CTkButton(
+            btn_frame,
+            text="Apply",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            height=35,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=apply_privacy
+        )
+        apply_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
+        
+        cancel_btn = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            font=ctk.CTkFont(size=12),
+            height=35,
+            fg_color=COLORS['sidebar'],
+            hover_color=COLORS['accent'],
+            command=privacy_window.destroy
+        )
+        cancel_btn.pack(side="left", expand=True, fill="x", padx=(5, 0))
+    
+    def _delete_key(self, license_record, parent_window):
+        """
+        Permanently delete a license key from the database.
+        
+        Args:
+            license_record: The license record from the database
+            parent_window: The parent dialog window to close after completion
+        """
+        license_key = license_record.get('license_key')
+        email = license_record.get('email', 'N/A')
+        
+        # Confirm deletion
+        if not messagebox.askyesno(
+            "Confirm Delete",
+            f"⚠️ WARNING: This action cannot be undone!\n\n"
+            f"Are you sure you want to permanently delete:\n\n"
+            f"Key: {license_key}\n"
+            f"Email: {email}\n\n"
+            f"This will remove all license data from the database."
+        ):
+            return
+        
+        # Double confirm for safety
+        if not messagebox.askyesno(
+            "Final Confirmation",
+            f"This is your FINAL confirmation.\n\n"
+            f"Delete license key?\n{license_key}"
+        ):
+            return
+        
+        # Delete from database
+        client = get_supabase_client()
+        if not client:
+            messagebox.showerror("Error", "Supabase client not available.")
+            return
+        
+        try:
+            client.table("licenses").delete().eq("license_key", license_key).execute()
+            
+            messagebox.showinfo(
+                "Deleted",
+                f"License key deleted successfully!\n\nKey: {license_key}"
+            )
+            
+            parent_window.destroy()
+            self._load_all_licenses_async()  # Refresh the explorer
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to delete license:\n{str(e)}")
 
 
 def main():
