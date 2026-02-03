@@ -1096,8 +1096,11 @@ class EnterpriseApp(ctk.CTk):
                 
                 self._log_message(f"✓ {credit_status['message']}")
             except Exception as e:
-                self._log_message(f"⚠️  Could not verify credits: {str(e)}")
-                # Continue anyway - the worker will check credits again
+                # Block generation if credit verification fails - prevents unauthorized usage
+                self._log_message(f"❌ Could not verify credits: {str(e)}")
+                messagebox.showerror("Credit Verification Failed", 
+                    f"Unable to verify your remaining credits.\n\n{str(e)}\n\nPlease check your internet connection and try again.")
+                return
         
         # Show progress frame
         self.progress_frame.pack(fill="x", pady=(20, 0))
@@ -1140,14 +1143,20 @@ class EnterpriseApp(ctk.CTk):
                     self.after(0, lambda fn=pdf_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
                     
                     # Deduct credit after successful generation
+                    # Note: Credit was already verified before generation started
                     try:
                         from ai_worker import deduct_credit
                         if deduct_credit():
                             self.after(0, lambda: self._log_message("💳 1 credit deducted from your account."))
                         else:
-                            self.after(0, lambda: self._log_message("⚠️  Could not deduct credit."))
+                            # Log the failure prominently - this indicates a potential issue
+                            self.after(0, lambda: self._log_message("⚠️  WARNING: Could not deduct credit. Please contact support if this persists."))
+                            print("ALERT: Credit deduction failed after successful generation")
                     except Exception as credit_err:
-                        self.after(0, lambda err=str(credit_err): self._log_message(f"⚠️  Credit deduction error: {err}"))
+                        # Log exception details for debugging
+                        error_detail = str(credit_err)
+                        self.after(0, lambda err=error_detail: self._log_message(f"⚠️  Credit deduction error: {err}"))
+                        print(f"ALERT: Credit deduction exception: {error_detail}")
                     
                     # Add email notification log - use actual user email from login
                     user_email = "user@example.com"

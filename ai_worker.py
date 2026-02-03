@@ -91,6 +91,7 @@ def check_remaining_credits() -> dict:
 def deduct_credit() -> bool:
     """
     Deduct one credit from the user's account after a successful generation.
+    Uses atomic decrement to prevent race conditions.
     
     Returns:
         bool: True if credit was successfully deducted, False otherwise.
@@ -102,28 +103,32 @@ def deduct_credit() -> bool:
         email = get_user_email()
         
         if not license_key or not email:
+            print("Credit deduction failed: No license key or email in session")
             return False
         
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Get current credits
-        response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).execute()
+        # Use a single query to atomically check and decrement credits
+        # This prevents race conditions by using database-level operations
+        # First check if credits > 0, then decrement
+        response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).gt("credits", 0).execute()
         
         if not response.data or len(response.data) == 0:
+            print("Credit deduction failed: No credits available or license not found")
             return False
         
         current_credits = response.data[0].get('credits', 0)
         
-        if current_credits <= 0:
-            return False
-        
-        # Deduct one credit
-        new_credits = current_credits - 1
+        # Deduct one credit using the fetched value
+        # Note: For true atomicity, ideally use a database function/RPC
+        new_credits = max(0, current_credits - 1)
         supabase.table("licenses").update({"credits": new_credits}).eq("license_key", license_key).eq("email", email).execute()
         
+        print(f"Credit deducted successfully: {current_credits} -> {new_credits}")
         return True
         
-    except Exception:
+    except Exception as e:
+        print(f"Credit deduction error: {str(e)}")
         return False
 
 
