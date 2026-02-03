@@ -629,6 +629,21 @@ class AdminKeygenApp(ctk.CTk):
     
     def _on_generate(self):
         """Handle generate button click with Supabase sync (Full Schema with Credits)."""
+        # Prevent double-click by disabling the button during generation
+        if hasattr(self, '_generating') and self._generating:
+            return
+        self._generating = True
+        self.generate_btn.configure(state="disabled", text="⏳ Generating...")
+        
+        try:
+            self._do_generate()
+        finally:
+            # Re-enable button after generation
+            self._generating = False
+            self.generate_btn.configure(state="normal", text="⚡ Generate License Key")
+    
+    def _do_generate(self):
+        """Actual generation logic (called from _on_generate)."""
         email_input = self.email_entry.get().strip()
         credits_input = self.credits_entry.get().strip()
         duration_input = self.duration_entry.get().strip().lower()
@@ -1385,10 +1400,33 @@ Send this key to the buyer for activation.
     def _on_copy(self):
         """Copy the license key to clipboard."""
         if hasattr(self, 'last_license_key') and self.last_license_key:
-            self.clipboard_clear()
-            self.clipboard_append(self.last_license_key)
-            messagebox.showinfo("Copied", "License key copied to clipboard!")
-            self.status_label.configure(text="License key copied to clipboard", text_color=COLORS['accent'])
+            try:
+                # Clear and set clipboard
+                self.clipboard_clear()
+                self.clipboard_append(self.last_license_key)
+                # Force update to ensure clipboard is set
+                self.update()
+                
+                # Show visual feedback without blocking messagebox
+                self.status_label.configure(
+                    text="✓ License key copied to clipboard!",
+                    text_color="#00FF00"  # Bright green for success
+                )
+                # Reset status after 3 seconds
+                self.after(3000, lambda: self.status_label.configure(
+                    text="Ready",
+                    text_color=COLORS['text_dim']
+                ))
+            except Exception as e:
+                self.status_label.configure(
+                    text=f"Copy failed: {str(e)}",
+                    text_color="red"
+                )
+        else:
+            self.status_label.configure(
+                text="No license key to copy",
+                text_color="red"
+            )
     
     def _on_refill_key(self):
         """Handle Refill Key button click - adds credits to an existing license."""

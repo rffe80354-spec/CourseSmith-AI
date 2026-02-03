@@ -17,6 +17,9 @@ from supabase import create_client, Client
 # Import HWID and license utilities from utils module
 from utils import get_hwid, parse_hwids_array, check_license, add_context_menu
 
+# Import session manager for setting session data
+from session_manager import set_session, get_user_email, get_license_key
+
 
 # Suppress stdout/stderr for --noconsole mode with log file fallback
 if hasattr(sys, 'frozen'):
@@ -426,6 +429,15 @@ class EnterpriseApp(ctk.CTk):
             self.license_valid = True
             self.license_data = result['license_data']
             
+            # Set session data for ai_worker credit checking
+            tier = self.license_data.get('tier', 'standard') if self.license_data else 'standard'
+            set_session(
+                token="session_token",  # Token for session validity
+                email=email,
+                tier=tier,
+                license_key=license_key
+            )
+            
             # Show success message
             messagebox.showinfo("Success", result['message'])
             
@@ -522,24 +534,30 @@ class EnterpriseApp(ctk.CTk):
         
         self.nav_buttons['forge'] = self._create_nav_button("🔥 Forge", "forge")
         self.nav_buttons['library'] = self._create_nav_button("📚 Library", "library")
+        self.nav_buttons['account'] = self._create_nav_button("👤 Account", "account")
         self.nav_buttons['settings'] = self._create_nav_button("⚙️ Settings", "settings")
         
         # Spacer
         spacer = ctk.CTkFrame(self.sidebar, fg_color="transparent", height=20)
         spacer.pack(fill="both", expand=True)
         
-        # License Info Frame - Display "TIER: {tier} | EXP: {date}" at BOTTOM of sidebar
-        license_info_frame = ctk.CTkFrame(
+        # Account Info Frame at BOTTOM of sidebar - Display email and credits
+        account_info_frame = ctk.CTkFrame(
             self.sidebar,
             fg_color=COLORS['background'],
             corner_radius=10
         )
-        license_info_frame.pack(fill="x", padx=15, pady=(0, 10))
+        account_info_frame.pack(fill="x", padx=15, pady=(0, 10))
         
-        # Get license tier and expiration from license_data
-        tier_text = "Unknown"
+        # Get user email and credits from license_data
+        user_email = "Not logged in"
+        credits_text = "0"
+        tier_text = "UNKNOWN"
         expiry_text = "N/A"
+        
         if self.license_data and isinstance(self.license_data, dict):
+            user_email = self.license_data.get('email', 'Unknown')
+            credits_text = str(self.license_data.get('credits', 0))
             tier_text = self.license_data.get('tier', 'standard').upper()
             valid_until = self.license_data.get('valid_until')
             if valid_until:
@@ -551,22 +569,54 @@ class EnterpriseApp(ctk.CTk):
             else:
                 expiry_text = "Lifetime"
         
-        # Determine tier color based on tier level
+        # Store references for later updates
+        self.account_credits_label = None
+        self.account_tier_label = None
+        
+        # Email label (truncated if too long)
+        email_display = user_email if len(user_email) <= 25 else user_email[:22] + "..."
+        email_label = ctk.CTkLabel(
+            account_info_frame,
+            text=f"📧 {email_display}",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS['text_dim']
+        )
+        email_label.pack(pady=(8, 2), padx=10, anchor="w")
+        
+        # Credits label with dynamic color
+        credits_int = int(credits_text) if credits_text.isdigit() else 0
+        credits_color = "#00FF00" if credits_int > 10 else ("#FFA500" if credits_int > 0 else "#FF0000")
+        self.account_credits_label = ctk.CTkLabel(
+            account_info_frame,
+            text=f"💳 Credits: {credits_text}",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=credits_color
+        )
+        self.account_credits_label.pack(pady=(2, 2), padx=10, anchor="w")
+        
+        # Tier label with tier-specific color
         tier_colors = {
             "PROFESSIONAL": "#FFD700",  # Gold
-            "EXTENDED": "#FFA500",       # Orange
-            "STANDARD": "#A0A0A0"        # Gray/Silver
+            "EXTENDED": "#00CED1",       # Dark Cyan/Turquoise
+            "STANDARD": "#87CEEB"        # Sky Blue
         }
         tier_color = tier_colors.get(tier_text, COLORS['accent'])
-        
-        # Combined Tier and Expiration label in one line: "TIER: {tier} | EXP: {date}"
-        tier_exp_label = ctk.CTkLabel(
-            license_info_frame,
-            text=f"TIER: {tier_text} | EXP: {expiry_text}",
-            font=ctk.CTkFont(size=10, weight="bold"),
+        self.account_tier_label = ctk.CTkLabel(
+            account_info_frame,
+            text=f"⭐ {tier_text}",
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=tier_color
         )
-        tier_exp_label.pack(pady=10, padx=10)
+        self.account_tier_label.pack(pady=(2, 2), padx=10, anchor="w")
+        
+        # Expiry label
+        expiry_label = ctk.CTkLabel(
+            account_info_frame,
+            text=f"📅 Exp: {expiry_text}",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS['text_dim']
+        )
+        expiry_label.pack(pady=(2, 8), padx=10, anchor="w")
         
         # Version label at bottom
         version_label = ctk.CTkLabel(
@@ -660,6 +710,8 @@ class EnterpriseApp(ctk.CTk):
             self._create_forge_tab()
         elif tab_id == "library":
             self._create_library_tab()
+        elif tab_id == "account":
+            self._create_account_tab()
         elif tab_id == "settings":
             self._create_settings_tab()
     
@@ -896,6 +948,214 @@ class EnterpriseApp(ctk.CTk):
                 self.saved_prompt_text = self.instruction_textbox.get("1.0", "end-1c")
         except Exception:
             pass
+    
+    def _create_account_tab(self):
+        """Create the Account tab - display user info, credits, and license details."""
+        container = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=40, pady=40)
+        
+        title_label = ctk.CTkLabel(
+            container,
+            text="👤 Account",
+            font=ctk.CTkFont(size=32, weight="bold"),
+            text_color=COLORS['text']
+        )
+        title_label.pack(anchor="w", pady=(0, 10))
+        
+        subtitle_label = ctk.CTkLabel(
+            container,
+            text="Your license information and account details",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim']
+        )
+        subtitle_label.pack(anchor="w", pady=(0, 30))
+        
+        # Account info frame
+        account_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
+        account_frame.pack(fill="x", pady=(0, 20))
+        
+        # Get user data from license_data
+        user_email = "Not available"
+        credits_count = 0
+        tier_text = "UNKNOWN"
+        expiry_text = "N/A"
+        license_key_display = "Not available"
+        
+        if self.license_data and isinstance(self.license_data, dict):
+            user_email = self.license_data.get('email', 'Unknown')
+            credits_count = self.license_data.get('credits', 0)
+            tier_text = self.license_data.get('tier', 'standard').upper()
+            license_key = self.license_data.get('license_key', '')
+            if license_key:
+                # Truncate license key for display
+                license_key_display = f"{license_key[:12]}...{license_key[-6:]}" if len(license_key) > 20 else license_key
+            
+            valid_until = self.license_data.get('valid_until')
+            if valid_until:
+                try:
+                    expiry_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                    expiry_text = expiry_date.strftime("%B %d, %Y")
+                except Exception:
+                    expiry_text = "Lifetime"
+            else:
+                expiry_text = "Lifetime"
+        
+        # Tier colors
+        tier_colors = {
+            "PROFESSIONAL": "#FFD700",  # Gold
+            "EXTENDED": "#00CED1",       # Dark Cyan/Turquoise
+            "STANDARD": "#87CEEB"        # Sky Blue
+        }
+        tier_color = tier_colors.get(tier_text, COLORS['accent'])
+        
+        # Account details section
+        details_frame = ctk.CTkFrame(account_frame, fg_color="transparent")
+        details_frame.pack(fill="x", padx=30, pady=30)
+        
+        # Row 1: Email
+        email_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        email_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            email_row,
+            text="📧 Email:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            email_row,
+            text=user_email,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        ).pack(side="left", padx=(10, 0))
+        
+        # Row 2: License Tier
+        tier_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        tier_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            tier_row,
+            text="⭐ License Tier:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        tier_badge = ctk.CTkLabel(
+            tier_row,
+            text=f" {tier_text} ",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['background'],
+            fg_color=tier_color,
+            corner_radius=5
+        )
+        tier_badge.pack(side="left", padx=(10, 0))
+        
+        # Row 3: Credits with large display
+        credits_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        credits_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            credits_row,
+            text="💳 Credits:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        # Credits color based on amount
+        credits_color = "#00FF00" if credits_count > 10 else ("#FFA500" if credits_count > 0 else "#FF0000")
+        ctk.CTkLabel(
+            credits_row,
+            text=str(credits_count),
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=credits_color
+        ).pack(side="left", padx=(10, 0))
+        
+        # Row 4: Expiration
+        expiry_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        expiry_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            expiry_row,
+            text="📅 Expires:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            expiry_row,
+            text=expiry_text,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        ).pack(side="left", padx=(10, 0))
+        
+        # Row 5: License Key (partially hidden)
+        key_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        key_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            key_row,
+            text="🔑 License Key:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            key_row,
+            text=license_key_display,
+            font=ctk.CTkFont(size=12, family="Courier New"),
+            text_color=COLORS['text_dim']
+        ).pack(side="left", padx=(10, 0))
+        
+        # Refresh Credits Button
+        refresh_frame = ctk.CTkFrame(container, fg_color="transparent")
+        refresh_frame.pack(fill="x", pady=(10, 0))
+        
+        refresh_btn = ctk.CTkButton(
+            refresh_frame,
+            text="🔄 Refresh Credits",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=45,
+            corner_radius=10,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=self._refresh_credits
+        )
+        refresh_btn.pack(anchor="w")
+    
+    def _refresh_credits(self):
+        """Refresh credits count from database and update UI."""
+        try:
+            from ai_worker import check_remaining_credits
+            credit_status = check_remaining_credits()
+            
+            if credit_status['has_credits'] or credit_status['credits'] >= 0:
+                # Update license_data
+                if self.license_data and isinstance(self.license_data, dict):
+                    self.license_data['credits'] = credit_status['credits']
+                
+                # Update sidebar credits label if it exists
+                if hasattr(self, 'account_credits_label') and self.account_credits_label:
+                    credits = credit_status['credits']
+                    credits_color = "#00FF00" if credits > 10 else ("#FFA500" if credits > 0 else "#FF0000")
+                    self.account_credits_label.configure(
+                        text=f"💳 Credits: {credits}",
+                        text_color=credits_color
+                    )
+                
+                # Refresh the account tab to show updated info
+                self._switch_tab("account")
+                
+                messagebox.showinfo("Credits Updated", f"You have {credit_status['credits']} credits remaining.")
+            else:
+                messagebox.showwarning("Credits Check", credit_status['message'])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not refresh credits: {str(e)}")
     
     def _create_library_tab(self):
         """Create the Library tab."""
