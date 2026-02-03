@@ -1410,7 +1410,7 @@ Send this key to the buyer for activation.
                 # Show visual feedback without blocking messagebox
                 self.status_label.configure(
                     text="✓ License key copied to clipboard!",
-                    text_color="#00FF00"  # Bright green for success
+                    text_color="#2ECC71"  # Darker green for better contrast
                 )
                 # Reset status after 3 seconds
                 self.after(3000, lambda: self.status_label.configure(
@@ -1420,12 +1420,12 @@ Send this key to the buyer for activation.
             except Exception as e:
                 self.status_label.configure(
                     text=f"Copy failed: {str(e)}",
-                    text_color="red"
+                    text_color="#E74C3C"
                 )
         else:
             self.status_label.configure(
                 text="No license key to copy",
-                text_color="red"
+                text_color="#E74C3C"
             )
     
     def _on_refill_key(self):

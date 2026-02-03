@@ -431,8 +431,11 @@ class EnterpriseApp(ctk.CTk):
             
             # Set session data for ai_worker credit checking
             tier = self.license_data.get('tier', 'standard') if self.license_data else 'standard'
+            # Generate a unique session token based on license data
+            import hashlib
+            session_token = hashlib.sha256(f"{email}:{license_key}:{datetime.now().isoformat()}".encode()).hexdigest()[:32]
             set_session(
-                token="session_token",  # Token for session validity
+                token=session_token,
                 email=email,
                 tier=tier,
                 license_key=license_key
@@ -584,8 +587,11 @@ class EnterpriseApp(ctk.CTk):
         email_label.pack(pady=(8, 2), padx=10, anchor="w")
         
         # Credits label with dynamic color
-        credits_int = int(credits_text) if credits_text.isdigit() else 0
-        credits_color = "#00FF00" if credits_int > 10 else ("#FFA500" if credits_int > 0 else "#FF0000")
+        try:
+            credits_int = int(credits_text)
+        except (ValueError, TypeError):
+            credits_int = 0
+        credits_color = "#2ECC71" if credits_int > 10 else ("#F39C12" if credits_int > 0 else "#E74C3C")
         self.account_credits_label = ctk.CTkLabel(
             account_info_frame,
             text=f"💳 Credits: {credits_text}",
@@ -1065,8 +1071,8 @@ class EnterpriseApp(ctk.CTk):
             width=120
         ).pack(side="left")
         
-        # Credits color based on amount
-        credits_color = "#00FF00" if credits_count > 10 else ("#FFA500" if credits_count > 0 else "#FF0000")
+        # Credits color based on amount (using better contrast colors)
+        credits_color = "#2ECC71" if credits_count > 10 else ("#F39C12" if credits_count > 0 else "#E74C3C")
         ctk.CTkLabel(
             credits_row,
             text=str(credits_count),
@@ -1134,15 +1140,16 @@ class EnterpriseApp(ctk.CTk):
             from ai_worker import check_remaining_credits
             credit_status = check_remaining_credits()
             
-            if credit_status['has_credits'] or credit_status['credits'] >= 0:
+            # Check if we got valid credit info (credits could be 0 or positive)
+            credits = credit_status.get('credits', 0)
+            if credits >= 0:
                 # Update license_data
                 if self.license_data and isinstance(self.license_data, dict):
-                    self.license_data['credits'] = credit_status['credits']
+                    self.license_data['credits'] = credits
                 
                 # Update sidebar credits label if it exists
                 if hasattr(self, 'account_credits_label') and self.account_credits_label:
-                    credits = credit_status['credits']
-                    credits_color = "#00FF00" if credits > 10 else ("#FFA500" if credits > 0 else "#FF0000")
+                    credits_color = "#2ECC71" if credits > 10 else ("#F39C12" if credits > 0 else "#E74C3C")
                     self.account_credits_label.configure(
                         text=f"💳 Credits: {credits}",
                         text_color=credits_color
@@ -1151,7 +1158,7 @@ class EnterpriseApp(ctk.CTk):
                 # Refresh the account tab to show updated info
                 self._switch_tab("account")
                 
-                messagebox.showinfo("Credits Updated", f"You have {credit_status['credits']} credits remaining.")
+                messagebox.showinfo("Credits Updated", f"You have {credits} credits remaining.")
             else:
                 messagebox.showwarning("Credits Check", credit_status['message'])
         except Exception as e:
