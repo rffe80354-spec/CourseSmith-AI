@@ -7,21 +7,22 @@ import os
 import re
 import tempfile
 import requests
-from dotenv import load_dotenv
 from openai import OpenAI
+
+# Hardcoded primary API key - users cannot change this
+PRIMARY_API_KEY = "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY"
 
 
 class AIGenerator:
     """Class to handle all OpenAI API interactions."""
 
     def __init__(self):
-        """Initialize the AI Generator with OpenAI client."""
-        load_dotenv()
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
+        """Initialize the AI Generator with OpenAI client using hardcoded API key."""
+        api_key = PRIMARY_API_KEY
+        if not api_key or api_key == "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY":
             raise ValueError(
-                "OPENAI_API_KEY not found in environment variables. "
-                "Please create a .env file with your API key."
+                "Primary API key not configured. "
+                "Please contact the administrator."
             )
         self.client = OpenAI(api_key=api_key)
 

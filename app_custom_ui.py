@@ -648,38 +648,24 @@ class CustomApp(ctk.CTk):
         )
         settings_inner.pack(fill='both', expand=True, padx=30, pady=30)
         
-        # API Key setting
-        api_label = ctk.CTkLabel(
+        # Info section (API key is managed internally)
+        info_label = ctk.CTkLabel(
             settings_inner,
-            text="OpenAI API Key",
+            text="ℹ️ API Configuration",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS['text_primary']
         )
-        api_label.pack(anchor='w', pady=(0, 8))
+        info_label.pack(anchor='w', pady=(0, 8))
         
-        api_entry = ctk.CTkEntry(
+        info_text = ctk.CTkLabel(
             settings_inner,
-            height=45,
-            corner_radius=15,
-            font=ctk.CTkFont(size=14),
-            fg_color=COLORS['background'],
-            border_color=COLORS['border'],
-            text_color=COLORS['text_primary'],
-            show="*"
+            text="API access is managed automatically. Credits are deducted from your license when generating courses.",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text_secondary'],
+            wraplength=400,
+            justify="left"
         )
-        api_entry.pack(fill='x', pady=(0, 20))
-        
-        save_btn = ctk.CTkButton(
-            settings_inner,
-            text="Save Settings",
-            height=45,
-            corner_radius=20,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover'],
-            text_color=COLORS['text_primary']
-        )
-        save_btn.pack(fill='x')
+        info_text.pack(anchor='w', pady=(0, 20))
     
     def _toggle_language(self):
         """Toggle between EN and RU languages."""

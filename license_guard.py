@@ -910,24 +910,25 @@ def save_license(email: str, key: str, tier: str, expires_at: Optional[str] = No
         return False
 
 
-def load_license() -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+def load_license() -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
     Load and validate the stored license session.
     Returns session info if valid, otherwise requires fresh login.
     
     Returns:
-        tuple: (session_token, email, tier, expires_at) where:
+        tuple: (session_token, email, tier, expires_at, license_key) where:
             - session_token: str or None - the session authentication token
             - email: str or None - the user's email address
             - tier: str or None - 'standard' or 'extended' license tier
             - expires_at: str or None - expiration date in ISO format
-        Returns (None, None, None, None) if no valid session exists.
+            - license_key: str or None - the license key string
+        Returns (None, None, None, None, None) if no valid session exists.
     """
     try:
         session_path = get_license_path()
         
         if not os.path.exists(session_path):
-            return None, None, None, None
+            return None, None, None, None, None
         
         # Read encrypted data
         with open(session_path, 'rb') as f:
@@ -946,25 +947,25 @@ def load_license() -> Tuple[Optional[str], Optional[str], Optional[str], Optiona
         saved_hwid = session_data.get('hwid')
         
         if not email or not key or not tier:
-            return None, None, None, None
+            return None, None, None, None, None
         
         # Check HWID match
         current_hwid = get_hwid()
         if saved_hwid != current_hwid:
             # Hardware changed - invalidate session
             remove_license()
-            return None, None, None, None
+            return None, None, None, None, None
         
         # Validate the license
         result = validate_license(email, key, hwid=current_hwid, check_expiration=True)
         
         if result and result.get('valid'):
-            # Session is valid
-            return result['token'], email, tier, expires_at
+            # Session is valid - return with license key
+            return result['token'], email, tier, expires_at, key
         else:
             # Session is invalid (expired or revoked)
             remove_license()
-            return None, None, None, None
+            return None, None, None, None, None
             
     except Exception as e:
         print(f"Failed to load session: {e}")
@@ -973,7 +974,7 @@ def load_license() -> Tuple[Optional[str], Optional[str], Optional[str], Optiona
             remove_license()
         except Exception:
             pass
-        return None, None, None, None
+        return None, None, None, None, None
 
 
 def remove_license() -> bool:

@@ -443,15 +443,11 @@ class EnterpriseApp(ctk.CTk):
             self.activation_status.configure(text=result['message'], text_color="red")
     
     def _init_coursesmith_engine(self):
-        """Initialize the CourseSmith Engine with API key from environment."""
+        """Initialize the CourseSmith Engine with the hardcoded primary API key."""
         try:
             from coursesmith_engine import CourseSmithEngine
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key:
-                self.coursesmith_engine = CourseSmithEngine(api_key=api_key)
-            else:
-                # Initialize without API key - user can add it later in Settings
-                self.coursesmith_engine = CourseSmithEngine(api_key=None, require_api_key=False)
+            # Use the hardcoded primary API key (no env var needed)
+            self.coursesmith_engine = CourseSmithEngine()
         except Exception as e:
             print(f"Warning: Could not initialize coursesmith_engine: {e}")
             self.coursesmith_engine = None
@@ -959,146 +955,27 @@ class EnterpriseApp(ctk.CTk):
         settings_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
         settings_frame.pack(fill="both", expand=True, pady=(0, 20))
         
-        # API Key section
-        api_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        api_frame.pack(fill="x", padx=30, pady=(30, 20))
+        # Info section (API key is now managed internally)
+        info_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        info_frame.pack(fill="x", padx=30, pady=(30, 20))
         
-        api_label = ctk.CTkLabel(
-            api_frame,
-            text="OpenAI API Key",
+        info_label = ctk.CTkLabel(
+            info_frame,
+            text="ℹ️ API Configuration",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS['text']
         )
-        api_label.pack(anchor="w", pady=(0, 10))
+        info_label.pack(anchor="w", pady=(0, 10))
         
-        api_help_label = ctk.CTkLabel(
-            api_frame,
-            text="Your API key is stored in the .env file in the application directory.",
+        info_text = ctk.CTkLabel(
+            info_frame,
+            text="API access is managed automatically. Credits are deducted from your license when generating courses.",
             font=ctk.CTkFont(size=12),
-            text_color=COLORS['text_dim']
+            text_color=COLORS['text_dim'],
+            wraplength=500,
+            justify="left"
         )
-        api_help_label.pack(anchor="w", pady=(0, 15))
-        
-        # Load current API key from environment
-        current_key = os.getenv("OPENAI_API_KEY", "")
-        
-        # API Key entry with show/hide button
-        entry_frame = ctk.CTkFrame(api_frame, fg_color="transparent")
-        entry_frame.pack(fill="x", pady=(0, 10))
-        
-        self.api_key_entry = ctk.CTkEntry(
-            entry_frame,
-            placeholder_text="sk-...",
-            height=45,
-            font=ctk.CTkFont(size=14),
-            fg_color=COLORS['background'],
-            border_color=COLORS['accent'],
-            border_width=2,
-            show="*"
-        )
-        self.api_key_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        
-        if current_key:
-            self.api_key_entry.insert(0, current_key)
-        
-        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
-        from utils import add_context_menu
-        add_context_menu(self.api_key_entry)
-        
-        # Show/Hide button
-        self.api_key_visible = False
-        self.show_hide_btn = ctk.CTkButton(
-            entry_frame,
-            text="👁",
-            width=45,
-            height=45,
-            font=ctk.CTkFont(size=18),
-            fg_color=COLORS['sidebar'],
-            hover_color=COLORS['accent'],
-            command=self._toggle_api_key_visibility
-        )
-        self.show_hide_btn.pack(side="right")
-        
-        # Save button
-        save_btn = ctk.CTkButton(
-            api_frame,
-            text="💾 Save API Key",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            height=50,
-            corner_radius=10,
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover'],
-            command=self._save_api_key
-        )
-        save_btn.pack(pady=(20, 0))
-    
-    def _toggle_api_key_visibility(self):
-        """Toggle API key visibility."""
-        self.api_key_visible = not self.api_key_visible
-        if self.api_key_visible:
-            self.api_key_entry.configure(show="")
-            self.show_hide_btn.configure(text="👁‍🗨")
-        else:
-            self.api_key_entry.configure(show="*")
-            self.show_hide_btn.configure(text="👁")
-    
-    def _save_api_key(self):
-        """Save the API key to .env file and update environment."""
-        api_key = self.api_key_entry.get().strip()
-        
-        if not api_key:
-            messagebox.showerror("Error", "Please enter an API key.")
-            return
-        
-        # Validate OpenAI API key format
-        if not api_key.startswith("sk-"):
-            result = messagebox.askyesno(
-                "Invalid API Key Format",
-                "The API key doesn't start with 'sk-' which is the expected format for OpenAI API keys.\n\n"
-                "Do you want to save it anyway?"
-            )
-            if not result:
-                return
-        
-        # Save to .env file
-        env_path = os.path.join(os.getcwd(), ".env")
-        try:
-            # Read existing content
-            existing_lines = []
-            if os.path.exists(env_path):
-                with open(env_path, 'r') as f:
-                    for line in f:
-                        stripped = line.strip()
-                        if stripped and not stripped.startswith("OPENAI_API_KEY"):
-                            existing_lines.append(line.rstrip())
-            
-            # Write with new API key
-            with open(env_path, 'w') as f:
-                for line in existing_lines:
-                    f.write(line + "\n")
-                f.write(f"OPENAI_API_KEY={api_key}\n")
-            
-            # Update environment variable
-            os.environ["OPENAI_API_KEY"] = api_key
-            
-            # Update coursesmith_engine instance if it exists
-            if hasattr(self, 'coursesmith_engine'):
-                try:
-                    from coursesmith_engine import CourseSmithEngine
-                    self.coursesmith_engine = CourseSmithEngine(api_key=api_key)
-                except Exception as e:
-                    print(f"Warning: Could not reinitialize coursesmith_engine: {e}")
-                    messagebox.showwarning(
-                        "Partial Success",
-                        f"API key saved, but engine reinitialization failed:\n{str(e)}\n\n"
-                        "Please restart the application."
-                    )
-                    return
-            
-            messagebox.showinfo("Success", "API key saved successfully!")
-            
-        except IOError as e:
-            messagebox.showerror("Error", f"Failed to save API key: {e}")
+        info_text.pack(anchor="w", pady=(0, 15))
     
     def _on_page_count_change(self, value):
         """
@@ -1205,6 +1082,22 @@ class EnterpriseApp(ctk.CTk):
         
         if not has_api_key:
             self._log_message("⚠️  API key not configured - using simulated generation mode")
+        else:
+            # Check for remaining credits before proceeding
+            self._log_message("🔍 Checking credits...")
+            try:
+                from ai_worker import check_remaining_credits
+                credit_status = check_remaining_credits()
+                
+                if not credit_status['has_credits']:
+                    self._log_message(f"❌ {credit_status['message']}")
+                    messagebox.showerror("No Credits", credit_status['message'])
+                    return
+                
+                self._log_message(f"✓ {credit_status['message']}")
+            except Exception as e:
+                self._log_message(f"⚠️  Could not verify credits: {str(e)}")
+                # Continue anyway - the worker will check credits again
         
         # Show progress frame
         self.progress_frame.pack(fill="x", pady=(20, 0))
@@ -1245,6 +1138,16 @@ class EnterpriseApp(ctk.CTk):
                     # Log PDF save location
                     pdf_filename = os.path.basename(pdf_path)
                     self.after(0, lambda fn=pdf_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
+                    
+                    # Deduct credit after successful generation
+                    try:
+                        from ai_worker import deduct_credit
+                        if deduct_credit():
+                            self.after(0, lambda: self._log_message("💳 1 credit deducted from your account."))
+                        else:
+                            self.after(0, lambda: self._log_message("⚠️  Could not deduct credit."))
+                    except Exception as credit_err:
+                        self.after(0, lambda err=str(credit_err): self._log_message(f"⚠️  Credit deduction error: {err}"))
                     
                     # Add email notification log - use actual user email from login
                     user_email = "user@example.com"
