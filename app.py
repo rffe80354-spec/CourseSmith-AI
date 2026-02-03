@@ -271,11 +271,11 @@ class App(ctk.CTk):
         """
         try:
             # Try to load saved session
-            token, email, tier, expires_at = load_license()
+            token, email, tier, expires_at, license_key = load_license()
             
             if token and email and tier:
                 # Valid session found
-                set_session(token, email, tier)
+                set_session(token, email, tier, license_key=license_key)
                 self.is_licensed = True
                 self.licensed_email = email
                 self.license_tier = tier
@@ -478,7 +478,7 @@ class App(ctk.CTk):
         expires_at = result.get('expires_at')
         
         # Set the session
-        set_session(token, email, tier)
+        set_session(token, email, tier, license_key=key)
         self.is_licensed = True
         self.licensed_email = email
         self.license_tier = tier
@@ -711,11 +711,11 @@ class App(ctk.CTk):
         self._create_activation_ui()
 
     def _show_settings(self):
-        """Show the settings dialog for API key configuration."""
+        """Show the settings dialog with configuration info."""
         # Create modal dialog
         dialog = ctk.CTkToplevel(self)
         dialog.title("Settings")
-        dialog.geometry("500x300")
+        dialog.geometry("500x200")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -723,7 +723,7 @@ class App(ctk.CTk):
         # Center on parent
         dialog.update_idletasks()
         x = self.winfo_x() + (self.winfo_width() - 500) // 2
-        y = self.winfo_y() + (self.winfo_height() - 300) // 2
+        y = self.winfo_y() + (self.winfo_height() - 200) // 2
         dialog.geometry(f"+{x}+{y}")
 
         # Title
@@ -733,82 +733,33 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=20, weight="bold"),
         ).pack(padx=20, pady=(20, 10))
 
-        # API Key section
+        # Info section (API key is managed internally)
         ctk.CTkLabel(
             dialog,
-            text="OpenAI API Key:",
+            text="ℹ️ API Configuration",
             font=ctk.CTkFont(size=14, weight="bold"),
         ).pack(padx=20, pady=(20, 5), anchor="w")
-
-        # Load current API key from environment
-        current_key = os.getenv("OPENAI_API_KEY", "")
-        
-        api_key_entry = ctk.CTkEntry(
-            dialog,
-            placeholder_text="sk-...",
-            width=450,
-            height=40,
-            show="*",
-        )
-        api_key_entry.pack(padx=20, pady=(0, 5))
-        bind_clipboard_menu(api_key_entry)
-        if current_key:
-            api_key_entry.insert(0, current_key)
 
         # Help text
         ctk.CTkLabel(
             dialog,
-            text="Your API key is stored in the .env file in the application directory.",
+            text="API access is managed automatically. Credits are deducted from your license when generating courses.",
             font=ctk.CTkFont(size=11),
             text_color="gray",
+            wraplength=450,
+            justify="left",
         ).pack(padx=20, pady=(0, 20))
 
-        def save_api_key():
-            api_key = api_key_entry.get().strip()
-            if not api_key:
-                messagebox.showerror("Error", "Please enter an API key.", parent=dialog)
-                return
-            
-            # Save to .env file
-            env_path = os.path.join(os.getcwd(), ".env")
-            try:
-                # Read existing content
-                existing_lines = []
-                if os.path.exists(env_path):
-                    with open(env_path, 'r') as f:
-                        for line in f:
-                            stripped = line.strip()
-                            if stripped and not stripped.startswith("OPENAI_API_KEY"):
-                                existing_lines.append(line.rstrip())
-                
-                # Write with new API key
-                with open(env_path, 'w') as f:
-                    for line in existing_lines:
-                        f.write(line + "\n")
-                    f.write(f"OPENAI_API_KEY={api_key}\n")
-                
-                # Update environment variable
-                os.environ["OPENAI_API_KEY"] = api_key
-                
-                # Reset the AI client to use new key
-                AIWorkerBase.reset_client()
-                
-                messagebox.showinfo("Success", "API key saved successfully!", parent=dialog)
-                dialog.destroy()
-                
-            except IOError as e:
-                messagebox.showerror("Error", f"Failed to save API key: {e}", parent=dialog)
-
-        # Save button
+        # Close button
         ctk.CTkButton(
             dialog,
-            text="💾 Save API Key",
+            text="Close",
             font=ctk.CTkFont(size=14, weight="bold"),
             height=40,
             width=200,
-            fg_color="#28a745",
-            hover_color="#218838",
-            command=save_api_key,
+            fg_color="#6c757d",
+            hover_color="#5a6268",
+            command=dialog.destroy,
         ).pack(pady=20)
 
     # ==================== SETUP TAB ====================

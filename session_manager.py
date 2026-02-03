@@ -28,20 +28,23 @@ class SessionManager:
                     cls._instance._token = None
                     cls._instance._email = None
                     cls._instance._tier = None  # 'trial', 'standard', 'enterprise', or 'lifetime'
+                    cls._instance._license_key = None
         return cls._instance
     
-    def set_session(self, token, email=None, tier=None):
+    def set_session(self, token, email=None, tier=None, license_key=None):
         """
-        Set the current session with token, email, and tier.
+        Set the current session with token, email, tier, and license key.
         
         Args:
             token: The session token from license validation.
             email: The licensed email address (optional).
             tier: The license tier ('trial', 'standard', 'enterprise', or 'lifetime').
+            license_key: The license key string (optional).
         """
         with self._lock:
             self._token = token
             self._email = email
+            self._license_key = license_key
             # Support all tiers, with 'extended' as legacy alias for 'enterprise'
             if tier == 'extended':
                 tier = 'enterprise'
@@ -81,6 +84,16 @@ class SessionManager:
         """
         with self._lock:
             return self._email
+    
+    def get_license_key(self):
+        """
+        Get the license key.
+        
+        Returns:
+            str: The license key, or None if not set.
+        """
+        with self._lock:
+            return self._license_key
     
     def get_tier(self):
         """
@@ -171,10 +184,11 @@ class SessionManager:
             return tier_page_limits.get(self._tier, 10)
     
     def clear(self):
-        """Clear the current session token and tier."""
+        """Clear the current session token, license key, and tier."""
         with self._lock:
             self._token = None
             self._email = None
+            self._license_key = None
             self._tier = None
 
 
@@ -193,9 +207,9 @@ def get_session_manager():
 
 
 # Convenience functions for direct access
-def set_session(token, email=None, tier=None):
-    """Set the session with token, email, and tier."""
-    _session_manager.set_session(token, email, tier)
+def set_session(token, email=None, tier=None, license_key=None):
+    """Set the session with token, email, tier, and license key."""
+    _session_manager.set_session(token, email, tier, license_key)
 
 
 def set_token(token, email=None):
@@ -211,6 +225,16 @@ def get_token():
 def get_tier():
     """Get the license tier."""
     return _session_manager.get_tier()
+
+
+def get_user_email():
+    """Get the user's email from session."""
+    return _session_manager.get_email()
+
+
+def get_license_key():
+    """Get the license key from session."""
+    return _session_manager.get_license_key()
 
 
 def is_active():

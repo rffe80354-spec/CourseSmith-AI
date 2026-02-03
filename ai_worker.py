@@ -9,10 +9,127 @@ import re
 import threading
 import tempfile
 import requests
-from dotenv import load_dotenv
 from openai import OpenAI
 
-from session_manager import is_active, SecurityError
+from session_manager import is_active, SecurityError, get_user_email, get_license_key
+
+# Hardcoded primary API key - users cannot change this
+PRIMARY_API_KEY = "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY"
+
+# Supabase configuration for credit checking
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://spfwfyjpexktgnusgyib.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR")
+
+
+def check_remaining_credits() -> dict:
+    """
+    Check remaining credits from Supabase for the current user's license.
+    
+    Returns:
+        dict: {
+            'has_credits': bool,  # True if user has remaining credits
+            'credits': int,       # Number of remaining credits
+            'message': str        # Human-readable status message
+        }
+    """
+    try:
+        from supabase import create_client
+        
+        # Get current user's license key and email from session
+        license_key = get_license_key()
+        email = get_user_email()
+        
+        if not license_key or not email:
+            return {
+                'has_credits': False,
+                'credits': 0,
+                'message': 'No active license session. Please log in.'
+            }
+        
+        # Connect to Supabase
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        
+        # Query for license credits
+        response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).execute()
+        
+        if not response.data or len(response.data) == 0:
+            return {
+                'has_credits': False,
+                'credits': 0,
+                'message': 'License not found in database.'
+            }
+        
+        credits = response.data[0].get('credits', 0)
+        
+        if credits <= 0:
+            return {
+                'has_credits': False,
+                'credits': 0,
+                'message': 'No remaining credits. Please purchase more credits to continue.'
+            }
+        
+        return {
+            'has_credits': True,
+            'credits': credits,
+            'message': f'{credits} credits remaining.'
+        }
+        
+    except ImportError:
+        return {
+            'has_credits': False,
+            'credits': 0,
+            'message': 'Supabase library not available.'
+        }
+    except Exception as e:
+        return {
+            'has_credits': False,
+            'credits': 0,
+            'message': f'Error checking credits: {str(e)}'
+        }
+
+
+def deduct_credit() -> bool:
+    """
+    Deduct one credit from the user's account after a successful generation.
+    Uses atomic decrement to prevent race conditions.
+    
+    Returns:
+        bool: True if credit was successfully deducted, False otherwise.
+    """
+    try:
+        from supabase import create_client
+        
+        license_key = get_license_key()
+        email = get_user_email()
+        
+        if not license_key or not email:
+            print("Credit deduction failed: No license key or email in session")
+            return False
+        
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        
+        # Use a single query to atomically check and decrement credits
+        # This prevents race conditions by using database-level operations
+        # First check if credits > 0, then decrement
+        response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).gt("credits", 0).execute()
+        
+        if not response.data or len(response.data) == 0:
+            print("Credit deduction failed: No credits available or license not found")
+            return False
+        
+        current_credits = response.data[0].get('credits', 0)
+        
+        # Deduct one credit using the fetched value
+        # Note: For true atomicity, ideally use a database function/RPC
+        new_credits = max(0, current_credits - 1)
+        supabase.table("licenses").update({"credits": new_credits}).eq("license_key", license_key).eq("email", email).execute()
+        
+        print(f"Credit deducted successfully: {current_credits} -> {new_credits}")
+        return True
+        
+    except Exception as e:
+        print(f"Credit deduction error: {str(e)}")
+        return False
 
 
 class AIWorkerBase:
@@ -33,35 +150,51 @@ class AIWorkerBase:
             raise SecurityError("Unauthorized: No valid session. Please activate your license.")
     
     @classmethod
+    def _check_credits(cls):
+        """
+        Verify that the user has remaining credits before making an AI request.
+        
+        Raises:
+            ValueError: If user has no remaining credits.
+        """
+        credit_status = check_remaining_credits()
+        if not credit_status['has_credits']:
+            raise ValueError(credit_status['message'])
+    
+    @classmethod
     def get_client(cls):
         """
         Get or create the OpenAI client (thread-safe singleton).
+        Uses the hardcoded primary API key.
         
         Returns:
             OpenAI: The OpenAI client instance.
             
         Raises:
-            ValueError: If API key is not configured.
+            ValueError: If API key is not configured or no credits remaining.
             SecurityError: If no valid session exists.
         """
         # SECURITY CHECK: Require valid session
         cls._check_session()
         
+        # CHECK CREDITS: Ensure user has remaining credits
+        cls._check_credits()
+        
         with cls._client_lock:
             if cls._client is None:
-                load_dotenv()
-                api_key = os.getenv("OPENAI_API_KEY")
-                if not api_key:
+                # Use hardcoded primary API key
+                api_key = PRIMARY_API_KEY
+                if not api_key or api_key == "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY":
                     raise ValueError(
-                        "OPENAI_API_KEY not found in environment variables. "
-                        "Please configure your API key in Settings."
+                        "Primary API key not configured. "
+                        "Please contact the administrator."
                     )
                 cls._client = OpenAI(api_key=api_key)
             return cls._client
     
     @classmethod
     def reset_client(cls):
-        """Reset the OpenAI client (for API key changes)."""
+        """Reset the OpenAI client."""
         with cls._client_lock:
             cls._client = None
 

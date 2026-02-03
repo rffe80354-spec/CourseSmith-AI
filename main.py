@@ -17,6 +17,9 @@ from supabase import create_client, Client
 # Import HWID and license utilities from utils module
 from utils import get_hwid, parse_hwids_array, check_license, add_context_menu
 
+# Import session manager for setting session data
+from session_manager import set_session, get_user_email, get_license_key
+
 
 # Suppress stdout/stderr for --noconsole mode with log file fallback
 if hasattr(sys, 'frozen'):
@@ -426,6 +429,18 @@ class EnterpriseApp(ctk.CTk):
             self.license_valid = True
             self.license_data = result['license_data']
             
+            # Set session data for ai_worker credit checking
+            tier = self.license_data.get('tier', 'standard') if self.license_data else 'standard'
+            # Generate a unique session token based on license data
+            import hashlib
+            session_token = hashlib.sha256(f"{email}:{license_key}:{datetime.now().isoformat()}".encode()).hexdigest()[:32]
+            set_session(
+                token=session_token,
+                email=email,
+                tier=tier,
+                license_key=license_key
+            )
+            
             # Show success message
             messagebox.showinfo("Success", result['message'])
             
@@ -443,15 +458,11 @@ class EnterpriseApp(ctk.CTk):
             self.activation_status.configure(text=result['message'], text_color="red")
     
     def _init_coursesmith_engine(self):
-        """Initialize the CourseSmith Engine with API key from environment."""
+        """Initialize the CourseSmith Engine with the hardcoded primary API key."""
         try:
             from coursesmith_engine import CourseSmithEngine
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key:
-                self.coursesmith_engine = CourseSmithEngine(api_key=api_key)
-            else:
-                # Initialize without API key - user can add it later in Settings
-                self.coursesmith_engine = CourseSmithEngine(api_key=None, require_api_key=False)
+            # Use the hardcoded primary API key (no env var needed)
+            self.coursesmith_engine = CourseSmithEngine()
         except Exception as e:
             print(f"Warning: Could not initialize coursesmith_engine: {e}")
             self.coursesmith_engine = None
@@ -526,24 +537,30 @@ class EnterpriseApp(ctk.CTk):
         
         self.nav_buttons['forge'] = self._create_nav_button("🔥 Forge", "forge")
         self.nav_buttons['library'] = self._create_nav_button("📚 Library", "library")
+        self.nav_buttons['account'] = self._create_nav_button("👤 Account", "account")
         self.nav_buttons['settings'] = self._create_nav_button("⚙️ Settings", "settings")
         
         # Spacer
         spacer = ctk.CTkFrame(self.sidebar, fg_color="transparent", height=20)
         spacer.pack(fill="both", expand=True)
         
-        # License Info Frame - Display "TIER: {tier} | EXP: {date}" at BOTTOM of sidebar
-        license_info_frame = ctk.CTkFrame(
+        # Account Info Frame at BOTTOM of sidebar - Display email and credits
+        account_info_frame = ctk.CTkFrame(
             self.sidebar,
             fg_color=COLORS['background'],
             corner_radius=10
         )
-        license_info_frame.pack(fill="x", padx=15, pady=(0, 10))
+        account_info_frame.pack(fill="x", padx=15, pady=(0, 10))
         
-        # Get license tier and expiration from license_data
-        tier_text = "Unknown"
+        # Get user email and credits from license_data
+        user_email = "Not logged in"
+        credits_text = "0"
+        tier_text = "UNKNOWN"
         expiry_text = "N/A"
+        
         if self.license_data and isinstance(self.license_data, dict):
+            user_email = self.license_data.get('email', 'Unknown')
+            credits_text = str(self.license_data.get('credits', 0))
             tier_text = self.license_data.get('tier', 'standard').upper()
             valid_until = self.license_data.get('valid_until')
             if valid_until:
@@ -555,22 +572,57 @@ class EnterpriseApp(ctk.CTk):
             else:
                 expiry_text = "Lifetime"
         
-        # Determine tier color based on tier level
+        # Store references for later updates
+        self.account_credits_label = None
+        self.account_tier_label = None
+        
+        # Email label (truncated if too long)
+        email_display = user_email if len(user_email) <= 25 else user_email[:22] + "..."
+        email_label = ctk.CTkLabel(
+            account_info_frame,
+            text=f"📧 {email_display}",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS['text_dim']
+        )
+        email_label.pack(pady=(8, 2), padx=10, anchor="w")
+        
+        # Credits label with dynamic color
+        try:
+            credits_int = int(credits_text)
+        except (ValueError, TypeError):
+            credits_int = 0
+        credits_color = "#2ECC71" if credits_int > 10 else ("#F39C12" if credits_int > 0 else "#E74C3C")
+        self.account_credits_label = ctk.CTkLabel(
+            account_info_frame,
+            text=f"💳 Credits: {credits_text}",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=credits_color
+        )
+        self.account_credits_label.pack(pady=(2, 2), padx=10, anchor="w")
+        
+        # Tier label with tier-specific color
         tier_colors = {
             "PROFESSIONAL": "#FFD700",  # Gold
-            "EXTENDED": "#FFA500",       # Orange
-            "STANDARD": "#A0A0A0"        # Gray/Silver
+            "EXTENDED": "#00CED1",       # Dark Cyan/Turquoise
+            "STANDARD": "#87CEEB"        # Sky Blue
         }
         tier_color = tier_colors.get(tier_text, COLORS['accent'])
-        
-        # Combined Tier and Expiration label in one line: "TIER: {tier} | EXP: {date}"
-        tier_exp_label = ctk.CTkLabel(
-            license_info_frame,
-            text=f"TIER: {tier_text} | EXP: {expiry_text}",
-            font=ctk.CTkFont(size=10, weight="bold"),
+        self.account_tier_label = ctk.CTkLabel(
+            account_info_frame,
+            text=f"⭐ {tier_text}",
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=tier_color
         )
-        tier_exp_label.pack(pady=10, padx=10)
+        self.account_tier_label.pack(pady=(2, 2), padx=10, anchor="w")
+        
+        # Expiry label
+        expiry_label = ctk.CTkLabel(
+            account_info_frame,
+            text=f"📅 Exp: {expiry_text}",
+            font=ctk.CTkFont(size=10),
+            text_color=COLORS['text_dim']
+        )
+        expiry_label.pack(pady=(2, 8), padx=10, anchor="w")
         
         # Version label at bottom
         version_label = ctk.CTkLabel(
@@ -664,6 +716,8 @@ class EnterpriseApp(ctk.CTk):
             self._create_forge_tab()
         elif tab_id == "library":
             self._create_library_tab()
+        elif tab_id == "account":
+            self._create_account_tab()
         elif tab_id == "settings":
             self._create_settings_tab()
     
@@ -901,6 +955,215 @@ class EnterpriseApp(ctk.CTk):
         except Exception:
             pass
     
+    def _create_account_tab(self):
+        """Create the Account tab - display user info, credits, and license details."""
+        container = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=40, pady=40)
+        
+        title_label = ctk.CTkLabel(
+            container,
+            text="👤 Account",
+            font=ctk.CTkFont(size=32, weight="bold"),
+            text_color=COLORS['text']
+        )
+        title_label.pack(anchor="w", pady=(0, 10))
+        
+        subtitle_label = ctk.CTkLabel(
+            container,
+            text="Your license information and account details",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim']
+        )
+        subtitle_label.pack(anchor="w", pady=(0, 30))
+        
+        # Account info frame
+        account_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
+        account_frame.pack(fill="x", pady=(0, 20))
+        
+        # Get user data from license_data
+        user_email = "Not available"
+        credits_count = 0
+        tier_text = "UNKNOWN"
+        expiry_text = "N/A"
+        license_key_display = "Not available"
+        
+        if self.license_data and isinstance(self.license_data, dict):
+            user_email = self.license_data.get('email', 'Unknown')
+            credits_count = self.license_data.get('credits', 0)
+            tier_text = self.license_data.get('tier', 'standard').upper()
+            license_key = self.license_data.get('license_key', '')
+            if license_key:
+                # Truncate license key for display
+                license_key_display = f"{license_key[:12]}...{license_key[-6:]}" if len(license_key) > 20 else license_key
+            
+            valid_until = self.license_data.get('valid_until')
+            if valid_until:
+                try:
+                    expiry_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                    expiry_text = expiry_date.strftime("%B %d, %Y")
+                except Exception:
+                    expiry_text = "Lifetime"
+            else:
+                expiry_text = "Lifetime"
+        
+        # Tier colors
+        tier_colors = {
+            "PROFESSIONAL": "#FFD700",  # Gold
+            "EXTENDED": "#00CED1",       # Dark Cyan/Turquoise
+            "STANDARD": "#87CEEB"        # Sky Blue
+        }
+        tier_color = tier_colors.get(tier_text, COLORS['accent'])
+        
+        # Account details section
+        details_frame = ctk.CTkFrame(account_frame, fg_color="transparent")
+        details_frame.pack(fill="x", padx=30, pady=30)
+        
+        # Row 1: Email
+        email_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        email_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            email_row,
+            text="📧 Email:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            email_row,
+            text=user_email,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        ).pack(side="left", padx=(10, 0))
+        
+        # Row 2: License Tier
+        tier_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        tier_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            tier_row,
+            text="⭐ License Tier:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        tier_badge = ctk.CTkLabel(
+            tier_row,
+            text=f" {tier_text} ",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['background'],
+            fg_color=tier_color,
+            corner_radius=5
+        )
+        tier_badge.pack(side="left", padx=(10, 0))
+        
+        # Row 3: Credits with large display
+        credits_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        credits_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            credits_row,
+            text="💳 Credits:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        # Credits color based on amount (using better contrast colors)
+        credits_color = "#2ECC71" if credits_count > 10 else ("#F39C12" if credits_count > 0 else "#E74C3C")
+        ctk.CTkLabel(
+            credits_row,
+            text=str(credits_count),
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=credits_color
+        ).pack(side="left", padx=(10, 0))
+        
+        # Row 4: Expiration
+        expiry_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        expiry_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            expiry_row,
+            text="📅 Expires:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            expiry_row,
+            text=expiry_text,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        ).pack(side="left", padx=(10, 0))
+        
+        # Row 5: License Key (partially hidden)
+        key_row = ctk.CTkFrame(details_frame, fg_color="transparent")
+        key_row.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            key_row,
+            text="🔑 License Key:",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_dim'],
+            width=120
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            key_row,
+            text=license_key_display,
+            font=ctk.CTkFont(size=12, family="Courier New"),
+            text_color=COLORS['text_dim']
+        ).pack(side="left", padx=(10, 0))
+        
+        # Refresh Credits Button
+        refresh_frame = ctk.CTkFrame(container, fg_color="transparent")
+        refresh_frame.pack(fill="x", pady=(10, 0))
+        
+        refresh_btn = ctk.CTkButton(
+            refresh_frame,
+            text="🔄 Refresh Credits",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=45,
+            corner_radius=10,
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            command=self._refresh_credits
+        )
+        refresh_btn.pack(anchor="w")
+    
+    def _refresh_credits(self):
+        """Refresh credits count from database and update UI."""
+        try:
+            from ai_worker import check_remaining_credits
+            credit_status = check_remaining_credits()
+            
+            # Check if we got valid credit info (credits could be 0 or positive)
+            credits = credit_status.get('credits', 0)
+            if credits >= 0:
+                # Update license_data
+                if self.license_data and isinstance(self.license_data, dict):
+                    self.license_data['credits'] = credits
+                
+                # Update sidebar credits label if it exists
+                if hasattr(self, 'account_credits_label') and self.account_credits_label:
+                    credits_color = "#2ECC71" if credits > 10 else ("#F39C12" if credits > 0 else "#E74C3C")
+                    self.account_credits_label.configure(
+                        text=f"💳 Credits: {credits}",
+                        text_color=credits_color
+                    )
+                
+                # Refresh the account tab to show updated info
+                self._switch_tab("account")
+                
+                messagebox.showinfo("Credits Updated", f"You have {credits} credits remaining.")
+            else:
+                messagebox.showwarning("Credits Check", credit_status['message'])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not refresh credits: {str(e)}")
+    
     def _create_library_tab(self):
         """Create the Library tab."""
         container = ctk.CTkFrame(self.content_frame, fg_color="transparent")
@@ -959,146 +1222,27 @@ class EnterpriseApp(ctk.CTk):
         settings_frame = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
         settings_frame.pack(fill="both", expand=True, pady=(0, 20))
         
-        # API Key section
-        api_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        api_frame.pack(fill="x", padx=30, pady=(30, 20))
+        # Info section (API key is now managed internally)
+        info_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        info_frame.pack(fill="x", padx=30, pady=(30, 20))
         
-        api_label = ctk.CTkLabel(
-            api_frame,
-            text="OpenAI API Key",
+        info_label = ctk.CTkLabel(
+            info_frame,
+            text="ℹ️ API Configuration",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS['text']
         )
-        api_label.pack(anchor="w", pady=(0, 10))
+        info_label.pack(anchor="w", pady=(0, 10))
         
-        api_help_label = ctk.CTkLabel(
-            api_frame,
-            text="Your API key is stored in the .env file in the application directory.",
+        info_text = ctk.CTkLabel(
+            info_frame,
+            text="API access is managed automatically. Credits are deducted from your license when generating courses.",
             font=ctk.CTkFont(size=12),
-            text_color=COLORS['text_dim']
+            text_color=COLORS['text_dim'],
+            wraplength=500,
+            justify="left"
         )
-        api_help_label.pack(anchor="w", pady=(0, 15))
-        
-        # Load current API key from environment
-        current_key = os.getenv("OPENAI_API_KEY", "")
-        
-        # API Key entry with show/hide button
-        entry_frame = ctk.CTkFrame(api_frame, fg_color="transparent")
-        entry_frame.pack(fill="x", pady=(0, 10))
-        
-        self.api_key_entry = ctk.CTkEntry(
-            entry_frame,
-            placeholder_text="sk-...",
-            height=45,
-            font=ctk.CTkFont(size=14),
-            fg_color=COLORS['background'],
-            border_color=COLORS['accent'],
-            border_width=2,
-            show="*"
-        )
-        self.api_key_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        
-        if current_key:
-            self.api_key_entry.insert(0, current_key)
-        
-        # Add clipboard support (includes all shortcuts: Ctrl+C/V/A)
-        from utils import add_context_menu
-        add_context_menu(self.api_key_entry)
-        
-        # Show/Hide button
-        self.api_key_visible = False
-        self.show_hide_btn = ctk.CTkButton(
-            entry_frame,
-            text="👁",
-            width=45,
-            height=45,
-            font=ctk.CTkFont(size=18),
-            fg_color=COLORS['sidebar'],
-            hover_color=COLORS['accent'],
-            command=self._toggle_api_key_visibility
-        )
-        self.show_hide_btn.pack(side="right")
-        
-        # Save button
-        save_btn = ctk.CTkButton(
-            api_frame,
-            text="💾 Save API Key",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            height=50,
-            corner_radius=10,
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover'],
-            command=self._save_api_key
-        )
-        save_btn.pack(pady=(20, 0))
-    
-    def _toggle_api_key_visibility(self):
-        """Toggle API key visibility."""
-        self.api_key_visible = not self.api_key_visible
-        if self.api_key_visible:
-            self.api_key_entry.configure(show="")
-            self.show_hide_btn.configure(text="👁‍🗨")
-        else:
-            self.api_key_entry.configure(show="*")
-            self.show_hide_btn.configure(text="👁")
-    
-    def _save_api_key(self):
-        """Save the API key to .env file and update environment."""
-        api_key = self.api_key_entry.get().strip()
-        
-        if not api_key:
-            messagebox.showerror("Error", "Please enter an API key.")
-            return
-        
-        # Validate OpenAI API key format
-        if not api_key.startswith("sk-"):
-            result = messagebox.askyesno(
-                "Invalid API Key Format",
-                "The API key doesn't start with 'sk-' which is the expected format for OpenAI API keys.\n\n"
-                "Do you want to save it anyway?"
-            )
-            if not result:
-                return
-        
-        # Save to .env file
-        env_path = os.path.join(os.getcwd(), ".env")
-        try:
-            # Read existing content
-            existing_lines = []
-            if os.path.exists(env_path):
-                with open(env_path, 'r') as f:
-                    for line in f:
-                        stripped = line.strip()
-                        if stripped and not stripped.startswith("OPENAI_API_KEY"):
-                            existing_lines.append(line.rstrip())
-            
-            # Write with new API key
-            with open(env_path, 'w') as f:
-                for line in existing_lines:
-                    f.write(line + "\n")
-                f.write(f"OPENAI_API_KEY={api_key}\n")
-            
-            # Update environment variable
-            os.environ["OPENAI_API_KEY"] = api_key
-            
-            # Update coursesmith_engine instance if it exists
-            if hasattr(self, 'coursesmith_engine'):
-                try:
-                    from coursesmith_engine import CourseSmithEngine
-                    self.coursesmith_engine = CourseSmithEngine(api_key=api_key)
-                except Exception as e:
-                    print(f"Warning: Could not reinitialize coursesmith_engine: {e}")
-                    messagebox.showwarning(
-                        "Partial Success",
-                        f"API key saved, but engine reinitialization failed:\n{str(e)}\n\n"
-                        "Please restart the application."
-                    )
-                    return
-            
-            messagebox.showinfo("Success", "API key saved successfully!")
-            
-        except IOError as e:
-            messagebox.showerror("Error", f"Failed to save API key: {e}")
+        info_text.pack(anchor="w", pady=(0, 15))
     
     def _on_page_count_change(self, value):
         """
@@ -1205,6 +1349,25 @@ class EnterpriseApp(ctk.CTk):
         
         if not has_api_key:
             self._log_message("⚠️  API key not configured - using simulated generation mode")
+        else:
+            # Check for remaining credits before proceeding
+            self._log_message("🔍 Checking credits...")
+            try:
+                from ai_worker import check_remaining_credits
+                credit_status = check_remaining_credits()
+                
+                if not credit_status['has_credits']:
+                    self._log_message(f"❌ {credit_status['message']}")
+                    messagebox.showerror("No Credits", credit_status['message'])
+                    return
+                
+                self._log_message(f"✓ {credit_status['message']}")
+            except Exception as e:
+                # Block generation if credit verification fails - prevents unauthorized usage
+                self._log_message(f"❌ Could not verify credits: {str(e)}")
+                messagebox.showerror("Credit Verification Failed", 
+                    f"Unable to verify your remaining credits.\n\n{str(e)}\n\nPlease check your internet connection and try again.")
+                return
         
         # Show progress frame
         self.progress_frame.pack(fill="x", pady=(20, 0))
@@ -1245,6 +1408,22 @@ class EnterpriseApp(ctk.CTk):
                     # Log PDF save location
                     pdf_filename = os.path.basename(pdf_path)
                     self.after(0, lambda fn=pdf_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
+                    
+                    # Deduct credit after successful generation
+                    # Note: Credit was already verified before generation started
+                    try:
+                        from ai_worker import deduct_credit
+                        if deduct_credit():
+                            self.after(0, lambda: self._log_message("💳 1 credit deducted from your account."))
+                        else:
+                            # Log the failure prominently - this indicates a potential issue
+                            self.after(0, lambda: self._log_message("⚠️  WARNING: Could not deduct credit. Please contact support if this persists."))
+                            print("ALERT: Credit deduction failed after successful generation")
+                    except Exception as credit_err:
+                        # Log exception details for debugging
+                        error_detail = str(credit_err)
+                        self.after(0, lambda err=error_detail: self._log_message(f"⚠️  Credit deduction error: {err}"))
+                        print(f"ALERT: Credit deduction exception: {error_detail}")
                     
                     # Add email notification log - use actual user email from login
                     user_email = "user@example.com"

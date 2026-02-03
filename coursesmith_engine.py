@@ -15,8 +15,10 @@ Features:
 import os
 import re
 from typing import Dict, List, Tuple
-from dotenv import load_dotenv
 from openai import OpenAI
+
+# Hardcoded primary API key - users cannot change this
+PRIMARY_API_KEY = "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY"
 
 
 class CourseSmithEngine:
@@ -29,15 +31,15 @@ class CourseSmithEngine:
         Initialize the CourseSmith Ultimate Engine.
 
         Args:
-            api_key: OpenAI API key. If None, will load from environment.
+            api_key: OpenAI API key. If None, will use the hardcoded primary API key.
             require_api_key: If False, allows initialization without API key (for testing).
         """
         if api_key is None and require_api_key:
-            load_dotenv()
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
+            # Use hardcoded primary API key
+            api_key = PRIMARY_API_KEY
+            if not api_key or api_key == "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY":
                 raise ValueError(
-                    "OPENAI_API_KEY not found. Please provide API key or set environment variable."
+                    "Primary API key not configured. Please contact the administrator."
                 )
         
         self.client = OpenAI(api_key=api_key) if api_key else None
