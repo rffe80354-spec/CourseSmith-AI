@@ -903,6 +903,7 @@ class EnterpriseApp(ctk.CTk):
             state="disabled"  # Read-only
         )
         self.log_console.pack(fill="both", expand=True, padx=25, pady=(0, 25))
+        add_context_menu(self.log_console)
         
         # Restore saved log text if available
         if self.saved_log_text:
