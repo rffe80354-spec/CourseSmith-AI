@@ -271,7 +271,14 @@ class RightClickMenu:
         return "break"
     
     def _paste(self):
-        """Paste text from clipboard directly using focus_get (avoids double-paste bug)."""
+        """
+        Paste text from clipboard directly using focus_get.
+        This implementation avoids double-paste bugs common with CustomTkinter
+        by manually handling text insertion instead of using event_generate.
+        
+        Returns:
+            str: "break" to stop event propagation.
+        """
         try:
             # Get the currently focused widget (handles CustomTkinter focus issues)
             focused_widget = self.widget.focus_get()
@@ -283,10 +290,27 @@ class RightClickMenu:
             if widget_state == "disabled" or widget_state == "readonly":
                 return "break"
             
-            # Get clipboard content from focused widget for consistency
-            text = focused_widget.clipboard_get()
+            # Get clipboard content - try multiple methods for reliability
+            text = None
+            try:
+                # Primary method: get from focused widget
+                text = focused_widget.clipboard_get()
+            except tk.TclError:
+                # Fallback: try getting from the widget directly
+                try:
+                    text = self.widget.clipboard_get()
+                except tk.TclError:
+                    pass
+            
+            # If no text available, return
+            if not text:
+                return "break"
+                
         except tk.TclError:
             # Clipboard is empty or unavailable
+            return "break"
+        except Exception:
+            # Handle any unexpected errors gracefully
             return "break"
         
         # Delete selected text first (if any), then insert clipboard content
@@ -295,13 +319,20 @@ class RightClickMenu:
         except tk.TclError:
             # No selection exists, which is fine
             pass
+        except Exception:
+            pass
         
         # Insert text at current cursor position
         try:
             focused_widget.insert("insert", text)
         except tk.TclError:
             # Fallback: try inserting at the widget itself
-            self.widget.insert("insert", text)
+            try:
+                self.widget.insert("insert", text)
+            except Exception:
+                pass
+        except Exception:
+            pass
         
         return "break"
     
@@ -353,6 +384,9 @@ def handle_custom_paste(event, widget):
     This function directly accesses the clipboard and inserts text at the cursor.
     Returns "break" to prevent the default Tkinter handler from firing.
     
+    This implementation provides reliable paste functionality that works with
+    any text content including special characters and multiline text.
+    
     Args:
         event: The key event (can be None for direct calls).
         widget: The CTkEntry, CTkTextbox, or tkinter widget to paste into.
@@ -368,10 +402,27 @@ def handle_custom_paste(event, widget):
         if widget_state == "disabled" or widget_state == "readonly":
             return "break"
         
-        # Get clipboard content
-        text = tk_widget.clipboard_get()
+        # Get clipboard content - try multiple methods for reliability
+        text = None
+        try:
+            text = tk_widget.clipboard_get()
+        except tk.TclError:
+            # Try getting from the root window as fallback
+            try:
+                root = tk_widget.winfo_toplevel()
+                text = root.clipboard_get()
+            except Exception:
+                pass
+        
+        # If no text available, return
+        if not text:
+            return "break"
+            
     except tk.TclError:
         # Clipboard is empty or unavailable
+        return "break"
+    except Exception:
+        # Handle any unexpected errors gracefully
         return "break"
     
     # Delete selected text first (if any)
@@ -380,11 +431,15 @@ def handle_custom_paste(event, widget):
     except tk.TclError:
         # No selection exists, which is fine
         pass
+    except Exception:
+        pass
     
     # Insert text at current cursor position
     try:
         tk_widget.insert("insert", text)
     except tk.TclError:
+        pass
+    except Exception:
         pass
     
     # Return "break" to prevent default handler (CRITICAL)

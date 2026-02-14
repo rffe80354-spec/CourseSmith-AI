@@ -26,6 +26,10 @@ from session_manager import set_session, set_token, is_active, get_tier, is_exte
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator, AIWorkerBase
 from pdf_engine import PDFBuilder
+# Import exporters for multi-format output support
+from docx_exporter import DOCXExporter
+from html_exporter import HTMLExporter
+from export_base import ExportManager, ExportError
 
 
 # Configure appearance
@@ -1706,26 +1710,48 @@ class App(ctk.CTk):
         )
         self.generate_cover_btn.grid(row=2, column=0, padx=20, pady=(0, 20))
 
-        # Right - PDF export (Scrollable)
-        pdf_frame = ctk.CTkScrollableFrame(self.tab_export, corner_radius=10)
-        pdf_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
+        # Right - Document export (Scrollable) - supports PDF, DOCX, and HTML formats
+        export_frame = ctk.CTkScrollableFrame(self.tab_export, corner_radius=10)
+        export_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
+        # Section header for document export
         ctk.CTkLabel(
-            pdf_frame,
-            text="📄 PDF Export",
+            export_frame,
+            text="📄 Document Export",
             font=ctk.CTkFont(size=18, weight="bold"),
         ).grid(row=0, column=0, padx=20, pady=(20, 20), sticky="w")
 
-        self.pdf_status = ctk.CTkLabel(
-            pdf_frame,
-            text="Ready to build PDF",
+        # Format selector label and dropdown for multi-format output support
+        ctk.CTkLabel(
+            export_frame,
+            text="Select Output Format:",
+            font=ctk.CTkFont(size=13),
+        ).grid(row=1, column=0, padx=20, pady=(0, 5), sticky="w")
+        
+        # Format options: PDF (default), DOCX (Microsoft Word), HTML (Web)
+        self.export_format_var = ctk.StringVar(value="PDF")
+        self.export_format_selector = ctk.CTkOptionMenu(
+            export_frame,
+            values=["PDF", "DOCX", "HTML"],
+            variable=self.export_format_var,
+            width=200,
+            font=ctk.CTkFont(size=13),
+            command=self._on_format_changed,
+        )
+        self.export_format_selector.grid(row=2, column=0, padx=20, pady=(0, 15))
+
+        # Status label showing current export readiness
+        self.export_status = ctk.CTkLabel(
+            export_frame,
+            text="Ready to generate document",
             font=ctk.CTkFont(size=13),
             text_color="gray",
         )
-        self.pdf_status.grid(row=1, column=0, padx=20, pady=(0, 20))
+        self.export_status.grid(row=3, column=0, padx=20, pady=(0, 20))
 
-        self.build_pdf_btn = ctk.CTkButton(
-            pdf_frame,
+        # Main export button - generates output in the selected format
+        self.build_export_btn = ctk.CTkButton(
+            export_frame,
             text="📑 GENERATE FINAL PDF",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=55,
@@ -1735,25 +1761,32 @@ class App(ctk.CTk):
             hover_color=("#218838", "#1a6d2e"),
             border_width=2,
             border_color=("#20873a", "#28a745"),
-            command=self._build_pdf,
+            command=self._build_export,
         )
-        self.build_pdf_btn.grid(row=2, column=0, padx=20, pady=(0, 20))
+        self.build_export_btn.grid(row=4, column=0, padx=20, pady=(0, 20))
         
-        # Add progress bar to PDF frame
-        self.pdf_progress_label = ctk.CTkLabel(
-            pdf_frame,
+        # Progress label for export status animation
+        self.export_progress_label = ctk.CTkLabel(
+            export_frame,
             text="",
             font=ctk.CTkFont(size=12),
         )
-        self.pdf_progress_label.grid(row=3, column=0, padx=20, pady=(20, 5))
+        self.export_progress_label.grid(row=5, column=0, padx=20, pady=(20, 5))
         
-        self.pdf_progress_bar = ctk.CTkProgressBar(pdf_frame, width=260)
-        self.pdf_progress_bar.grid(row=4, column=0, padx=20, pady=(0, 20))
-        self.pdf_progress_bar.set(0)
+        # Progress bar for export progress indication
+        self.export_progress_bar = ctk.CTkProgressBar(export_frame, width=260)
+        self.export_progress_bar.grid(row=6, column=0, padx=20, pady=(0, 20))
+        self.export_progress_bar.set(0)
+        
+        # Backward compatibility: alias old names for existing code
+        self.pdf_status = self.export_status
+        self.pdf_progress_label = self.export_progress_label
+        self.pdf_progress_bar = self.export_progress_bar
+        self.build_pdf_btn = self.build_export_btn
         
         # Store references for auto-scroll to top
         self.export_cover_scroll = cover_frame
-        self.export_pdf_scroll = pdf_frame
+        self.export_pdf_scroll = export_frame
 
         # Bottom - Export log
         self.export_log = ctk.CTkTextbox(
@@ -1820,8 +1853,32 @@ class App(ctk.CTk):
         self._log_export(f"❌ Error: {error}")
         messagebox.showerror("Error", f"Failed to generate cover:\n\n{error}")
 
-    def _build_pdf(self):
-        """Build the final PDF document."""
+    def _on_format_changed(self, selected_format):
+        """
+        Handle format selector change event.
+        Updates the export button text and status to reflect the selected format.
+        
+        Args:
+            selected_format: The newly selected format (PDF, DOCX, or HTML).
+        """
+        # Update button text based on selected format
+        format_icons = {"PDF": "📄", "DOCX": "📝", "HTML": "🌐"}
+        icon = format_icons.get(selected_format, "📄")
+        self.build_export_btn.configure(text=f"{icon} GENERATE FINAL {selected_format}")
+        
+        # Update status message
+        self.export_status.configure(
+            text=f"Ready to generate {selected_format} document",
+            text_color="gray"
+        )
+        self._log_export(f"Format changed to {selected_format}")
+
+    def _build_export(self):
+        """
+        Build the final document in the selected format (PDF, DOCX, or HTML).
+        This method handles multi-format export for commercial-ready output.
+        """
+        # Validate project completeness
         if not self.project.is_complete():
             missing = []
             if not self.project.topic:
@@ -1833,86 +1890,236 @@ class App(ctk.CTk):
             
             messagebox.showerror(
                 "Incomplete Project",
-                f"Please complete the following before building PDF:\n\n" + "\n".join(f"• {m}" for m in missing),
+                f"Please complete the following before exporting:\n\n" + "\n".join(f"• {m}" for m in missing),
             )
             return
 
-        # Ask for save location
+        # Get selected export format
+        selected_format = self.export_format_var.get()
+        
+        # Determine file extension and file type filter based on format
+        format_config = {
+            "PDF": {"ext": ".pdf", "filter": [("PDF Files", "*.pdf")]},
+            "DOCX": {"ext": ".docx", "filter": [("Word Documents", "*.docx")]},
+            "HTML": {"ext": ".html", "filter": [("HTML Files", "*.html")]},
+        }
+        config = format_config.get(selected_format, format_config["PDF"])
+        
+        # Generate safe filename from topic
         safe_topic = "".join(c if c.isalnum() or c == " " else "_" for c in self.project.topic)
         safe_topic = safe_topic.replace(" ", "_")[:30]
-        default_name = f"CourseSmith_{safe_topic}.pdf"
+        default_name = f"CourseSmith_{safe_topic}{config['ext']}"
 
+        # Ask user for save location
         filepath = filedialog.asksaveasfilename(
-            title="Save PDF As",
-            defaultextension=".pdf",
+            title=f"Save {selected_format} As",
+            defaultextension=config['ext'],
             initialfile=default_name,
-            filetypes=[("PDF Files", "*.pdf")],
+            filetypes=config['filter'],
         )
 
         if not filepath:
             return
 
-        self._log_export("Building PDF document...")
-        self.pdf_status.configure(text="Building PDF...")
-        self.pdf_progress_label.configure(text="Initializing...")
-        self.pdf_progress_bar.set(0.1)
-        self.build_pdf_btn.configure(state="disabled", text="⏳ BUILDING...")
+        # Update UI to show export in progress
+        self._log_export(f"Building {selected_format} document...")
+        self.export_status.configure(text=f"Building {selected_format}...")
+        self.export_progress_label.configure(text="Initializing...")
+        self.export_progress_bar.set(0.1)
+        self.build_export_btn.configure(state="disabled", text="⏳ BUILDING...")
         
-        # Start animation on progress label
-        self._start_status_animation(self.pdf_progress_label, "Generating pages")
+        # Start progress animation
+        self._start_status_animation(self.export_progress_label, f"Generating {selected_format}")
 
         def build():
+            """Background thread function to build the document."""
             try:
-                # Get current tier from session (already imported at top)
+                # Get current license tier for tier-specific features
                 current_tier = get_tier()
                 
-                # Calculate estimated page count for progress display
-                total_pages = self.target_pages
+                if selected_format == "PDF":
+                    # Use existing PDF builder for PDF format
+                    result = self._build_pdf_internal(filepath, current_tier)
+                elif selected_format == "DOCX":
+                    # Use DOCX exporter for Microsoft Word format
+                    result = self._build_docx_internal(filepath)
+                elif selected_format == "HTML":
+                    # Use HTML exporter for web format
+                    result = self._build_html_internal(filepath)
+                else:
+                    raise ValueError(f"Unsupported format: {selected_format}")
                 
-                # Simulate page-by-page progress updates
-                def update_page_progress(page_num):
-                    progress = page_num / total_pages if total_pages > 0 else 0.5
-                    self.after(0, lambda: self.pdf_progress_bar.set(min(0.9, progress)))
-                    # Note: Animation handles the text, no need to update text here
-                
-                # Update progress at intervals
-                for i in range(1, min(10, total_pages + 1)):
-                    self.after(i * 100, lambda p=i: update_page_progress(p))
-                
-                # Create builder with tier parameter
-                builder = PDFBuilder(filepath, tier=current_tier)
-                
-                # Get custom images from project UI settings
-                custom_images = []
-                if hasattr(self.project, 'ui_settings') and self.project.ui_settings:
-                    custom_images = self.project.ui_settings.get('custom_images', [])
-                
-                # Convert to absolute paths for safety
-                custom_images = [os.path.abspath(img) for img in custom_images if img]
-                
-                result = builder.build_pdf(self.project, tier=current_tier, custom_images=custom_images)
-                
-                # Calculate actual pages from ContentDistributor
-                from generator import ContentDistributor
-                distributor = ContentDistributor(current_tier)
-                
-                # Count total pages in all chapters
-                total_pages_created = 0
-                if self.project.chapters_content:
-                    for chapter_content in self.project.chapters_content.values():
-                        pages = distributor.distribute_content(chapter_content)
-                        total_pages_created += len(pages)
-                
-                # Log total pages created
-                self._log_export(f"[SUCCESS] Course generated: {total_pages_created} pages completed")
-                
-                self.after(0, lambda: self.pdf_progress_bar.set(1.0))
-                self.after(0, lambda: self._on_pdf_built(result, total_pages_created))
+                self.after(0, lambda: self.export_progress_bar.set(1.0))
+                self.after(0, lambda: self._on_export_complete(result, selected_format))
             except Exception as e:
-                self.after(0, lambda: self._on_pdf_error(str(e)))
+                self.after(0, lambda: self._on_export_error(str(e), selected_format))
 
+        # Run export in background thread for smooth UI
         thread = threading.Thread(target=build, daemon=True)
         thread.start()
+
+    def _build_pdf_internal(self, filepath, current_tier):
+        """
+        Internal method to build PDF document.
+        
+        Args:
+            filepath: Output file path for the PDF.
+            current_tier: License tier for feature access.
+            
+        Returns:
+            str: Path to the generated PDF file.
+        """
+        # Calculate estimated page count for progress
+        total_pages = self.target_pages
+        
+        # Update progress at intervals
+        for i in range(1, min(10, total_pages + 1)):
+            def update_progress(p):
+                progress = p / total_pages if total_pages > 0 else 0.5
+                self.after(0, lambda: self.export_progress_bar.set(min(0.9, progress)))
+            self.after(i * 100, lambda p=i: update_progress(p))
+        
+        # Create PDF builder with tier parameter
+        builder = PDFBuilder(filepath, tier=current_tier)
+        
+        # Get custom images from project UI settings
+        custom_images = []
+        if hasattr(self.project, 'ui_settings') and self.project.ui_settings:
+            custom_images = self.project.ui_settings.get('custom_images', [])
+        
+        # Convert to absolute paths for safety
+        custom_images = [os.path.abspath(img) for img in custom_images if img]
+        
+        # Build the PDF
+        result = builder.build_pdf(self.project, tier=current_tier, custom_images=custom_images)
+        
+        # Calculate actual pages for logging
+        from generator import ContentDistributor
+        distributor = ContentDistributor(current_tier)
+        total_pages_created = 0
+        if self.project.chapters_content:
+            for chapter_content in self.project.chapters_content.values():
+                pages = distributor.distribute_content(chapter_content)
+                total_pages_created += len(pages)
+        
+        self._log_export(f"[SUCCESS] Course generated: {total_pages_created} pages completed")
+        return result
+
+    def _build_docx_internal(self, filepath):
+        """
+        Internal method to build DOCX document using DOCXExporter.
+        
+        Args:
+            filepath: Output file path for the DOCX.
+            
+        Returns:
+            str: Path to the generated DOCX file.
+        """
+        # Create DOCX exporter with the project and output path
+        exporter = DOCXExporter(self.project, filepath)
+        
+        # Update progress during export
+        self.after(0, lambda: self.export_progress_bar.set(0.5))
+        
+        # Export to DOCX format
+        result = exporter.export()
+        
+        self._log_export(f"[SUCCESS] DOCX document exported successfully")
+        return result
+
+    def _build_html_internal(self, filepath):
+        """
+        Internal method to build HTML document using HTMLExporter.
+        
+        Args:
+            filepath: Output file path for the HTML.
+            
+        Returns:
+            str: Path to the generated HTML file.
+        """
+        # Create HTML exporter with the project and output path
+        exporter = HTMLExporter(self.project, filepath)
+        
+        # Update progress during export
+        self.after(0, lambda: self.export_progress_bar.set(0.5))
+        
+        # Export to HTML format
+        result = exporter.export()
+        
+        self._log_export(f"[SUCCESS] HTML document exported successfully")
+        return result
+
+    def _on_export_complete(self, filepath, format_name):
+        """
+        Handle successful document export completion.
+        
+        Args:
+            filepath: Path to the generated document.
+            format_name: The format that was exported (PDF, DOCX, HTML).
+        """
+        # Stop progress animation
+        self._stop_status_animation()
+        
+        # Update progress indicators
+        self.export_progress_bar.set(1.0)
+        self.export_progress_label.configure(text="✓ Complete!")
+        
+        # Restore button state with selected format
+        format_icons = {"PDF": "📄", "DOCX": "📝", "HTML": "🌐"}
+        icon = format_icons.get(format_name, "📄")
+        self.build_export_btn.configure(state="normal", text=f"{icon} GENERATE FINAL {format_name}")
+        
+        # Update status
+        self.export_status.configure(text=f"✓ {format_name} exported!", text_color="#28a745")
+        self._log_export(f"✓ {format_name} saved: {filepath}")
+        
+        # Store output path on project
+        self.project.output_pdf_path = filepath
+
+        # Show success message
+        messagebox.showinfo(
+            "Success",
+            f"{format_name} generated successfully!\n\nFile saved as:\n{filepath}",
+        )
+
+    def _on_export_error(self, error, format_name):
+        """
+        Handle document export error.
+        
+        Args:
+            error: Error message describing what went wrong.
+            format_name: The format that failed to export.
+        """
+        # Stop progress animation
+        self._stop_status_animation()
+        
+        # Reset progress indicators
+        self.export_progress_bar.set(0)
+        self.export_progress_label.configure(text="❌ Failed")
+        
+        # Restore button state
+        format_icons = {"PDF": "📄", "DOCX": "📝", "HTML": "🌐"}
+        icon = format_icons.get(format_name, "📄")
+        self.build_export_btn.configure(state="normal", text=f"{icon} GENERATE FINAL {format_name}")
+        
+        # Update status
+        self.export_status.configure(text="❌ Export failed", text_color="#e74c3c")
+        self._log_export(f"❌ Error: {error}")
+        
+        # Show error message
+        messagebox.showerror("Error", f"Failed to export {format_name}:\n\n{error}")
+
+    def _build_pdf(self):
+        """
+        Build the final PDF document.
+        This method provides backward compatibility by delegating to _build_export
+        with PDF format selected. Ensures existing code continues to work.
+        """
+        # Set format to PDF for backward compatibility
+        self.export_format_var.set("PDF")
+        self._on_format_changed("PDF")
+        # Delegate to the unified export method
+        self._build_export()
 
     def _on_pdf_built(self, filepath, total_pages_created=None):
         """Handle successful PDF build.
@@ -2111,7 +2318,15 @@ class App(ctk.CTk):
         return "break"
 
     def _on_paste(self, event=None):
-        """Handle Ctrl+V (Paste) globally."""
+        """
+        Handle Ctrl+V (Paste) globally.
+        This method provides reliable paste functionality for all input fields.
+        It manually deletes selected text and inserts clipboard content to avoid
+        double-paste issues common with CustomTkinter widgets.
+        
+        Returns:
+            str: "break" to prevent default event propagation.
+        """
         focused, tk_widget = self._get_focused_tk_widget()
         if tk_widget is None:
             return "break"
@@ -2122,10 +2337,22 @@ class App(ctk.CTk):
             if widget_state == "disabled" or widget_state == "readonly":
                 return "break"
             
-            # Get clipboard content
-            text = tk_widget.clipboard_get()
+            # Get clipboard content - handle various clipboard formats
+            try:
+                text = tk_widget.clipboard_get()
+            except Exception:
+                # Try getting text from the root window clipboard as fallback
+                try:
+                    text = self.clipboard_get()
+                except Exception:
+                    # Clipboard is empty or unavailable
+                    return "break"
         except Exception:
             # Failed to access clipboard content (empty, unavailable, or permission issues)
+            return "break"
+        
+        # Validate that we have text content to paste
+        if not text:
             return "break"
         
         # Note: We manually delete selected text and insert instead of using
@@ -2141,7 +2368,12 @@ class App(ctk.CTk):
         try:
             tk_widget.insert("insert", text)
         except Exception:
-            pass
+            # If insert fails, try with the focused widget directly
+            try:
+                if hasattr(focused, 'insert'):
+                    focused.insert("insert", text)
+            except Exception:
+                pass
         
         return "break"
 
