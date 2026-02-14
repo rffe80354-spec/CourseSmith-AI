@@ -40,7 +40,6 @@ goto :build_all
 echo Cleaning build artifacts...
 if exist "build" rmdir /s /q "build"
 if exist "dist" rmdir /s /q "dist"
-if exist "*.spec" del /q "*.spec" 2>nul
 echo Clean complete!
 goto :end
 

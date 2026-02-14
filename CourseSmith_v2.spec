@@ -18,19 +18,24 @@ ctk_datas = collect_data_files('customtkinter')
 babel_datas = collect_data_files('babel')
 pydantic_datas = collect_data_files('pydantic')
 
+# Prepare data files list
+datas_list = [
+    # Include fonts directory with TTF files for PDF generation
+    ('fonts', 'fonts'),
+    # Include resources directory with icons
+    ('resources', 'resources'),
+] + ctk_datas + babel_datas + pydantic_datas
+
+# Include .env file only if it exists
+if os.path.exists('.env'):
+    datas_list.append(('.env', '.'))
+
 # Define analysis
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        # Include fonts directory with TTF files for PDF generation
-        ('fonts', 'fonts'),
-        # Include resources directory with icons
-        ('resources', 'resources'),
-        # Include .env file for configuration (if exists)
-        ('.env', '.'),
-    ] + ctk_datas + babel_datas + pydantic_datas,
+    datas=datas_list,
     hiddenimports=[
         # Local modules that main.py imports directly or indirectly
         'utils',
@@ -104,10 +109,6 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
-
-# Remove .env from datas if it doesn't exist
-a.datas = [(dest, src, type_) for dest, src, type_ in a.datas 
-           if not (dest == '.env' and not os.path.exists(src))]
 
 pyz = PYZ(a.pure)
 

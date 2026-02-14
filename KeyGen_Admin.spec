@@ -14,17 +14,22 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # Get customtkinter data files
 ctk_datas = collect_data_files('customtkinter')
 
+# Prepare data files list
+datas_list = [
+    # Include resources directory with icons
+    ('resources', 'resources'),
+] + ctk_datas
+
+# Include .env file only if it exists
+if os.path.exists('.env'):
+    datas_list.append(('.env', '.'))
+
 # Define analysis
 a = Analysis(
     ['admin_keygen.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        # Include resources directory with icons
-        ('resources', 'resources'),
-        # Include .env file for configuration (if exists)
-        ('.env', '.'),
-    ] + ctk_datas,
+    datas=datas_list,
     hiddenimports=[
         # Local modules that admin_keygen.py imports directly or indirectly
         'utils',
@@ -65,10 +70,6 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
-
-# Remove .env from datas if it doesn't exist
-a.datas = [(dest, src, type_) for dest, src, type_ in a.datas 
-           if not (dest == '.env' and not os.path.exists(src))]
 
 pyz = PYZ(a.pure)
 
