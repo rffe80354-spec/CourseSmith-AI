@@ -38,7 +38,7 @@ COLORS = {
 }
 
 # Button color constants for format selector - selected vs unselected states
-FORMAT_BTN_SELECTED = {"fg": "#7F5AF0", "hover": "#9D7BF2", "border": "#9D7BF2"}
+FORMAT_BTN_SELECTED = {"fg": "#7F5AF0", "hover": "#9D7BF5", "border": "#9D7BF5"}
 FORMAT_BTN_UNSELECTED = {"fg": "#2A3142", "hover": "#3A4152", "border": "#3A4152"}
 
 # Sidebar width constant
