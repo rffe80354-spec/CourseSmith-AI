@@ -1,6 +1,13 @@
 """
 AI Manager Module - Handles OpenAI API interactions for CourseSmith AI.
 Provides methods for generating outlines, chapter content, and cover images.
+
+API Key Retrieval:
+    The OpenAI API key is retrieved from Supabase database using the secrets_manager
+    module. This keeps the API key secure and out of the source code.
+    
+    Supabase Table: 'secrets'
+    Secret Name: 'OPENAI_API_KEY'
 """
 
 import os
@@ -9,21 +16,42 @@ import tempfile
 import requests
 from openai import OpenAI
 
-# Hardcoded primary API key - users cannot change this
-PRIMARY_API_KEY = "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY"
+# Import secrets manager for secure API key retrieval from Supabase
+# The API key is stored in Supabase 'secrets' table with name='OPENAI_API_KEY'
+from secrets_manager import get_openai_api_key, is_supabase_configured
 
 
 class AIGenerator:
     """Class to handle all OpenAI API interactions."""
 
     def __init__(self):
-        """Initialize the AI Generator with OpenAI client using hardcoded API key."""
-        api_key = PRIMARY_API_KEY
-        if not api_key or api_key == "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY":
-            raise ValueError(
-                "Primary API key not configured. "
-                "Please contact the administrator."
-            )
+        """
+        Initialize the AI Generator with OpenAI client.
+        
+        The API key is retrieved from Supabase 'secrets' table.
+        If Supabase is not configured or the key is not found,
+        an appropriate error is raised.
+        
+        Raises:
+            ValueError: If API key cannot be retrieved from Supabase.
+        """
+        # Retrieve API key from Supabase database
+        # The key is stored in 'secrets' table with name='OPENAI_API_KEY'
+        api_key = get_openai_api_key()
+        
+        if not api_key:
+            # Provide helpful error message based on configuration state
+            if not is_supabase_configured():
+                raise ValueError(
+                    "Supabase not configured. Please set SUPABASE_URL and SUPABASE_KEY "
+                    "in your .env file to enable API key retrieval."
+                )
+            else:
+                raise ValueError(
+                    "OpenAI API key not found in Supabase. "
+                    "Please ensure 'OPENAI_API_KEY' exists in the 'secrets' table."
+                )
+        
         self.client = OpenAI(api_key=api_key)
 
     def generate_outline(self, topic, audience):
