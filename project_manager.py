@@ -14,7 +14,7 @@ class CourseProject:
     Data model for a CourseSmith project.
     
     Stores all project data including topic, audience, outline,
-    chapter content, and branding information.
+    chapter content, branding information, product type, and export formats.
     """
     
     def __init__(self):
@@ -33,6 +33,11 @@ class CourseProject:
         self.modified_at = datetime.now().isoformat()
         self.cover_image_path = ""
         self.output_pdf_path = ""
+        # New fields for AI Digital Product Factory
+        self.product_type = "full_course"  # Template type ID
+        self.export_formats = ["pdf"]  # Selected export formats
+        self.credits_used = 0  # Credits consumed for this project
+        self.exported_files = {}  # Dict mapping format to file path
     
     def set_topic(self, topic):
         """Set the course topic."""
@@ -90,6 +95,47 @@ class CourseProject:
     def set_cover_image(self, path):
         """Set the cover image path."""
         self.cover_image_path = path
+        self._update_modified()
+    
+    def set_product_type(self, product_type):
+        """
+        Set the product type/template.
+        
+        Args:
+            product_type: Template ID string (e.g., 'mini_course', 'lead_magnet').
+        """
+        self.product_type = product_type
+        self._update_modified()
+    
+    def set_export_formats(self, formats):
+        """
+        Set the export formats.
+        
+        Args:
+            formats: List of format IDs (e.g., ['pdf', 'docx', 'markdown']).
+        """
+        self.export_formats = list(formats) if formats else ["pdf"]
+        self._update_modified()
+    
+    def set_credits_used(self, credits):
+        """
+        Set the credits used for this project.
+        
+        Args:
+            credits: Number of credits consumed.
+        """
+        self.credits_used = credits
+        self._update_modified()
+    
+    def add_exported_file(self, format_id, file_path):
+        """
+        Record an exported file path.
+        
+        Args:
+            format_id: Export format ID (e.g., 'pdf', 'docx').
+            file_path: Path to the exported file.
+        """
+        self.exported_files[format_id] = file_path
         self._update_modified()
     
     def get_outline_text(self):
@@ -169,7 +215,12 @@ class CourseProject:
             "created_at": self.created_at,
             "modified_at": self.modified_at,
             "cover_image_path": self.cover_image_path,
-            "output_pdf_path": self.output_pdf_path
+            "output_pdf_path": self.output_pdf_path,
+            # New fields for AI Digital Product Factory
+            "product_type": self.product_type,
+            "export_formats": self.export_formats,
+            "credits_used": self.credits_used,
+            "exported_files": self.exported_files
         }
     
     @classmethod
@@ -193,6 +244,11 @@ class CourseProject:
         project.modified_at = data.get("modified_at", project.modified_at)
         project.cover_image_path = data.get("cover_image_path", "")
         project.output_pdf_path = data.get("output_pdf_path", "")
+        # New fields for AI Digital Product Factory
+        project.product_type = data.get("product_type", "full_course")
+        project.export_formats = data.get("export_formats", ["pdf"])
+        project.credits_used = data.get("credits_used", 0)
+        project.exported_files = data.get("exported_files", {})
         return project
     
     def save_to_json(self, filepath):

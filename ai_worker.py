@@ -88,13 +88,25 @@ def check_remaining_credits() -> dict:
         }
 
 
-def deduct_credit() -> bool:
+def deduct_credit(amount: int = 1) -> bool:
     """
-    Deduct one credit from the user's account after a successful generation.
-    Uses atomic decrement to prevent race conditions.
+    Deduct credits from the user's account after a successful generation.
+    
+    Note: This implementation uses a check-then-update pattern which has a potential
+    race condition between SELECT and UPDATE. For high-concurrency scenarios,
+    a database-level RPC function with `SET credits = credits - amount` would be
+    more appropriate. However, changing the Supabase schema is out of scope.
+    In practice, the single-user desktop app nature of CourseSmith mitigates this risk.
+    
+    Args:
+        amount: Number of credits to deduct (default: 1).
+                Based on product type:
+                - Mini Course / Lead Magnet / Checklist: 1 credit
+                - Paid Guide / 30-Day Challenge: 2 credits
+                - Full Course: 3 credits
     
     Returns:
-        bool: True if credit was successfully deducted, False otherwise.
+        bool: True if credits were successfully deducted, False otherwise.
     """
     try:
         from supabase import create_client
@@ -108,28 +120,86 @@ def deduct_credit() -> bool:
         
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Use a single query to atomically check and decrement credits
-        # This prevents race conditions by using database-level operations
-        # First check if credits > 0, then decrement
-        response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).gt("credits", 0).execute()
+        # Check if user has sufficient credits
+        response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).gte("credits", amount).execute()
         
         if not response.data or len(response.data) == 0:
-            print("Credit deduction failed: No credits available or license not found")
+            print(f"Credit deduction failed: Insufficient credits (need {amount}) or license not found")
             return False
         
         current_credits = response.data[0].get('credits', 0)
         
-        # Deduct one credit using the fetched value
-        # Note: For true atomicity, ideally use a database function/RPC
-        new_credits = max(0, current_credits - 1)
+        # Deduct credits
+        # Note: For true atomicity in high-concurrency scenarios, use database RPC
+        new_credits = max(0, current_credits - amount)
         supabase.table("licenses").update({"credits": new_credits}).eq("license_key", license_key).eq("email", email).execute()
         
-        print(f"Credit deducted successfully: {current_credits} -> {new_credits}")
+        print(f"Credits deducted successfully: {current_credits} -> {new_credits} (deducted {amount})")
         return True
         
     except Exception as e:
         print(f"Credit deduction error: {str(e)}")
         return False
+
+
+def get_credit_cost_for_product(product_type: str) -> int:
+    """
+    Get the credit cost for a product type.
+    
+    Args:
+        product_type: The product template ID.
+        
+    Returns:
+        int: Number of credits required.
+    """
+    try:
+        from product_templates import get_credit_cost
+        return get_credit_cost(product_type)
+    except ImportError:
+        # Fallback costs if templates not available
+        costs = {
+            'mini_course': 1,
+            'lead_magnet': 1,
+            'checklist': 1,
+            'paid_guide': 2,
+            '30_day_challenge': 2,
+            'full_course': 3
+        }
+        return costs.get(product_type, 1)
+
+
+def check_credits_for_product(product_type: str) -> dict:
+    """
+    Check if user has enough credits for a product type.
+    
+    Args:
+        product_type: The product template ID.
+        
+    Returns:
+        dict: {
+            'has_credits': bool,
+            'credits_needed': int,
+            'credits_available': int,
+            'message': str
+        }
+    """
+    credit_status = check_remaining_credits()
+    credits_needed = get_credit_cost_for_product(product_type)
+    credits_available = credit_status.get('credits', 0)
+    
+    has_enough = credits_available >= credits_needed
+    
+    if has_enough:
+        message = f"Ready to generate. This will use {credits_needed} credit(s). You have {credits_available} available."
+    else:
+        message = f"Insufficient credits. Need {credits_needed}, have {credits_available}."
+    
+    return {
+        'has_credits': has_enough,
+        'credits_needed': credits_needed,
+        'credits_available': credits_available,
+        'message': message
+    }
 
 
 class AIWorkerBase:
@@ -202,7 +272,8 @@ class AIWorkerBase:
 class OutlineGenerator(AIWorkerBase):
     """Worker for generating course outlines using GPT-4o."""
     
-    def __init__(self, topic, audience, callback=None, error_callback=None):
+    def __init__(self, topic, audience, callback=None, error_callback=None, 
+                 product_type='full_course'):
         """
         Initialize the outline generator.
         
@@ -211,14 +282,25 @@ class OutlineGenerator(AIWorkerBase):
             audience: The target audience.
             callback: Function to call with results (list of chapter titles).
             error_callback: Function to call on error (receives error message).
+            product_type: Template ID for generation settings.
         """
         self.topic = topic
         self.audience = audience
         self.callback = callback
         self.error_callback = error_callback
+        self.product_type = product_type
         self.thread = None
         self.result = None
         self.error = None
+    
+    def _get_template_config(self):
+        """Get template configuration for the product type."""
+        try:
+            from product_templates import get_template, FULL_COURSE
+            template = get_template(self.product_type)
+            return template if template else FULL_COURSE
+        except ImportError:
+            return None
     
     def start(self):
         """Start the worker thread."""
@@ -233,33 +315,48 @@ class OutlineGenerator(AIWorkerBase):
             # Detect if input is in Russian (contains Cyrillic characters)
             is_russian = bool(re.search(r'[а-яА-ЯёЁ]', self.topic + ' ' + self.audience))
             
+            # Get template configuration
+            template = self._get_template_config()
+            
+            # Build the prompt based on language and template
+            if template:
+                chapter_count = template.chapter_count
+                if is_russian:
+                    system_content = template.structure_prompt_ru
+                else:
+                    system_content = template.structure_prompt_en
+            else:
+                chapter_count = 10
+                if is_russian:
+                    system_content = "Вы эксперт по разработке учебных программ, который создает хорошо структурированный образовательный контент."
+                else:
+                    system_content = "You are an AI Content Architect who creates well-structured educational content."
+            
             # Build the prompt based on language
             if is_russian:
-                system_content = "Вы эксперт по разработке учебных программ, который создает хорошо структурированный образовательный контент."
-                prompt = f"""Создайте оглавление для образовательного курса на тему "{self.topic}" 
+                prompt = f"""Создайте оглавление для контента на тему "{self.topic}" 
 для аудитории: {self.audience}.
 
-Предоставьте ровно 10-12 названий глав, которые последовательно развивают знания от основ до продвинутых концепций.
+Предоставьте ровно {chapter_count} названий глав/разделов, которые последовательно развивают знания от основ до продвинутых концепций.
 
-Форматируйте ответ как простой нумерованный список только с названиями глав:
+Форматируйте ответ как простой нумерованный список только с названиями:
 1. [Название первой главы]
 2. [Название второй главы]
 ...и так далее.
 
-Названия должны быть профессиональными и привлекательными. Предоставьте только названия глав, ничего больше."""
+Названия должны быть профессиональными и привлекательными. Предоставьте только названия, ничего больше."""
             else:
-                system_content = "You are an AI Content Architect who creates well-structured educational content."
-                prompt = f"""Create a table of contents for an educational course about "{self.topic}" 
+                prompt = f"""Create a table of contents for content about "{self.topic}" 
 targeted at {self.audience}.
 
-Provide exactly 10-12 chapter titles that progressively build knowledge from basics to advanced concepts.
+Provide exactly {chapter_count} chapter/section titles that progressively build knowledge from basics to advanced concepts.
 
-Format your response as a simple numbered list with just the chapter titles:
+Format your response as a simple numbered list with just the titles:
 1. [Title of Chapter 1]
 2. [Title of Chapter 2]
 ...and so on.
 
-The titles must be professional and catchy. Ensure the structure is logical and flows well. Only provide the chapter titles, nothing else."""
+The titles must be professional and catchy. Ensure the structure is logical and flows well. Only provide the titles, nothing else."""
 
             response = client.chat.completions.create(
                 model="gpt-4o",
@@ -287,8 +384,9 @@ The titles must be professional and catchy. Ensure the structure is logical and 
                     if cleaned:
                         chapters.append(cleaned)
             
-            # Ensure we have 10-12 chapters
-            if len(chapters) < 10:
+            # Ensure we have the expected number of chapters based on template
+            min_chapters = chapter_count
+            if len(chapters) < min_chapters:
                 # Fill with generic titles if needed
                 if is_russian:
                     generic = [
@@ -297,14 +395,9 @@ The titles must be professional and catchy. Ensure the structure is logical and 
                         f"Практические применения",
                         f"Продвинутые техники",
                         f"Заключение и следующие шаги",
-                        f"Дополнительная тема 6",
-                        f"Дополнительная тема 7",
-                        f"Дополнительная тема 8",
-                        f"Дополнительная тема 9",
-                        f"Дополнительная тема 10",
-                        f"Дополнительная тема 11",
-                        f"Дополнительная тема 12"
                     ]
+                    for i in range(6, 32):
+                        generic.append(f"Дополнительная тема {i}")
                 else:
                     generic = [
                         f"Introduction to {self.topic}",
@@ -312,22 +405,18 @@ The titles must be professional and catchy. Ensure the structure is logical and 
                         f"Practical Applications",
                         f"Advanced Techniques",
                         f"Conclusion and Next Steps",
-                        f"Additional Topic 6",
-                        f"Additional Topic 7",
-                        f"Additional Topic 8",
-                        f"Additional Topic 9",
-                        f"Additional Topic 10",
-                        f"Additional Topic 11",
-                        f"Additional Topic 12"
                     ]
-                while len(chapters) < 10:
-                    chapters.append(generic[len(chapters)])
+                    for i in range(6, 32):
+                        generic.append(f"Additional Topic {i}")
+                while len(chapters) < min_chapters:
+                    chapters.append(generic[len(chapters) % len(generic)])
             
-            # Return 10-12 chapters (truncate to 12 if more, already at least 10 from above)
-            if len(chapters) > 12:
-                self.result = chapters[:12]
+            # Return exact chapter count based on template
+            max_chapters = chapter_count + 2  # Allow slight variance
+            if len(chapters) > max_chapters:
+                self.result = chapters[:chapter_count]
             else:
-                self.result = chapters
+                self.result = chapters[:chapter_count] if len(chapters) >= chapter_count else chapters
             
             if self.callback:
                 self.callback(self.result)
@@ -342,7 +431,7 @@ class ChapterWriter(AIWorkerBase):
     """Worker for generating chapter content using GPT-4o with streaming support."""
     
     def __init__(self, topic, chapter_title, chapter_num, callback=None, error_callback=None,
-                 stream_callback=None):
+                 stream_callback=None, product_type='full_course'):
         """
         Initialize the chapter writer.
         
@@ -353,6 +442,7 @@ class ChapterWriter(AIWorkerBase):
             callback: Function to call with results (chapter_title, content).
             error_callback: Function to call on error (receives error message).
             stream_callback: Function to call with incremental text chunks for live preview.
+            product_type: Template ID for generation settings.
         """
         self.topic = topic
         self.chapter_title = chapter_title
@@ -360,9 +450,19 @@ class ChapterWriter(AIWorkerBase):
         self.callback = callback
         self.error_callback = error_callback
         self.stream_callback = stream_callback
+        self.product_type = product_type
         self.thread = None
         self.result = None
         self.error = None
+    
+    def _get_template_config(self):
+        """Get template configuration for the product type."""
+        try:
+            from product_templates import get_template, FULL_COURSE
+            template = get_template(self.product_type)
+            return template if template else FULL_COURSE
+        except ImportError:
+            return None
     
     def start(self):
         """Start the worker thread."""
@@ -374,11 +474,49 @@ class ChapterWriter(AIWorkerBase):
         try:
             client = self.get_client()
             
-            prompt = f"""Write detailed educational content for Chapter {self.chapter_num}: "{self.chapter_title}" 
-in a comprehensive course about "{self.topic}".
+            # Get template configuration
+            template = self._get_template_config()
+            
+            # Detect if input is in Russian
+            is_russian = bool(re.search(r'[а-яА-ЯёЁ]', self.topic + ' ' + self.chapter_title))
+            
+            # Build prompt based on template
+            if template:
+                chars_per_chapter = template.chars_per_chapter
+                if is_russian:
+                    system_content = template.content_prompt_ru
+                else:
+                    system_content = template.content_prompt_en
+            else:
+                chars_per_chapter = 1500
+                if is_russian:
+                    system_content = "Вы эксперт-преподаватель, который создает четкий, увлекательный и качественный образовательный контент."
+                else:
+                    system_content = "You are an expert educator who writes clear, engaging, and comprehensive educational content."
+            
+            # Calculate approximate word count
+            word_count = chars_per_chapter // 5  # ~5 chars per word
+            
+            if is_russian:
+                prompt = f"""Напишите образовательный контент для Раздела {self.chapter_num}: "{self.chapter_title}" 
+по теме "{self.topic}".
+
+Требования:
+- Целевой объем: примерно {chars_per_chapter} символов ({word_count} слов)
+- Используйте ясный, образовательный язык
+- Включите практические примеры и объяснения где уместно
+- Структурируйте контент логически с четкими абзацами
+- Можете использовать markdown заголовки (## для подразделов)
+- Сделайте контент увлекательным и информативным
+- НЕ включайте название главы в начале - только контент
+
+Напишите контент напрямую."""
+            else:
+                prompt = f"""Write educational content for Section {self.chapter_num}: "{self.chapter_title}" 
+about "{self.topic}".
 
 Requirements:
-- Write approximately 400-500 words
+- Target length: approximately {chars_per_chapter} characters ({word_count} words)
 - Use clear, educational language suitable for learners
 - Include practical examples and explanations where appropriate
 - Structure the content logically with clear paragraphs
@@ -388,6 +526,9 @@ Requirements:
 
 Write the content directly."""
 
+            # Calculate appropriate max_tokens based on template
+            max_tokens = max(500, (chars_per_chapter * 2) // 4)  # Rough estimate
+            
             # Check if streaming is requested
             if self.stream_callback:
                 # Use streaming API for live preview
@@ -396,13 +537,12 @@ Write the content directly."""
                     messages=[
                         {
                             "role": "system",
-                            "content": "You are an expert educator who writes clear, engaging, "
-                            "and comprehensive educational content."
+                            "content": system_content
                         },
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.7,
-                    max_tokens=1200,
+                    max_tokens=max_tokens,
                     stream=True
                 )
                 
@@ -430,13 +570,12 @@ Write the content directly."""
                     messages=[
                         {
                             "role": "system",
-                            "content": "You are an expert educator who writes clear, engaging, "
-                            "and comprehensive educational content."
+                            "content": system_content
                         },
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.7,
-                    max_tokens=1200
+                    max_tokens=max_tokens
                 )
                 
                 content = response.choices[0].message.content.strip()

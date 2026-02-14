@@ -66,31 +66,61 @@ class LanguageManager:
                 'forge': 'Forge',
                 'library': 'Library',
                 'settings': 'Settings',
-                'start_forge': 'Start Forge',
-                'course_topic': 'Course Topic',
+                'account': 'Account',
+                'start_forge': 'Generate Product',
+                'course_topic': 'Topic',
                 'target_audience': 'Target Audience',
                 'chapter_count': 'Chapters',
-                'generating': 'Forging your course...',
-                'complete': 'Course Complete!',
+                'generating': 'Generating your product...',
+                'complete': 'Product Complete!',
                 'progress': 'Progress',
                 'cancel': 'Cancel',
-                'export': 'Export PDF',
-                'chapters_label': 'Chapters Generated',
+                'export': 'Export',
+                'chapters_label': 'Sections Generated',
+                'product_type': 'Product Type',
+                'export_formats': 'Export Formats',
+                'credits_needed': 'Credits Required',
+                'credits_available': 'Credits Available',
+                'filter_by_type': 'Filter by Type',
+                'all_types': 'All Types',
+                'date': 'Date',
+                'credits_used': 'Credits Used',
+                'total_products': 'Total Products',
+                'total_credits_spent': 'Total Credits Spent',
+                'license_tier': 'License Tier',
+                'products_this_month': 'Products This Month',
+                'select_product_type': 'Select Product Type',
+                'select_formats': 'Select Export Formats',
             },
             'RU': {
                 'forge': 'Создать',
                 'library': 'Библиотека',
                 'settings': 'Настройки',
-                'start_forge': 'Начать создание',
-                'course_topic': 'Тема курса',
+                'account': 'Аккаунт',
+                'start_forge': 'Создать продукт',
+                'course_topic': 'Тема',
                 'target_audience': 'Целевая аудитория',
                 'chapter_count': 'Главы',
-                'generating': 'Создание вашего курса...',
-                'complete': 'Курс готов!',
+                'generating': 'Создание вашего продукта...',
+                'complete': 'Продукт готов!',
                 'progress': 'Прогресс',
                 'cancel': 'Отмена',
-                'export': 'Экспорт PDF',
-                'chapters_label': 'Создано глав',
+                'export': 'Экспорт',
+                'chapters_label': 'Создано разделов',
+                'product_type': 'Тип продукта',
+                'export_formats': 'Форматы экспорта',
+                'credits_needed': 'Требуется кредитов',
+                'credits_available': 'Доступно кредитов',
+                'filter_by_type': 'Фильтр по типу',
+                'all_types': 'Все типы',
+                'date': 'Дата',
+                'credits_used': 'Использовано кредитов',
+                'total_products': 'Всего продуктов',
+                'total_credits_spent': 'Всего потрачено кредитов',
+                'license_tier': 'Тип лицензии',
+                'products_this_month': 'Продуктов за месяц',
+                'select_product_type': 'Выберите тип продукта',
+                'select_formats': 'Выберите форматы экспорта',
             }
         }
         return translations.get(self.current_lang, {}).get(key, key)
@@ -254,14 +284,14 @@ class PremiumButton(ctk.CTkButton):
 
 
 class CustomApp(ctk.CTk):
-    """Custom high-end UI for CourseSmith AI."""
+    """Custom high-end UI for CourseSmith AI - AI Digital Product Factory."""
     
     def __init__(self):
         """Initialize the custom application."""
         super().__init__()
         
         # Window configuration
-        self.title("CourseSmith AI - Premium Edition")
+        self.title("CourseSmith AI - Digital Product Factory")
         self.geometry("1200x800")
         self.minsize(1000, 700)
         
@@ -277,6 +307,17 @@ class CustomApp(ctk.CTk):
         self.current_page = 'forge'
         self.chapter_count = 0
         self.total_chapters = 10
+        
+        # Product type and export format selections
+        self.selected_product_type = 'full_course'
+        self.selected_export_formats = {'pdf': True, 'docx': False, 'markdown': False, 'html': False}
+        
+        # Load product templates
+        try:
+            from product_templates import get_all_templates, get_template_info_for_ui
+            self.product_templates = get_template_info_for_ui()
+        except ImportError:
+            self.product_templates = []
         
         # Create UI
         self._create_ui()
@@ -312,7 +353,7 @@ class CustomApp(ctk.CTk):
         
         logo_label = ctk.CTkLabel(
             logo_frame,
-            text="📚",
+            text="🏭",
             font=ctk.CTkFont(size=48)
         )
         logo_label.pack()
@@ -325,10 +366,18 @@ class CustomApp(ctk.CTk):
         )
         title_label.pack(pady=(5, 0))
         
-        # Navigation buttons
+        subtitle_label = ctk.CTkLabel(
+            logo_frame,
+            text="Product Factory",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_secondary']
+        )
+        subtitle_label.pack()
+        
+        # Navigation buttons - now with Account page
         self.nav_buttons = {}
         
-        nav_items = ['forge', 'library', 'settings']
+        nav_items = ['forge', 'library', 'account', 'settings']
         for item in nav_items:
             btn = ctk.CTkButton(
                 self.sidebar,
@@ -405,19 +454,21 @@ class CustomApp(ctk.CTk):
             self._show_forge_page()
         elif page == 'library':
             self._show_library_page()
+        elif page == 'account':
+            self._show_account_page()
         elif page == 'settings':
             self._show_settings_page()
     
     def _show_forge_page(self):
-        """Show the Forge (Generator) page."""
+        """Show the Forge (Generator) page with product type selection."""
         # Highlight forge button
         self.nav_buttons['forge'].configure(
             fg_color=COLORS['accent'],
             text_color=COLORS['text_primary']
         )
         
-        # Create content frame with padding
-        content = ctk.CTkFrame(
+        # Create scrollable content frame
+        content = ctk.CTkScrollableFrame(
             self.main_area,
             fg_color='transparent'
         )
@@ -431,16 +482,6 @@ class CustomApp(ctk.CTk):
             text_color=COLORS['text_primary']
         )
         title_label.pack(anchor='w', pady=(0, 30))
-        
-        # Input card
-        input_card = ctk.CTkFrame(
-            content,
-            corner_radius=20,
-            fg_color=COLORS['card'],
-            border_width=2,
-            border_color=COLORS['border']
-        )
-        input_card.pack(fill='x', pady=(0, 20))
         
         # Make it an animated border frame
         self.input_border_frame = AnimatedBorderFrame(
@@ -458,14 +499,74 @@ class CustomApp(ctk.CTk):
         )
         input_inner.pack(fill='both', expand=True, padx=30, pady=30)
         
-        # Course topic
+        # ===== PRODUCT TYPE SELECTION =====
+        type_label = ctk.CTkLabel(
+            input_inner,
+            text=self.lang.get('select_product_type'),
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        type_label.pack(anchor='w', pady=(0, 12))
+        
+        # Product type cards container
+        types_frame = ctk.CTkFrame(input_inner, fg_color='transparent')
+        types_frame.pack(fill='x', pady=(0, 20))
+        
+        self.type_buttons = {}
+        self.product_type_var = ctk.StringVar(value=self.selected_product_type)
+        
+        # Create grid of product type buttons
+        for i, template in enumerate(self.product_templates):
+            row = i // 3
+            col = i % 3
+            
+            btn_frame = ctk.CTkFrame(
+                types_frame,
+                corner_radius=15,
+                fg_color=COLORS['background'] if template['id'] != self.selected_product_type else COLORS['accent'],
+                border_width=1,
+                border_color=COLORS['border']
+            )
+            btn_frame.grid(row=row, column=col, padx=5, pady=5, sticky='nsew')
+            types_frame.grid_columnconfigure(col, weight=1)
+            
+            btn_inner = ctk.CTkFrame(btn_frame, fg_color='transparent')
+            btn_inner.pack(fill='both', expand=True, padx=12, pady=10)
+            
+            # Icon and name
+            header = ctk.CTkLabel(
+                btn_inner,
+                text=f"{template['icon']} {template['name']}",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=COLORS['text_primary']
+            )
+            header.pack(anchor='w')
+            
+            # Credits info
+            credits_text = ctk.CTkLabel(
+                btn_inner,
+                text=f"{template['credits']} credit(s) • {template['chapters']} sections",
+                font=ctk.CTkFont(size=10),
+                text_color=COLORS['text_secondary']
+            )
+            credits_text.pack(anchor='w')
+            
+            # Make the frame clickable
+            btn_frame.bind('<Button-1>', lambda e, t_id=template['id']: self._select_product_type(t_id))
+            btn_inner.bind('<Button-1>', lambda e, t_id=template['id']: self._select_product_type(t_id))
+            header.bind('<Button-1>', lambda e, t_id=template['id']: self._select_product_type(t_id))
+            credits_text.bind('<Button-1>', lambda e, t_id=template['id']: self._select_product_type(t_id))
+            
+            self.type_buttons[template['id']] = btn_frame
+        
+        # ===== TOPIC INPUT =====
         topic_label = ctk.CTkLabel(
             input_inner,
             text=self.lang.get('course_topic'),
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS['text_primary']
         )
-        topic_label.pack(anchor='w', pady=(0, 8))
+        topic_label.pack(anchor='w', pady=(10, 8))
         
         self.topic_entry = ctk.CTkEntry(
             input_inner,
@@ -474,11 +575,12 @@ class CustomApp(ctk.CTk):
             font=ctk.CTkFont(size=14),
             fg_color=COLORS['background'],
             border_color=COLORS['border'],
-            text_color=COLORS['text_primary']
+            text_color=COLORS['text_primary'],
+            placeholder_text="e.g., Python Programming, Digital Marketing, Personal Finance..."
         )
         self.topic_entry.pack(fill='x', pady=(0, 20))
         
-        # Target audience
+        # ===== AUDIENCE INPUT =====
         audience_label = ctk.CTkLabel(
             input_inner,
             text=self.lang.get('target_audience'),
@@ -494,49 +596,65 @@ class CustomApp(ctk.CTk):
             font=ctk.CTkFont(size=14),
             fg_color=COLORS['background'],
             border_color=COLORS['border'],
-            text_color=COLORS['text_primary']
+            text_color=COLORS['text_primary'],
+            placeholder_text="e.g., Beginners, Business Owners, Students..."
         )
         self.audience_entry.pack(fill='x', pady=(0, 20))
         
-        # Chapter count
-        chapters_label = ctk.CTkLabel(
+        # ===== EXPORT FORMATS SELECTION =====
+        formats_label = ctk.CTkLabel(
             input_inner,
-            text=self.lang.get('chapter_count'),
+            text=self.lang.get('select_formats'),
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS['text_primary']
         )
-        chapters_label.pack(anchor='w', pady=(0, 8))
+        formats_label.pack(anchor='w', pady=(0, 12))
         
-        self.chapters_slider = ctk.CTkSlider(
-            input_inner,
-            from_=5,
-            to=15,
-            number_of_steps=10,
-            height=20,
-            button_color=COLORS['accent'],
-            button_hover_color=COLORS['accent_hover'],
-            progress_color=COLORS['accent'],
-            fg_color=COLORS['background']
-        )
-        self.chapters_slider.set(10)
-        self.chapters_slider.pack(fill='x', pady=(0, 10))
+        formats_frame = ctk.CTkFrame(input_inner, fg_color='transparent')
+        formats_frame.pack(fill='x', pady=(0, 20))
         
-        self.chapters_value_label = ctk.CTkLabel(
-            input_inner,
-            text="10",
+        self.format_checkboxes = {}
+        export_formats = [
+            {'id': 'pdf', 'name': 'PDF', 'icon': '📄'},
+            {'id': 'docx', 'name': 'DOCX', 'icon': '📝'},
+            {'id': 'markdown', 'name': 'Markdown', 'icon': '📋'},
+            {'id': 'html', 'name': 'HTML', 'icon': '🌐'}
+        ]
+        
+        for i, fmt in enumerate(export_formats):
+            var = ctk.BooleanVar(value=self.selected_export_formats.get(fmt['id'], False))
+            cb = ctk.CTkCheckBox(
+                formats_frame,
+                text=f"{fmt['icon']} {fmt['name']}",
+                variable=var,
+                font=ctk.CTkFont(size=13),
+                fg_color=COLORS['accent'],
+                hover_color=COLORS['accent_hover'],
+                text_color=COLORS['text_primary'],
+                command=lambda f_id=fmt['id'], v=var: self._toggle_format(f_id, v)
+            )
+            cb.grid(row=0, column=i, padx=10, pady=5, sticky='w')
+            self.format_checkboxes[fmt['id']] = var
+        
+        # ===== CREDIT INFO =====
+        credit_frame = ctk.CTkFrame(input_inner, fg_color=COLORS['background'], corner_radius=10)
+        credit_frame.pack(fill='x', pady=(0, 20))
+        
+        credit_inner = ctk.CTkFrame(credit_frame, fg_color='transparent')
+        credit_inner.pack(fill='x', padx=15, pady=10)
+        
+        self.credit_info_label = ctk.CTkLabel(
+            credit_inner,
+            text="💳 Credits Required: 3",
             font=ctk.CTkFont(size=12),
             text_color=COLORS['text_secondary']
         )
-        self.chapters_value_label.pack(anchor='w')
+        self.credit_info_label.pack(side='left')
         
-        # Update chapter count display
-        def update_chapter_label(value):
-            self.chapters_value_label.configure(text=str(int(value)))
-            self.total_chapters = int(value)
+        # Update credit display
+        self._update_credit_display()
         
-        self.chapters_slider.configure(command=update_chapter_label)
-        
-        # Start Forge button with glow
+        # ===== GENERATE BUTTON =====
         self.start_button = PremiumButton(
             input_inner,
             text=self.lang.get('start_forge'),
@@ -549,7 +667,7 @@ class CustomApp(ctk.CTk):
             glow=True,
             command=self._start_generation
         )
-        self.start_button.pack(fill='x', pady=(20, 0))
+        self.start_button.pack(fill='x', pady=(10, 0))
         
         # Progress section (initially hidden)
         self.progress_frame = ctk.CTkFrame(
@@ -594,8 +712,100 @@ class CustomApp(ctk.CTk):
         self.progress_label.pack(anchor='w')
     
     def _show_library_page(self):
-        """Show the Library page."""
+        """Show the Library page with filters and product list."""
         content = ctk.CTkFrame(
+            self.main_area,
+            fg_color='transparent'
+        )
+        content.pack(fill='both', expand=True, padx=40, pady=30)
+        
+        # Header with title and filter
+        header_frame = ctk.CTkFrame(content, fg_color='transparent')
+        header_frame.pack(fill='x', pady=(0, 20))
+        
+        title_label = ctk.CTkLabel(
+            header_frame,
+            text=self.lang.get('library'),
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        title_label.pack(side='left')
+        
+        # Filter dropdown
+        filter_frame = ctk.CTkFrame(header_frame, fg_color='transparent')
+        filter_frame.pack(side='right')
+        
+        filter_label = ctk.CTkLabel(
+            filter_frame,
+            text=self.lang.get('filter_by_type'),
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text_secondary']
+        )
+        filter_label.pack(side='left', padx=(0, 10))
+        
+        # Get product types for filter
+        filter_options = [self.lang.get('all_types')]
+        for t in self.product_templates:
+            filter_options.append(f"{t['icon']} {t['name']}")
+        
+        self.library_filter = ctk.CTkComboBox(
+            filter_frame,
+            values=filter_options,
+            width=180,
+            fg_color=COLORS['card'],
+            border_color=COLORS['border'],
+            button_color=COLORS['accent'],
+            dropdown_fg_color=COLORS['card'],
+            dropdown_hover_color=COLORS['accent']
+        )
+        self.library_filter.set(filter_options[0])
+        self.library_filter.pack(side='left')
+        
+        # Products list (scrollable)
+        products_scroll = ctk.CTkScrollableFrame(
+            content,
+            fg_color='transparent'
+        )
+        products_scroll.pack(fill='both', expand=True)
+        
+        # Column headers
+        headers_frame = ctk.CTkFrame(products_scroll, fg_color=COLORS['card'], corner_radius=10)
+        headers_frame.pack(fill='x', pady=(0, 10))
+        
+        headers = [
+            ("Topic", 3),
+            ("Type", 1),
+            ("Formats", 1),
+            (self.lang.get('date'), 1),
+            (self.lang.get('credits_used'), 1)
+        ]
+        
+        headers_inner = ctk.CTkFrame(headers_frame, fg_color='transparent')
+        headers_inner.pack(fill='x', padx=15, pady=10)
+        
+        for i, (header_text, weight) in enumerate(headers):
+            lbl = ctk.CTkLabel(
+                headers_inner,
+                text=header_text,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS['text_secondary']
+            )
+            lbl.grid(row=0, column=i, sticky='w', padx=10)
+            headers_inner.grid_columnconfigure(i, weight=weight)
+        
+        # Placeholder for empty library
+        placeholder = ctk.CTkLabel(
+            products_scroll,
+            text="📚 Your generated products will appear here\nStart creating in the Forge!",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_secondary'],
+            justify='center'
+        )
+        placeholder.pack(pady=50)
+    
+    def _show_account_page(self):
+        """Show the Account page with statistics."""
+        content = ctk.CTkScrollableFrame(
             self.main_area,
             fg_color='transparent'
         )
@@ -603,20 +813,114 @@ class CustomApp(ctk.CTk):
         
         title_label = ctk.CTkLabel(
             content,
-            text=self.lang.get('library'),
+            text=self.lang.get('account'),
             font=ctk.CTkFont(size=36, weight="bold"),
             text_color=COLORS['text_primary']
         )
         title_label.pack(anchor='w', pady=(0, 30))
         
-        # Placeholder for library content
-        placeholder = ctk.CTkLabel(
+        # Stats cards grid
+        stats_frame = ctk.CTkFrame(content, fg_color='transparent')
+        stats_frame.pack(fill='x', pady=(0, 30))
+        
+        # Get credit info
+        try:
+            from ai_worker import check_remaining_credits
+            credit_info = check_remaining_credits()
+            credits_available = credit_info.get('credits', 0)
+        except:
+            credits_available = 0
+        
+        # Get tier
+        try:
+            from session_manager import get_tier
+            tier = get_tier() or 'trial'
+        except:
+            tier = 'trial'
+        
+        # Stats data
+        stats = [
+            {"icon": "💳", "label": self.lang.get('credits_available'), "value": str(credits_available)},
+            {"icon": "⭐", "label": self.lang.get('license_tier'), "value": tier.title()},
+            {"icon": "📦", "label": self.lang.get('total_products'), "value": "0"},
+            {"icon": "📊", "label": self.lang.get('total_credits_spent'), "value": "0"},
+        ]
+        
+        for i, stat in enumerate(stats):
+            card = ctk.CTkFrame(
+                stats_frame,
+                corner_radius=15,
+                fg_color=COLORS['card'],
+                border_width=1,
+                border_color=COLORS['border']
+            )
+            card.grid(row=0, column=i, padx=10, pady=10, sticky='nsew')
+            stats_frame.grid_columnconfigure(i, weight=1)
+            
+            card_inner = ctk.CTkFrame(card, fg_color='transparent')
+            card_inner.pack(fill='both', expand=True, padx=20, pady=20)
+            
+            icon_label = ctk.CTkLabel(
+                card_inner,
+                text=stat['icon'],
+                font=ctk.CTkFont(size=32)
+            )
+            icon_label.pack()
+            
+            value_label = ctk.CTkLabel(
+                card_inner,
+                text=stat['value'],
+                font=ctk.CTkFont(size=24, weight="bold"),
+                text_color=COLORS['text_primary']
+            )
+            value_label.pack(pady=(5, 0))
+            
+            label_label = ctk.CTkLabel(
+                card_inner,
+                text=stat['label'],
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS['text_secondary']
+            )
+            label_label.pack()
+        
+        # Credit costs info
+        info_card = ctk.CTkFrame(
             content,
-            text="📚 Your generated courses will appear here",
-            font=ctk.CTkFont(size=16),
-            text_color=COLORS['text_secondary']
+            corner_radius=20,
+            fg_color=COLORS['card']
         )
-        placeholder.pack(pady=50)
+        info_card.pack(fill='x', pady=(0, 20))
+        
+        info_inner = ctk.CTkFrame(info_card, fg_color='transparent')
+        info_inner.pack(fill='both', padx=30, pady=30)
+        
+        info_title = ctk.CTkLabel(
+            info_inner,
+            text="💡 Credit Costs by Product Type",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        info_title.pack(anchor='w', pady=(0, 15))
+        
+        for template in self.product_templates:
+            cost_row = ctk.CTkFrame(info_inner, fg_color='transparent')
+            cost_row.pack(fill='x', pady=3)
+            
+            name_label = ctk.CTkLabel(
+                cost_row,
+                text=f"{template['icon']} {template['name']}",
+                font=ctk.CTkFont(size=13),
+                text_color=COLORS['text_primary']
+            )
+            name_label.pack(side='left')
+            
+            cost_label = ctk.CTkLabel(
+                cost_row,
+                text=f"{template['credits']} credit(s)",
+                font=ctk.CTkFont(size=13),
+                text_color=COLORS['accent']
+            )
+            cost_label.pack(side='right')
     
     def _show_settings_page(self):
         """Show the Settings page."""
@@ -667,6 +971,54 @@ class CustomApp(ctk.CTk):
         )
         info_text.pack(anchor='w', pady=(0, 20))
     
+    def _select_product_type(self, product_type_id):
+        """Handle product type selection."""
+        self.selected_product_type = product_type_id
+        
+        # Update button styles
+        for t_id, btn_frame in self.type_buttons.items():
+            if t_id == product_type_id:
+                btn_frame.configure(fg_color=COLORS['accent'])
+            else:
+                btn_frame.configure(fg_color=COLORS['background'])
+        
+        # Update credit display
+        self._update_credit_display()
+        
+        # Update total chapters based on template
+        for template in self.product_templates:
+            if template['id'] == product_type_id:
+                self.total_chapters = template['chapters']
+                break
+    
+    def _toggle_format(self, format_id, var):
+        """Handle export format checkbox toggle."""
+        self.selected_export_formats[format_id] = var.get()
+        
+        # Ensure at least one format is selected
+        if not any(self.selected_export_formats.values()):
+            self.selected_export_formats['pdf'] = True
+            # Reset PDF checkbox to checked state
+            if 'pdf' in self.format_checkboxes:
+                self.format_checkboxes['pdf'].set(True)
+    
+    def _update_credit_display(self):
+        """Update the credit cost display based on selected product type."""
+        try:
+            from product_templates import get_credit_cost
+            credits_needed = get_credit_cost(self.selected_product_type)
+        except ImportError:
+            credits_needed = 3
+        
+        if hasattr(self, 'credit_info_label'):
+            self.credit_info_label.configure(
+                text=f"💳 Credits Required: {credits_needed}"
+            )
+    
+    def _get_selected_formats(self):
+        """Get list of selected export format IDs."""
+        return [fmt_id for fmt_id, selected in self.selected_export_formats.items() if selected]
+    
     def _toggle_language(self):
         """Toggle between EN and RU languages."""
         self.lang.toggle_language()
@@ -676,24 +1028,43 @@ class CustomApp(ctk.CTk):
         self._switch_page(self.current_page)
     
     def _start_generation(self):
-        """Start course generation process."""
+        """Start product generation process with selected template and formats."""
         topic = self.topic_entry.get().strip()
         audience = self.audience_entry.get().strip()
         
         if not topic:
-            messagebox.showwarning("Input Required", "Please enter a course topic")
+            messagebox.showwarning("Input Required", "Please enter a topic")
             return
         
         if not audience:
             messagebox.showwarning("Input Required", "Please enter a target audience")
             return
         
+        # Get selected export formats
+        export_formats = self._get_selected_formats()
+        if not export_formats:
+            export_formats = ['pdf']
+        
+        # Setup project with selected options
+        self.project = CourseProject()
+        self.project.set_topic(topic)
+        self.project.set_audience(audience)
+        self.project.set_product_type(self.selected_product_type)
+        self.project.set_export_formats(export_formats)
+        
         # Disable inputs
         self.is_generating = True
         self.topic_entry.configure(state='disabled')
         self.audience_entry.configure(state='disabled')
-        self.chapters_slider.configure(state='disabled')
         self.start_button.configure(state='disabled')
+        
+        # Disable product type buttons
+        for btn_frame in self.type_buttons.values():
+            for child in btn_frame.winfo_children():
+                try:
+                    child.configure(state='disabled')
+                except:
+                    pass
         
         # Start border animation
         self.input_border_frame.start_animation()
@@ -712,7 +1083,7 @@ class CustomApp(ctk.CTk):
         self._simulate_generation()
     
     def _simulate_generation(self):
-        """Simulate course generation with progress updates."""
+        """Simulate product generation with progress updates."""
         def generate():
             for i in range(self.total_chapters):
                 time.sleep(1.5)  # Simulate chapter generation time
@@ -749,13 +1120,33 @@ class CustomApp(ctk.CTk):
         # Re-enable controls
         self.topic_entry.configure(state='normal')
         self.audience_entry.configure(state='normal')
-        self.chapters_slider.configure(state='normal')
         self.start_button.configure(state='normal')
+        
+        # Re-enable product type buttons
+        for btn_frame in self.type_buttons.values():
+            for child in btn_frame.winfo_children():
+                try:
+                    child.configure(state='normal')
+                except:
+                    pass
+        
+        # Get product type name for message
+        product_name = "Product"
+        for template in self.product_templates:
+            if template['id'] == self.selected_product_type:
+                product_name = template['name']
+                break
+        
+        # Get selected formats
+        formats = self._get_selected_formats()
+        formats_str = ", ".join([f.upper() for f in formats])
         
         # Show success message
         messagebox.showinfo(
             "Success",
-            f"Course generated successfully with {self.total_chapters} chapters!"
+            f"{product_name} generated successfully!\n\n"
+            f"Sections: {self.total_chapters}\n"
+            f"Export formats: {formats_str}"
         )
 
 
