@@ -31,6 +31,13 @@ from utils import resource_path, _register_roboto_fonts
 from session_manager import is_active, get_tier, SecurityError
 from generator import ContentDistributor, distribute_chapter_content
 
+# Pre-compiled regex patterns for markdown parsing performance optimization
+# Compiling once at module level avoids re-compilation on every line
+# Note: Bold pattern MUST be applied before italic to avoid false matches
+_BOLD_PATTERN = re.compile(r'\*\*(.+?)\*\*')
+# Italic pattern uses negative lookbehind/lookahead to avoid matching bold asterisks
+_ITALIC_PATTERN = re.compile(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)')
+
 
 class PDFBuilder:
     """
@@ -357,6 +364,9 @@ class PDFBuilder:
         Parse markdown content with a specific body text style.
         Allows for per-page font scaling.
         
+        Performance optimization: Uses pre-compiled regex patterns for
+        bold/italic markdown conversion instead of re-compiling on each line.
+        
         Args:
             content: The markdown content string.
             body_style: The paragraph style to use for body text.
@@ -402,10 +412,9 @@ class PDFBuilder:
                     current_para = []
             else:
                 # Regular text - accumulate
-                # Handle bold/italic markdown
-                processed = stripped
-                processed = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', processed)
-                processed = re.sub(r'\*(.+?)\*', r'<i>\1</i>', processed)
+                # Handle bold/italic markdown using pre-compiled patterns
+                processed = _BOLD_PATTERN.sub(r'<b>\1</b>', stripped)
+                processed = _ITALIC_PATTERN.sub(r'<i>\1</i>', processed)
                 current_para.append(processed)
         
         # Flush remaining paragraph
