@@ -621,6 +621,8 @@ class CustomApp(ctk.CTk):
         formats_frame.pack(fill='x', pady=(0, 20))
         
         # Format buttons with visual feedback (replaces checkboxes)
+        # Note: Only showing PDF/DOCX/HTML as per requirements; markdown exporter
+        # is still available via export_base.py if needed programmatically
         self.format_buttons = {}
         export_formats = [
             {'id': 'pdf', 'name': 'PDF', 'icon': '📄'},
@@ -1038,14 +1040,6 @@ class CustomApp(ctk.CTk):
                 font=ctk.CTkFont(size=13, weight="bold" if is_selected else "normal"),
                 text=f"{icon} {name}"
             )
-    
-    def _toggle_format(self, format_id, var):
-        """Handle export format checkbox toggle (legacy method for compatibility)."""
-        self.selected_export_formats[format_id] = var.get()
-        
-        # Ensure at least one format is selected
-        if not any(self.selected_export_formats.values()):
-            self.selected_export_formats['pdf'] = True
     
     def _update_credit_display(self):
         """Update the credit cost display based on selected product type."""
