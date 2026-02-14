@@ -934,8 +934,8 @@ class CustomApp(ctk.CTk):
                 
                 chapters = outline_gen.result or []
                 if not chapters:
-                    # Fallback: generate simple chapter titles
-                    chapters = [f"Chapter {i+1}" for i in range(self.total_chapters)]
+                    # Fallback: generate meaningful chapter titles with topic
+                    chapters = [f"{topic} - Part {i+1}" for i in range(self.total_chapters)]
                 
                 # Limit to selected chapter count
                 chapters = chapters[:self.total_chapters]
@@ -995,17 +995,23 @@ class CustomApp(ctk.CTk):
         """Export the generated course to the specified format."""
         try:
             if output_format == 'PDF':
-                builder = PDFBuilder(self.output_path)
-                builder.set_branding(logo_path=None, website_url="CourseSmith AI")
-                builder.add_cover(
-                    self.generated_title,
-                    self.generated_subtitle
+                # Build chapters data for PDF builder
+                chapters_data = []
+                for title, content in zip(self.generated_chapters, self.generated_contents):
+                    chapters_data.append({
+                        'title': title,
+                        'content': content
+                    })
+                
+                # Use the project manager and PDF builder properly
+                from pdf_engine import build_pdf_simple
+                build_pdf_simple(
+                    title=self.generated_title.replace("Complete Course: ", ""),
+                    audience=self.generated_subtitle.replace("For ", ""),
+                    cover_image_path=None,
+                    chapters_data=chapters_data,
+                    output_path=self.output_path
                 )
-                
-                for i, (title, content) in enumerate(zip(self.generated_chapters, self.generated_contents)):
-                    builder.add_chapter(content)
-                
-                builder.build()
                 
             elif output_format == 'DOCX' and DOCX_AVAILABLE:
                 create_course_docx(

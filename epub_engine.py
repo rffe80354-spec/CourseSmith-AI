@@ -220,12 +220,16 @@ li {
                     in_list = False
                 html_lines.append(f'<h2>{line[2:]}</h2>')
             # Bullet points
-            elif line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
+            elif line.startswith('- ') or line.startswith('* '):
                 if not in_list:
                     html_lines.append('<ul>')
                     in_list = True
-                bullet_text = line[2:] if line[0] in '-*' else line[2:]
-                html_lines.append(f'<li>{bullet_text}</li>')
+                html_lines.append(f'<li>{line[2:]}</li>')
+            elif line.startswith('• '):
+                if not in_list:
+                    html_lines.append('<ul>')
+                    in_list = True
+                html_lines.append(f'<li>{line[1:].lstrip()}</li>')
             # Regular paragraph
             else:
                 if in_list:

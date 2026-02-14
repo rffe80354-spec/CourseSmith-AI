@@ -179,7 +179,7 @@ class DocxBuilder:
         if line.startswith('- ') or line.startswith('* '):
             return line[2:], 'CourseBody', True
         if line.startswith('• '):
-            return line[2:], 'CourseBody', True
+            return line[1:].lstrip(), 'CourseBody', True
         
         return line, 'CourseBody', False
 
