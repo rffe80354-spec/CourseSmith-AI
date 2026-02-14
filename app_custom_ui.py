@@ -12,12 +12,15 @@ from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
 
-from utils import resource_path, get_data_dir
+from utils import resource_path, get_data_dir, patch_ctk_scrollbar
 from license_guard import validate_license, load_license, save_license, remove_license
 from session_manager import set_session, is_active, get_tier, clear_session
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator
 from pdf_engine import PDFBuilder
+
+# Apply scrollbar patch to prevent RecursionError in CTkScrollableFrame
+patch_ctk_scrollbar()
 
 
 # Custom Premium Theme Colors

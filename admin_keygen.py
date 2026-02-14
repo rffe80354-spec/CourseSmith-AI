@@ -27,8 +27,12 @@ from datetime import datetime, timedelta, timezone
 import customtkinter as ctk
 from tkinter import messagebox
 from license_guard import generate_key
-from utils import resource_path, add_context_menu
+from utils import resource_path, add_context_menu, patch_ctk_scrollbar
 from dotenv import load_dotenv
+
+# Apply scrollbar patch to prevent RecursionError in CTkScrollableFrame
+# This must be called before creating any scrollable widgets
+patch_ctk_scrollbar()
 
 # Load environment variables
 load_dotenv()
