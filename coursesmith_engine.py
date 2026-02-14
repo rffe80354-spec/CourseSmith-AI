@@ -10,6 +10,13 @@ Features:
 - Markdown formatting with subheaders and bullet points
 - Clean UTF-8 output with full Cyrillic support
 - Structured output format for easy conversion to PDF, DOCX, EPUB
+
+API Key Management:
+    The OpenAI API key is retrieved from Supabase database using the secrets_manager
+    module. This keeps the API key secure and out of the source code.
+    
+    Supabase Table: 'secrets'
+    Secret Name: 'OPENAI_API_KEY'
 """
 
 import os
@@ -17,13 +24,18 @@ import re
 from typing import Dict, List, Tuple
 from openai import OpenAI
 
-# Hardcoded primary API key - users cannot change this
-PRIMARY_API_KEY = "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY"
+# Import secrets manager for secure API key retrieval from Supabase
+# The API key is stored in Supabase 'secrets' table with name='OPENAI_API_KEY'
+from secrets_manager import get_openai_api_key, is_supabase_configured
 
 
 class CourseSmithEngine:
     """
     The CourseSmith Ultimate Engine for generating professional educational courses.
+    
+    API Key Retrieval:
+        The OpenAI API key is retrieved from Supabase 'secrets' table.
+        If no api_key is provided, it will be fetched automatically.
     """
 
     def __init__(self, api_key: str = None, require_api_key: bool = True):
@@ -31,16 +43,29 @@ class CourseSmithEngine:
         Initialize the CourseSmith Ultimate Engine.
 
         Args:
-            api_key: OpenAI API key. If None, will use the hardcoded primary API key.
+            api_key: OpenAI API key. If None, will be retrieved from Supabase.
             require_api_key: If False, allows initialization without API key (for testing).
+        
+        Raises:
+            ValueError: If API key is required but cannot be retrieved from Supabase.
         """
         if api_key is None and require_api_key:
-            # Use hardcoded primary API key
-            api_key = PRIMARY_API_KEY
-            if not api_key or api_key == "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY":
-                raise ValueError(
-                    "Primary API key not configured. Please contact the administrator."
-                )
+            # Retrieve API key from Supabase database
+            # The key is stored in 'secrets' table with name='OPENAI_API_KEY'
+            api_key = get_openai_api_key()
+            
+            if not api_key:
+                # Provide helpful error message based on configuration state
+                if not is_supabase_configured():
+                    raise ValueError(
+                        "Supabase not configured. Please set SUPABASE_URL and SUPABASE_KEY "
+                        "in your .env file to enable API key retrieval."
+                    )
+                else:
+                    raise ValueError(
+                        "OpenAI API key not found in Supabase. "
+                        "Please ensure 'OPENAI_API_KEY' exists in the 'secrets' table."
+                    )
         
         self.client = OpenAI(api_key=api_key) if api_key else None
         self.language = None

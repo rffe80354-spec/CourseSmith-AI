@@ -53,6 +53,7 @@ a = Analysis(
         'pdf_engine',
         'product_templates',
         'project_manager',
+        'secrets_manager',  # For Supabase API key retrieval
         # Standard library modules that might be missed
         'babel.numbers',
         'pydantic',
