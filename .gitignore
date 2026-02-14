@@ -26,7 +26,8 @@ wheels/
 
 # PyInstaller
 *.manifest
-*.spec
+# Note: .spec files are tracked in this project for proper packaging
+# *.spec
 
 # Installer logs
 pip-log.txt
