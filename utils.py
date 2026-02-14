@@ -51,12 +51,8 @@ def patch_ctk_scrollbar():
             Patched _draw method with recursion guard.
             Prevents infinite recursion in scrollbar size calculations.
             """
-            # Use instance attribute to track recursion depth
-            if not hasattr(self, '_draw_in_progress'):
-                self._draw_in_progress = False
-            
-            # Guard against recursion
-            if self._draw_in_progress:
+            # Guard against recursion using getattr for cleaner code
+            if getattr(self, '_draw_in_progress', False):
                 return  # Skip if already drawing
             
             self._draw_in_progress = True

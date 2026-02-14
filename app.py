@@ -183,6 +183,10 @@ class App(ctk.CTk):
         "DOCX": {"ext": ".docx", "filter": [("Word Documents", "*.docx")]},
         "HTML": {"ext": ".html", "filter": [("HTML Files", "*.html")]},
     }
+    
+    # Button color constants for format selector - selected vs unselected states
+    FORMAT_BTN_SELECTED = {"fg": "#1f6aa5", "hover": "#3b8ed0", "border": "#3b8ed0"}
+    FORMAT_BTN_UNSELECTED = {"fg": "#4a4a4a", "hover": "#666666", "border": "#555555"}
 
     def _get_format_icon(self, format_name):
         """
@@ -1625,11 +1629,13 @@ class App(ctk.CTk):
     def _start_drafting(self):
         """Start the chapter drafting process."""
         if not self.project.outline:
+            self._log_drafting("❌ Cannot start: No outline confirmed")
             messagebox.showerror("Error", "Please confirm an outline in the Blueprint tab first.")
             self.tabview.set("📋 Blueprint")
             return
 
         if self.is_generating:
+            self._log_drafting("⚠️ Already generating - please wait")
             messagebox.showwarning("In Progress", "Please wait for the current operation to complete.")
             return
 
@@ -1643,7 +1649,10 @@ class App(ctk.CTk):
         self._clear_live_preview()
         self.preview_chapter_title.configure(text="")
 
-        self._log_drafting("Starting chapter generation...")
+        # Log start action
+        self._log_drafting("🚀 Starting chapter generation...")
+        self._log_drafting(f"📚 Topic: {self.project.topic}")
+        self._log_drafting(f"📋 Total chapters: {self.total_chapters}")
         self._write_next_chapter()
 
     def _write_next_chapter(self):
@@ -1654,7 +1663,8 @@ class App(ctk.CTk):
             self.draft_btn.configure(state="normal", text="🚀 Start Writing Chapters")
             self.continue_export_btn.configure(state="normal")
             self._log_drafting("=" * 40)
-            self._log_drafting("✓ All chapters written successfully!")
+            self._log_drafting("✅ All chapters written successfully!")
+            self._log_drafting(f"📄 Ready for export")
             self.drafting_progress.set(1.0)
             self.drafting_progress_label.configure(text="Complete!")
             return
@@ -1672,7 +1682,7 @@ class App(ctk.CTk):
         self._clear_live_preview()
         self._set_preview_chapter_title(chapter_title, chapter_num)
 
-        self._log_drafting(f"Writing Chapter {chapter_num}: {chapter_title}...")
+        self._log_drafting(f"✍️ Writing Chapter {chapter_num}: {chapter_title}...")
 
         def on_success(title, content):
             self.after(0, lambda: self._on_chapter_written(title, content))
@@ -1782,12 +1792,12 @@ class App(ctk.CTk):
         self.format_buttons = {}
         self.export_format_var = ctk.StringVar(value=self.DEFAULT_EXPORT_FORMAT)
         
-        # Create format buttons with visual feedback
+        # Create format buttons with visual feedback using class constants
         for idx, (format_name, config) in enumerate(self.FORMAT_CONFIG.items()):
             icon = self.FORMAT_ICONS.get(format_name, "📄")
             is_default = format_name == self.DEFAULT_EXPORT_FORMAT
+            colors = self.FORMAT_BTN_SELECTED if is_default else self.FORMAT_BTN_UNSELECTED
             
-            # Button colors: selected (accent) vs unselected (gray)
             btn = ctk.CTkButton(
                 self.format_buttons_frame,
                 text=f"{icon} {format_name}",
@@ -1795,26 +1805,14 @@ class App(ctk.CTk):
                 width=100,
                 height=40,
                 corner_radius=8,
-                fg_color="#1f6aa5" if is_default else "#4a4a4a",
-                hover_color="#3b8ed0" if is_default else "#666666",
+                fg_color=colors["fg"],
+                hover_color=colors["hover"],
                 border_width=2,
-                border_color="#3b8ed0" if is_default else "#555555",
+                border_color=colors["border"],
                 command=lambda f=format_name: self._select_format(f),
             )
             btn.grid(row=0, column=idx, padx=(0, 10), pady=5)
             self.format_buttons[format_name] = btn
-        
-        # Keep dropdown as hidden fallback for backward compatibility
-        self.export_format_selector = ctk.CTkOptionMenu(
-            export_frame,
-            values=list(self.FORMAT_CONFIG.keys()),
-            variable=self.export_format_var,
-            width=1,
-            height=1,
-            command=self._on_format_changed,
-        )
-        # Hide dropdown but keep functional for compatibility
-        self.export_format_selector.grid_forget()
 
         # Status label showing current export readiness
         self.export_status = ctk.CTkLabel(
@@ -1946,11 +1944,12 @@ class App(ctk.CTk):
         for format_name, btn in self.format_buttons.items():
             is_selected = format_name == selected_format
             icon = self.FORMAT_ICONS.get(format_name, "📄")
+            colors = self.FORMAT_BTN_SELECTED if is_selected else self.FORMAT_BTN_UNSELECTED
             
             btn.configure(
-                fg_color="#1f6aa5" if is_selected else "#4a4a4a",
-                hover_color="#3b8ed0" if is_selected else "#666666",
-                border_color="#3b8ed0" if is_selected else "#555555",
+                fg_color=colors["fg"],
+                hover_color=colors["hover"],
+                border_color=colors["border"],
                 font=ctk.CTkFont(size=13, weight="bold" if is_selected else "normal"),
                 text=f"{icon} {format_name}",
             )
