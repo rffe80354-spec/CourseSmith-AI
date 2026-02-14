@@ -61,6 +61,10 @@ COLORS = {
     'text_dim': '#808080'
 }
 
+# Button color constants for format selector - selected vs unselected states
+FORMAT_BTN_SELECTED = {"fg": "#7F5AF0", "hover": "#9D7BF5", "border": "#9D7BF5"}
+FORMAT_BTN_UNSELECTED = {"fg": "#2A3142", "hover": "#3A4152", "border": "#3A4152"}
+
 # UI timing constants
 UI_RENDER_DELAY_MS = 200  # Delay before initial UI rendering to prevent RecursionError
 STEP_DELAY_SECONDS = 1.5  # Delay between simulated generation steps
@@ -851,6 +855,52 @@ class EnterpriseApp(ctk.CTk):
         )
         self.media_label.pack(side="left", anchor="w")
         
+        # ===== EXPORT FORMAT SELECTION =====
+        format_section = ctk.CTkFrame(container, fg_color=COLORS['sidebar'], corner_radius=15)
+        format_section.pack(fill="x", pady=(0, 20))
+        
+        format_label = ctk.CTkLabel(
+            format_section,
+            text="Select Output Format:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text']
+        )
+        format_label.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        # Format buttons frame
+        format_buttons_frame = ctk.CTkFrame(format_section, fg_color="transparent")
+        format_buttons_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # Store format buttons for selection state management
+        self.format_buttons = {}
+        self.selected_export_format = "PDF"  # Default format
+        
+        export_formats = [
+            {'id': 'PDF', 'name': 'PDF', 'icon': '📄'},
+            {'id': 'DOCX', 'name': 'DOCX', 'icon': '📝'},
+            {'id': 'HTML', 'name': 'HTML', 'icon': '🌐'}
+        ]
+        
+        for i, fmt in enumerate(export_formats):
+            is_default = fmt['id'] == self.selected_export_format
+            colors = FORMAT_BTN_SELECTED if is_default else FORMAT_BTN_UNSELECTED
+            
+            btn = ctk.CTkButton(
+                format_buttons_frame,
+                text=f"{fmt['icon']} {fmt['name']}",
+                font=ctk.CTkFont(size=13, weight="bold" if is_default else "normal"),
+                width=100,
+                height=40,
+                corner_radius=8,
+                fg_color=colors["fg"],
+                hover_color=colors["hover"],
+                border_width=2,
+                border_color=colors["border"],
+                command=lambda f_id=fmt['id']: self._select_format(f_id)
+            )
+            btn.pack(side="left", padx=(0, 10))
+            self.format_buttons[fmt['id']] = btn
+        
         # Action buttons frame
         action_frame = ctk.CTkFrame(container, fg_color="transparent")
         action_frame.pack(fill="x", pady=(0, 20))
@@ -957,6 +1007,35 @@ class EnterpriseApp(ctk.CTk):
                 self.saved_prompt_text = self.instruction_textbox.get("1.0", "end-1c")
         except Exception:
             pass
+    
+    def _select_format(self, selected_format):
+        """
+        Handle format button click - select export format with visual feedback.
+        Updates button states and stores the selected format.
+        
+        Args:
+            selected_format: The format to select (PDF, DOCX, or HTML).
+        """
+        self.selected_export_format = selected_format
+        
+        # Update button visual states - highlight selected, dim others
+        format_icons = {'PDF': '📄', 'DOCX': '📝', 'HTML': '🌐'}
+        
+        for format_name, btn in self.format_buttons.items():
+            is_selected = format_name == selected_format
+            icon = format_icons.get(format_name, '📄')
+            colors = FORMAT_BTN_SELECTED if is_selected else FORMAT_BTN_UNSELECTED
+            
+            btn.configure(
+                fg_color=colors["fg"],
+                hover_color=colors["hover"],
+                border_color=colors["border"],
+                font=ctk.CTkFont(size=13, weight="bold" if is_selected else "normal"),
+                text=f"{icon} {format_name}"
+            )
+        
+        # Log format change with emoji prefix
+        self._log_message(f"📋 Output format changed to: {selected_format}")
     
     def _create_account_tab(self):
         """Create the Account tab - display user info, credits, and license details."""
@@ -1337,15 +1416,19 @@ class EnterpriseApp(ctk.CTk):
         target_page_count = getattr(self, 'page_count_var', None)
         target_pages = target_page_count.get() if target_page_count else 10
         
+        # Get selected output format
+        selected_format = getattr(self, 'selected_export_format', 'PDF')
+        
         # Clear log console
         self.log_console.configure(state="normal")
         self.log_console.delete("1.0", "end")
         self.log_console.configure(state="disabled")
         
-        # Log generation start with page count
-        self._log_message("🔥 Starting course generation...")
-        self._log_message(f"📝 Instruction: {instruction[:100]}...")
+        # Log generation start with emoji prefix and context
+        self._log_message(f"🚀 Starting course generation...")
+        self._log_message(f"📝 Instruction: {instruction[:100]}{'...' if len(instruction) > 100 else ''}")
         self._log_message(f"📄 Target Pages: {target_pages}")
+        self._log_message(f"📋 Output Format: {selected_format}")
         
         # Check if coursesmith_engine is available
         has_api_key = self.coursesmith_engine is not None and self.coursesmith_engine.client is not None
@@ -1578,12 +1661,20 @@ class EnterpriseApp(ctk.CTk):
         """
         self._stop_progress_animation()
         
+        # Get selected output format for logging
+        selected_format = getattr(self, 'selected_export_format', 'PDF')
+        
         # Show completion for a moment
         def complete_generation():
             self.progress_frame.pack_forget()
             self.generate_btn.configure(state="normal")
             
             if success and self.generated_course_data:
+                # Log success with emoji prefix and context
+                course_title = self.generated_course_data.get('title', 'Untitled')
+                chapter_count = len(self.generated_course_data.get('chapters', []))
+                self._log_message(f"✅ Generation complete: '{course_title}' ({chapter_count} chapters)")
+                
                 # Save generated course to data directory
                 try:
                     from utils import get_data_dir
@@ -1634,7 +1725,8 @@ class EnterpriseApp(ctk.CTk):
                 # Success but no data (shouldn't happen)
                 messagebox.showwarning("Warning", "Course generation completed but no data was returned.")
             else:
-                # Generation failed
+                # Generation failed - log error with emoji prefix
+                self._log_message(f"❌ Generation failed: {error}")
                 messagebox.showerror(
                     "Generation Failed", 
                     f"Failed to generate course:\n\n{error}\n\n"
