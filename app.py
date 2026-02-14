@@ -18,7 +18,7 @@ import threading
 import time
 from datetime import datetime
 import customtkinter as ctk
-from tkinter import messagebox, filedialog, Menu
+from tkinter import messagebox, filedialog, Menu, TclError
 
 from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, get_underlying_tk_widget
 from license_guard import validate_license, load_license, save_license, remove_license, get_hwid
@@ -167,6 +167,15 @@ def bind_clipboard_menu(widget):
 
 class App(ctk.CTk):
     """Main application window for CourseSmith AI Enterprise with DRM protection."""
+    
+    # Class-level constants for export format configuration
+    DEFAULT_EXPORT_FORMAT = "PDF"
+    FORMAT_ICONS = {"PDF": "📄", "DOCX": "📝", "HTML": "🌐"}
+    FORMAT_CONFIG = {
+        "PDF": {"ext": ".pdf", "filter": [("PDF Files", "*.pdf")]},
+        "DOCX": {"ext": ".docx", "filter": [("Word Documents", "*.docx")]},
+        "HTML": {"ext": ".html", "filter": [("HTML Files", "*.html")]},
+    }
 
     def __init__(self):
         """Initialize the application window and widgets."""
@@ -1729,10 +1738,10 @@ class App(ctk.CTk):
         ).grid(row=1, column=0, padx=20, pady=(0, 5), sticky="w")
         
         # Format options: PDF (default), DOCX (Microsoft Word), HTML (Web)
-        self.export_format_var = ctk.StringVar(value="PDF")
+        self.export_format_var = ctk.StringVar(value=self.DEFAULT_EXPORT_FORMAT)
         self.export_format_selector = ctk.CTkOptionMenu(
             export_frame,
-            values=["PDF", "DOCX", "HTML"],
+            values=list(self.FORMAT_CONFIG.keys()),
             variable=self.export_format_var,
             width=200,
             font=ctk.CTkFont(size=13),
@@ -1861,9 +1870,8 @@ class App(ctk.CTk):
         Args:
             selected_format: The newly selected format (PDF, DOCX, or HTML).
         """
-        # Update button text based on selected format
-        format_icons = {"PDF": "📄", "DOCX": "📝", "HTML": "🌐"}
-        icon = format_icons.get(selected_format, "📄")
+        # Update button text based on selected format using class-level constant
+        icon = self.FORMAT_ICONS.get(selected_format, self.FORMAT_ICONS[self.DEFAULT_EXPORT_FORMAT])
         self.build_export_btn.configure(text=f"{icon} GENERATE FINAL {selected_format}")
         
         # Update status message
@@ -1897,13 +1905,8 @@ class App(ctk.CTk):
         # Get selected export format
         selected_format = self.export_format_var.get()
         
-        # Determine file extension and file type filter based on format
-        format_config = {
-            "PDF": {"ext": ".pdf", "filter": [("PDF Files", "*.pdf")]},
-            "DOCX": {"ext": ".docx", "filter": [("Word Documents", "*.docx")]},
-            "HTML": {"ext": ".html", "filter": [("HTML Files", "*.html")]},
-        }
-        config = format_config.get(selected_format, format_config["PDF"])
+        # Get file extension and filter from class-level constant
+        config = self.FORMAT_CONFIG.get(selected_format, self.FORMAT_CONFIG[self.DEFAULT_EXPORT_FORMAT])
         
         # Generate safe filename from topic
         safe_topic = "".join(c if c.isalnum() or c == " " else "_" for c in self.project.topic)
@@ -2064,9 +2067,8 @@ class App(ctk.CTk):
         self.export_progress_bar.set(1.0)
         self.export_progress_label.configure(text="✓ Complete!")
         
-        # Restore button state with selected format
-        format_icons = {"PDF": "📄", "DOCX": "📝", "HTML": "🌐"}
-        icon = format_icons.get(format_name, "📄")
+        # Restore button state with selected format using class-level constant
+        icon = self.FORMAT_ICONS.get(format_name, self.FORMAT_ICONS[self.DEFAULT_EXPORT_FORMAT])
         self.build_export_btn.configure(state="normal", text=f"{icon} GENERATE FINAL {format_name}")
         
         # Update status
@@ -2097,9 +2099,8 @@ class App(ctk.CTk):
         self.export_progress_bar.set(0)
         self.export_progress_label.configure(text="❌ Failed")
         
-        # Restore button state
-        format_icons = {"PDF": "📄", "DOCX": "📝", "HTML": "🌐"}
-        icon = format_icons.get(format_name, "📄")
+        # Restore button state using class-level constant
+        icon = self.FORMAT_ICONS.get(format_name, self.FORMAT_ICONS[self.DEFAULT_EXPORT_FORMAT])
         self.build_export_btn.configure(state="normal", text=f"{icon} GENERATE FINAL {format_name}")
         
         # Update status
@@ -2115,9 +2116,9 @@ class App(ctk.CTk):
         This method provides backward compatibility by delegating to _build_export
         with PDF format selected. Ensures existing code continues to work.
         """
-        # Set format to PDF for backward compatibility
-        self.export_format_var.set("PDF")
-        self._on_format_changed("PDF")
+        # Set format to PDF for backward compatibility using class constant
+        self.export_format_var.set(self.DEFAULT_EXPORT_FORMAT)
+        self._on_format_changed(self.DEFAULT_EXPORT_FORMAT)
         # Delegate to the unified export method
         self._build_export()
 
@@ -2338,17 +2339,21 @@ class App(ctk.CTk):
                 return "break"
             
             # Get clipboard content - handle various clipboard formats
+            text = None
             try:
                 text = tk_widget.clipboard_get()
-            except Exception:
-                # Try getting text from the root window clipboard as fallback
+            except TclError:
+                # TclError: clipboard unavailable from widget, try root window fallback
                 try:
                     text = self.clipboard_get()
-                except Exception:
-                    # Clipboard is empty or unavailable
+                except TclError:
+                    # TclError: clipboard still unavailable
                     return "break"
-        except Exception:
-            # Failed to access clipboard content (empty, unavailable, or permission issues)
+        except TclError:
+            # TclError: widget state check failed
+            return "break"
+        except AttributeError:
+            # AttributeError: widget doesn't have expected methods
             return "break"
         
         # Validate that we have text content to paste
@@ -2360,19 +2365,20 @@ class App(ctk.CTk):
         # Delete selected text first (if any)
         try:
             tk_widget.delete("sel.first", "sel.last")
-        except Exception:
-            # No selection exists, which is fine
+        except TclError:
+            # TclError: no selection exists, which is expected
             pass
         
         # Insert text at current cursor position
         try:
             tk_widget.insert("insert", text)
-        except Exception:
-            # If insert fails, try with the focused widget directly
+        except TclError:
+            # TclError: insert failed on tk_widget, try with focused widget directly
             try:
                 if hasattr(focused, 'insert'):
                     focused.insert("insert", text)
-            except Exception:
+            except TclError:
+                # TclError: both insert attempts failed
                 pass
         
         return "break"

@@ -296,43 +296,42 @@ class RightClickMenu:
                 # Primary method: get from focused widget
                 text = focused_widget.clipboard_get()
             except tk.TclError:
+                # TclError: clipboard is empty or unavailable from focused widget
                 # Fallback: try getting from the widget directly
                 try:
                     text = self.widget.clipboard_get()
                 except tk.TclError:
+                    # TclError: clipboard still unavailable, give up gracefully
                     pass
             
-            # If no text available, return
+            # If no text available, return without error
             if not text:
                 return "break"
                 
         except tk.TclError:
-            # Clipboard is empty or unavailable
+            # TclError: widget state or clipboard access failed
             return "break"
-        except Exception:
-            # Handle any unexpected errors gracefully
+        except AttributeError:
+            # AttributeError: widget doesn't have expected methods
             return "break"
         
         # Delete selected text first (if any), then insert clipboard content
         try:
             focused_widget.delete("sel.first", "sel.last")
         except tk.TclError:
-            # No selection exists, which is fine
-            pass
-        except Exception:
+            # TclError: no selection exists, which is expected
             pass
         
         # Insert text at current cursor position
         try:
             focused_widget.insert("insert", text)
         except tk.TclError:
-            # Fallback: try inserting at the widget itself
+            # TclError: insert failed on focused widget, try fallback
             try:
                 self.widget.insert("insert", text)
-            except Exception:
+            except tk.TclError:
+                # TclError: both insert attempts failed, give up gracefully
                 pass
-        except Exception:
-            pass
         
         return "break"
     
@@ -407,39 +406,40 @@ def handle_custom_paste(event, widget):
         try:
             text = tk_widget.clipboard_get()
         except tk.TclError:
-            # Try getting from the root window as fallback
+            # TclError: clipboard empty or unavailable, try root window as fallback
             try:
                 root = tk_widget.winfo_toplevel()
                 text = root.clipboard_get()
-            except Exception:
+            except tk.TclError:
+                # TclError: clipboard still unavailable from root
+                pass
+            except AttributeError:
+                # AttributeError: winfo_toplevel or clipboard_get not available
                 pass
         
-        # If no text available, return
+        # If no text available, return without error
         if not text:
             return "break"
             
     except tk.TclError:
-        # Clipboard is empty or unavailable
+        # TclError: widget state check or clipboard access failed
         return "break"
-    except Exception:
-        # Handle any unexpected errors gracefully
+    except AttributeError:
+        # AttributeError: widget doesn't have expected methods
         return "break"
     
     # Delete selected text first (if any)
     try:
         tk_widget.delete("sel.first", "sel.last")
     except tk.TclError:
-        # No selection exists, which is fine
-        pass
-    except Exception:
+        # TclError: no selection exists, which is expected
         pass
     
     # Insert text at current cursor position
     try:
         tk_widget.insert("insert", text)
     except tk.TclError:
-        pass
-    except Exception:
+        # TclError: insert failed, give up gracefully
         pass
     
     # Return "break" to prevent default handler (CRITICAL)
