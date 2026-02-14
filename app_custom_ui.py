@@ -998,10 +998,9 @@ class CustomApp(ctk.CTk):
         # Ensure at least one format is selected
         if not any(self.selected_export_formats.values()):
             self.selected_export_formats['pdf'] = True
-            if format_id in self.format_checkboxes:
-                # Reset the checkbox that was just unchecked
-                if format_id == 'pdf':
-                    self.format_checkboxes['pdf'].set(True)
+            # Reset PDF checkbox to checked state
+            if 'pdf' in self.format_checkboxes:
+                self.format_checkboxes['pdf'].set(True)
     
     def _update_credit_display(self):
         """Update the credit cost display based on selected product type."""

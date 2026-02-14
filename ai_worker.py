@@ -91,7 +91,12 @@ def check_remaining_credits() -> dict:
 def deduct_credit(amount: int = 1) -> bool:
     """
     Deduct credits from the user's account after a successful generation.
-    Uses atomic decrement to prevent race conditions.
+    
+    Note: This implementation uses a check-then-update pattern which has a potential
+    race condition between SELECT and UPDATE. For high-concurrency scenarios,
+    a database-level RPC function with `SET credits = credits - amount` would be
+    more appropriate. However, changing the Supabase schema is out of scope.
+    In practice, the single-user desktop app nature of CourseSmith mitigates this risk.
     
     Args:
         amount: Number of credits to deduct (default: 1).
@@ -115,9 +120,7 @@ def deduct_credit(amount: int = 1) -> bool:
         
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Use a single query to atomically check and decrement credits
-        # This prevents race conditions by using database-level operations
-        # First check if credits >= amount, then decrement
+        # Check if user has sufficient credits
         response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).gte("credits", amount).execute()
         
         if not response.data or len(response.data) == 0:
@@ -126,8 +129,8 @@ def deduct_credit(amount: int = 1) -> bool:
         
         current_credits = response.data[0].get('credits', 0)
         
-        # Deduct credits using the fetched value
-        # Note: For true atomicity, ideally use a database function/RPC
+        # Deduct credits
+        # Note: For true atomicity in high-concurrency scenarios, use database RPC
         new_credits = max(0, current_credits - amount)
         supabase.table("licenses").update({"credits": new_credits}).eq("license_key", license_key).eq("email", email).execute()
         
@@ -393,8 +396,8 @@ The titles must be professional and catchy. Ensure the structure is logical and 
                         f"Продвинутые техники",
                         f"Заключение и следующие шаги",
                     ]
-                    for i in range(5, 31):
-                        generic.append(f"Дополнительная тема {i+1}")
+                    for i in range(6, 32):
+                        generic.append(f"Дополнительная тема {i}")
                 else:
                     generic = [
                         f"Introduction to {self.topic}",
@@ -403,8 +406,8 @@ The titles must be professional and catchy. Ensure the structure is logical and 
                         f"Advanced Techniques",
                         f"Conclusion and Next Steps",
                     ]
-                    for i in range(5, 31):
-                        generic.append(f"Additional Topic {i+1}")
+                    for i in range(6, 32):
+                        generic.append(f"Additional Topic {i}")
                 while len(chapters) < min_chapters:
                     chapters.append(generic[len(chapters) % len(generic)])
             

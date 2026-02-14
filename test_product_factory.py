@@ -4,7 +4,6 @@ Tests the AI Digital Product Factory functionality.
 """
 
 import os
-import sys
 import tempfile
 
 

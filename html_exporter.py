@@ -322,11 +322,12 @@ class HTMLExporter(ExporterBase):
                 f'<li><a href="#{chapter_id}">Chapter {i}: {self._escape_html(title)}</a></li>'
             )
         
+        nav_items_html = '\n                    '.join(nav_items)
         return f"""<aside class="sidebar">
             <h2>📚 Contents</h2>
             <nav>
                 <ul>
-                    {chr(10).join(nav_items)}
+                    {nav_items_html}
                 </ul>
             </nav>
         </aside>"""
