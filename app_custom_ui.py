@@ -37,6 +37,10 @@ COLORS = {
     'border': '#2A3142',          # Border color
 }
 
+# Button color constants for format selector - selected vs unselected states
+FORMAT_BTN_SELECTED = {"fg": "#7F5AF0", "hover": "#9D7BF5", "border": "#9D7BF5"}
+FORMAT_BTN_UNSELECTED = {"fg": "#2A3142", "hover": "#3A4152", "border": "#3A4152"}
+
 # Sidebar width constant
 SIDEBAR_WIDTH = 200
 
@@ -616,28 +620,35 @@ class CustomApp(ctk.CTk):
         formats_frame = ctk.CTkFrame(input_inner, fg_color='transparent')
         formats_frame.pack(fill='x', pady=(0, 20))
         
-        self.format_checkboxes = {}
+        # Format buttons with visual feedback (replaces checkboxes)
+        # Note: Only showing PDF/DOCX/HTML as per requirements; markdown exporter
+        # is still available via export_base.py if needed programmatically
+        self.format_buttons = {}
         export_formats = [
             {'id': 'pdf', 'name': 'PDF', 'icon': '📄'},
             {'id': 'docx', 'name': 'DOCX', 'icon': '📝'},
-            {'id': 'markdown', 'name': 'Markdown', 'icon': '📋'},
             {'id': 'html', 'name': 'HTML', 'icon': '🌐'}
         ]
         
         for i, fmt in enumerate(export_formats):
-            var = ctk.BooleanVar(value=self.selected_export_formats.get(fmt['id'], False))
-            cb = ctk.CTkCheckBox(
+            is_selected = self.selected_export_formats.get(fmt['id'], False)
+            colors = FORMAT_BTN_SELECTED if is_selected else FORMAT_BTN_UNSELECTED
+            
+            btn = ctk.CTkButton(
                 formats_frame,
                 text=f"{fmt['icon']} {fmt['name']}",
-                variable=var,
-                font=ctk.CTkFont(size=13),
-                fg_color=COLORS['accent'],
-                hover_color=COLORS['accent_hover'],
-                text_color=COLORS['text_primary'],
-                command=lambda f_id=fmt['id'], v=var: self._toggle_format(f_id, v)
+                font=ctk.CTkFont(size=13, weight="bold" if is_selected else "normal"),
+                width=90,
+                height=40,
+                corner_radius=8,
+                fg_color=colors["fg"],
+                hover_color=colors["hover"],
+                border_width=2,
+                border_color=colors["border"],
+                command=lambda f_id=fmt['id']: self._toggle_format_btn(f_id)
             )
-            cb.grid(row=0, column=i, padx=10, pady=5, sticky='w')
-            self.format_checkboxes[fmt['id']] = var
+            btn.grid(row=0, column=i, padx=(0, 10), pady=5)
+            self.format_buttons[fmt['id']] = btn
         
         # ===== CREDIT INFO =====
         credit_frame = ctk.CTkFrame(input_inner, fg_color=COLORS['background'], corner_radius=10)
@@ -994,16 +1005,41 @@ class CustomApp(ctk.CTk):
                 self.total_chapters = template['chapters']
                 break
     
-    def _toggle_format(self, format_id, var):
-        """Handle export format checkbox toggle."""
-        self.selected_export_formats[format_id] = var.get()
+    def _toggle_format_btn(self, format_id):
+        """Handle export format button click with visual feedback."""
+        # Toggle the format selection state
+        current_state = self.selected_export_formats.get(format_id, False)
+        self.selected_export_formats[format_id] = not current_state
         
         # Ensure at least one format is selected
         if not any(self.selected_export_formats.values()):
             self.selected_export_formats['pdf'] = True
-            # Reset PDF checkbox to checked state
-            if 'pdf' in self.format_checkboxes:
-                self.format_checkboxes['pdf'].set(True)
+        
+        # Update all button visual states
+        self._update_format_buttons()
+        
+        # Log format change with emoji prefix
+        selected_formats = [f.upper() for f, v in self.selected_export_formats.items() if v]
+        print(f"📋 Format selection changed: {', '.join(selected_formats)}")
+    
+    def _update_format_buttons(self):
+        """Update format button visual states based on selection."""
+        format_icons = {'pdf': '📄', 'docx': '📝', 'html': '🌐'}
+        format_names = {'pdf': 'PDF', 'docx': 'DOCX', 'html': 'HTML'}
+        
+        for fmt_id, btn in self.format_buttons.items():
+            is_selected = self.selected_export_formats.get(fmt_id, False)
+            colors = FORMAT_BTN_SELECTED if is_selected else FORMAT_BTN_UNSELECTED
+            icon = format_icons.get(fmt_id, '📄')
+            name = format_names.get(fmt_id, fmt_id.upper())
+            
+            btn.configure(
+                fg_color=colors["fg"],
+                hover_color=colors["hover"],
+                border_color=colors["border"],
+                font=ctk.CTkFont(size=13, weight="bold" if is_selected else "normal"),
+                text=f"{icon} {name}"
+            )
     
     def _update_credit_display(self):
         """Update the credit cost display based on selected product type."""
@@ -1048,6 +1084,10 @@ class CustomApp(ctk.CTk):
         if not export_formats:
             export_formats = ['pdf']
         
+        # Log generation start with emoji prefix and context
+        formats_str = ', '.join([f.upper() for f in export_formats])
+        print(f"🚀 Starting generation: Topic='{topic}', Chapters={self.total_chapters}, Formats={formats_str}")
+        
         # Setup project with selected options
         self.project = CourseProject()
         self.project.set_topic(topic)
@@ -1068,6 +1108,10 @@ class CustomApp(ctk.CTk):
                     child.configure(state='disabled')
                 except:
                     pass
+        
+        # Disable format buttons during generation
+        for btn in self.format_buttons.values():
+            btn.configure(state='disabled')
         
         # Start border animation
         self.input_border_frame.start_animation()
@@ -1133,6 +1177,10 @@ class CustomApp(ctk.CTk):
                 except:
                     pass
         
+        # Re-enable format buttons
+        for btn in self.format_buttons.values():
+            btn.configure(state='normal')
+        
         # Get product type name for message
         product_name = "Product"
         for template in self.product_templates:
@@ -1143,6 +1191,10 @@ class CustomApp(ctk.CTk):
         # Get selected formats
         formats = self._get_selected_formats()
         formats_str = ", ".join([f.upper() for f in formats])
+        
+        # Log success with emoji prefix and context
+        topic = self.topic_entry.get().strip() if hasattr(self, 'topic_entry') else "Unknown"
+        print(f"✅ Generation complete: Topic='{topic}', Chapters={self.total_chapters}, Formats={formats_str}")
         
         # Show success message
         messagebox.showinfo(
