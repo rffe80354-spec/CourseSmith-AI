@@ -13,11 +13,29 @@ import customtkinter as ctk
 from tkinter import messagebox, filedialog
 
 from utils import resource_path, get_data_dir
-from license_guard import validate_license, load_license, save_license, remove_license
+from license_guard import (
+    validate_license, load_license, save_license, remove_license,
+    check_usage_limits, record_generation, get_usage_info
+)
 from session_manager import set_session, is_active, get_tier, clear_session
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator
 from pdf_engine import PDFBuilder
+
+# Import export engines - with fallback for missing dependencies
+try:
+    from docx_engine import DocxBuilder, create_course_docx
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+    print("Warning: python-docx not available. DOCX export disabled.")
+
+try:
+    from epub_engine import EpubBuilder, create_course_epub
+    EPUB_AVAILABLE = True
+except ImportError:
+    EPUB_AVAILABLE = False
+    print("Warning: ebooklib not available. EPUB export disabled.")
 
 
 # Custom Premium Theme Colors
@@ -71,11 +89,28 @@ class LanguageManager:
                 'target_audience': 'Target Audience',
                 'chapter_count': 'Chapters',
                 'generating': 'Forging your course...',
+                'generating_outline': 'Generating course outline...',
+                'generating_chapter': 'Writing chapter {num}...',
+                'exporting': 'Exporting to {format}...',
                 'complete': 'Course Complete!',
                 'progress': 'Progress',
                 'cancel': 'Cancel',
                 'export': 'Export PDF',
                 'chapters_label': 'Chapters Generated',
+                'output_format': 'Output Format',
+                'format_pdf': '📄 PDF',
+                'format_docx': '📝 DOCX',
+                'format_epub': '📖 EPUB',
+                'format_desc_pdf': '📄 PDF - Universal format with professional styling',
+                'format_desc_docx': '📝 DOCX - Editable document for Microsoft Word',
+                'format_desc_epub': '📖 EPUB - E-book format for digital readers',
+                'success_title': 'Success',
+                'success_message': 'Course generated successfully with {chapters} chapters!\nOutput format: {format}\nSaved to: {path}',
+                'error_title': 'Error',
+                'limit_title': 'Usage Limit',
+                'usage_info': 'Usage: {daily_used}/{daily_limit} today, {monthly_used}/{monthly_limit} this month',
+                'format_unavailable': '{format} export is not available. Please install required dependencies.',
+                'save_dialog_title': 'Save Course As',
             },
             'RU': {
                 'forge': 'Создать',
@@ -86,11 +121,28 @@ class LanguageManager:
                 'target_audience': 'Целевая аудитория',
                 'chapter_count': 'Главы',
                 'generating': 'Создание вашего курса...',
+                'generating_outline': 'Генерация структуры курса...',
+                'generating_chapter': 'Написание главы {num}...',
+                'exporting': 'Экспорт в {format}...',
                 'complete': 'Курс готов!',
                 'progress': 'Прогресс',
                 'cancel': 'Отмена',
                 'export': 'Экспорт PDF',
                 'chapters_label': 'Создано глав',
+                'output_format': 'Формат вывода',
+                'format_pdf': '📄 PDF',
+                'format_docx': '📝 DOCX',
+                'format_epub': '📖 EPUB',
+                'format_desc_pdf': '📄 PDF - Универсальный формат с профессиональным оформлением',
+                'format_desc_docx': '📝 DOCX - Редактируемый документ для Microsoft Word',
+                'format_desc_epub': '📖 EPUB - Формат электронных книг для читалок',
+                'success_title': 'Успех',
+                'success_message': 'Курс успешно создан с {chapters} главами!\nФормат вывода: {format}\nСохранено: {path}',
+                'error_title': 'Ошибка',
+                'limit_title': 'Лимит использования',
+                'usage_info': 'Использовано: {daily_used}/{daily_limit} сегодня, {monthly_used}/{monthly_limit} в месяц',
+                'format_unavailable': 'Экспорт в {format} недоступен. Установите необходимые зависимости.',
+                'save_dialog_title': 'Сохранить курс как',
             }
         }
         return translations.get(self.current_lang, {}).get(key, key)
@@ -277,6 +329,13 @@ class CustomApp(ctk.CTk):
         self.current_page = 'forge'
         self.chapter_count = 0
         self.total_chapters = 10
+        
+        # Storage for generated content
+        self.generated_title = ""
+        self.generated_subtitle = ""
+        self.generated_chapters = []  # List of chapter titles
+        self.generated_contents = []  # List of chapter contents
+        self.output_path = ""
         
         # Create UI
         self._create_ui()
@@ -536,6 +595,56 @@ class CustomApp(ctk.CTk):
         
         self.chapters_slider.configure(command=update_chapter_label)
         
+        # Output Format selector
+        format_label = ctk.CTkLabel(
+            input_inner,
+            text=self.lang.get('output_format'),
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        format_label.pack(anchor='w', pady=(20, 8))
+        
+        # Format buttons frame
+        format_buttons_frame = ctk.CTkFrame(
+            input_inner,
+            fg_color='transparent'
+        )
+        format_buttons_frame.pack(fill='x', pady=(0, 10))
+        
+        # Store selected format
+        self.selected_format = ctk.StringVar(value='PDF')
+        
+        # Create format toggle buttons using translations
+        self.format_buttons = {}
+        formats = ['PDF', 'DOCX', 'EPUB']
+        
+        for idx, fmt in enumerate(formats):
+            btn = ctk.CTkButton(
+                format_buttons_frame,
+                text=self.lang.get(f'format_{fmt.lower()}'),
+                corner_radius=15,
+                height=45,
+                width=100,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                fg_color=COLORS['accent'] if fmt == 'PDF' else COLORS['background'],
+                text_color=COLORS['text_primary'] if fmt == 'PDF' else COLORS['text_secondary'],
+                hover_color=COLORS['accent_hover'],
+                border_width=2,
+                border_color=COLORS['accent'] if fmt == 'PDF' else COLORS['border'],
+                command=lambda f=fmt: self._select_format(f)
+            )
+            btn.pack(side='left', padx=(0 if idx == 0 else 10, 0))
+            self.format_buttons[fmt] = btn
+        
+        # Format description label using translation
+        self.format_description_label = ctk.CTkLabel(
+            input_inner,
+            text=self.lang.get('format_desc_pdf'),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_secondary']
+        )
+        self.format_description_label.pack(anchor='w', pady=(0, 10))
+        
         # Start Forge button with glow
         self.start_button = PremiumButton(
             input_inner,
@@ -681,6 +790,30 @@ class CustomApp(ctk.CTk):
         )
         save_btn.pack(fill='x')
     
+    def _select_format(self, format_name):
+        """Handle format selection button click."""
+        self.selected_format.set(format_name)
+        
+        # Update button styles to show selection
+        for fmt, btn in self.format_buttons.items():
+            if fmt == format_name:
+                btn.configure(
+                    fg_color=COLORS['accent'],
+                    text_color=COLORS['text_primary'],
+                    border_color=COLORS['accent']
+                )
+            else:
+                btn.configure(
+                    fg_color=COLORS['background'],
+                    text_color=COLORS['text_secondary'],
+                    border_color=COLORS['border']
+                )
+        
+        # Update format description using translation system
+        description_key = f'format_desc_{format_name.lower()}'
+        if hasattr(self, 'format_description_label'):
+            self.format_description_label.configure(text=self.lang.get(description_key))
+    
     def _toggle_language(self):
         """Toggle between EN and RU languages."""
         self.lang.toggle_language()
@@ -690,9 +823,10 @@ class CustomApp(ctk.CTk):
         self._switch_page(self.current_page)
     
     def _start_generation(self):
-        """Start course generation process."""
+        """Start course generation process with real AI."""
         topic = self.topic_entry.get().strip()
         audience = self.audience_entry.get().strip()
+        selected_format = self.selected_format.get()
         
         if not topic:
             messagebox.showwarning("Input Required", "Please enter a course topic")
@@ -702,6 +836,52 @@ class CustomApp(ctk.CTk):
             messagebox.showwarning("Input Required", "Please enter a target audience")
             return
         
+        # Check format availability
+        if selected_format == 'DOCX' and not DOCX_AVAILABLE:
+            messagebox.showwarning(
+                self.lang.get('error_title'),
+                self.lang.get('format_unavailable').format(format='DOCX')
+            )
+            return
+        
+        if selected_format == 'EPUB' and not EPUB_AVAILABLE:
+            messagebox.showwarning(
+                self.lang.get('error_title'),
+                self.lang.get('format_unavailable').format(format='EPUB')
+            )
+            return
+        
+        # Check usage limits before starting
+        allowed, limit_message = check_usage_limits()
+        if not allowed:
+            messagebox.showwarning(
+                self.lang.get('limit_title'),
+                limit_message
+            )
+            return
+        
+        # Ask for save location
+        file_extensions = {
+            'PDF': ('PDF files', '*.pdf'),
+            'DOCX': ('Word Documents', '*.docx'),
+            'EPUB': ('E-Books', '*.epub')
+        }
+        
+        default_filename = f"course_{topic[:20].replace(' ', '_')}"
+        ext_name, ext_pattern = file_extensions.get(selected_format, ('PDF files', '*.pdf'))
+        
+        save_path = filedialog.asksaveasfilename(
+            title=self.lang.get('save_dialog_title'),
+            defaultextension=ext_pattern.replace('*', ''),
+            filetypes=[(ext_name, ext_pattern), ('All Files', '*.*')],
+            initialfile=default_filename
+        )
+        
+        if not save_path:
+            return  # User cancelled
+        
+        self.output_path = save_path
+        
         # Disable inputs
         self.is_generating = True
         self.topic_entry.configure(state='disabled')
@@ -709,36 +889,175 @@ class CustomApp(ctk.CTk):
         self.chapters_slider.configure(state='disabled')
         self.start_button.configure(state='disabled')
         
+        # Disable format buttons
+        for btn in self.format_buttons.values():
+            btn.configure(state='disabled')
+        
         # Start border animation
         self.input_border_frame.start_animation()
         
         # Show progress frame
         self.progress_frame.pack(fill='x', pady=(20, 0))
         
-        # Reset progress
+        # Reset progress and storage
         self.chapter_count = 0
+        self.generated_chapters = []
+        self.generated_contents = []
         self.progress_bar.set_target(0.0)
+        self.progress_title.configure(text=self.lang.get('generating_outline'))
         self.progress_label.configure(
             text=f"{self.lang.get('chapters_label')}: 0/{self.total_chapters}"
         )
         
-        # Simulate generation (replace with actual generation)
-        self._simulate_generation()
+        # Start real AI generation in background thread
+        self._real_generation(topic, audience, selected_format)
     
-    def _simulate_generation(self):
-        """Simulate course generation with progress updates."""
+    def _real_generation(self, topic, audience, output_format):
+        """Perform real AI course generation with progress updates."""
         def generate():
-            for i in range(self.total_chapters):
-                time.sleep(1.5)  # Simulate chapter generation time
+            try:
+                # Step 1: Generate outline
+                self.after(0, lambda: self.progress_title.configure(
+                    text=self.lang.get('generating_outline')
+                ))
                 
-                # Update progress on main thread
-                self.after(0, self._update_progress, i + 1)
-            
-            # Complete
-            self.after(0, self._generation_complete)
+                outline_gen = OutlineGenerator(
+                    topic=topic,
+                    audience=audience
+                )
+                outline_gen.start()
+                outline_gen.thread.join()
+                
+                if outline_gen.error:
+                    self.after(0, lambda: self._generation_error(str(outline_gen.error)))
+                    return
+                
+                chapters = outline_gen.result or []
+                if not chapters:
+                    # Fallback: generate meaningful chapter titles with topic
+                    chapters = [f"{topic} - Part {i+1}" for i in range(self.total_chapters)]
+                
+                # Limit to selected chapter count
+                chapters = chapters[:self.total_chapters]
+                self.generated_chapters = chapters
+                
+                # Generate course title
+                self.generated_title = f"Complete Course: {topic}"
+                self.generated_subtitle = f"For {audience}"
+                
+                # Step 2: Generate each chapter content
+                for i, chapter_title in enumerate(chapters):
+                    # Update progress title
+                    self.after(0, lambda num=i+1: self.progress_title.configure(
+                        text=self.lang.get('generating_chapter').format(num=num)
+                    ))
+                    
+                    # Generate chapter content
+                    chapter_writer = ChapterWriter(
+                        chapter_title=chapter_title,
+                        topic=topic,
+                        audience=audience
+                    )
+                    chapter_writer.start()
+                    chapter_writer.thread.join()
+                    
+                    if chapter_writer.error:
+                        # Use placeholder content on error
+                        content = f"# {chapter_title}\n\nContent generation failed. Please try again."
+                    else:
+                        content = chapter_writer.result or f"# {chapter_title}\n\nNo content generated."
+                    
+                    self.generated_contents.append(content)
+                    
+                    # Update progress
+                    self.after(0, self._update_progress, i + 1)
+                
+                # Step 3: Export to selected format
+                self.after(0, lambda: self.progress_title.configure(
+                    text=self.lang.get('exporting').format(format=output_format)
+                ))
+                
+                self._export_course(output_format)
+                
+                # Record successful generation for usage tracking
+                record_generation()
+                
+                # Complete
+                self.after(0, self._generation_complete)
+                
+            except Exception as e:
+                self.after(0, lambda: self._generation_error(str(e)))
         
         thread = threading.Thread(target=generate, daemon=True)
         thread.start()
+    
+    def _export_course(self, output_format):
+        """Export the generated course to the specified format."""
+        try:
+            if output_format == 'PDF':
+                # Build chapters data for PDF builder
+                chapters_data = []
+                for title, content in zip(self.generated_chapters, self.generated_contents):
+                    chapters_data.append({
+                        'title': title,
+                        'content': content
+                    })
+                
+                # Use the project manager and PDF builder properly
+                from pdf_engine import build_pdf_simple
+                build_pdf_simple(
+                    title=self.generated_title.replace("Complete Course: ", ""),
+                    audience=self.generated_subtitle.replace("For ", ""),
+                    cover_image_path=None,
+                    chapters_data=chapters_data,
+                    output_path=self.output_path
+                )
+                
+            elif output_format == 'DOCX' and DOCX_AVAILABLE:
+                create_course_docx(
+                    self.output_path,
+                    self.generated_title,
+                    self.generated_subtitle,
+                    self.generated_chapters,
+                    self.generated_contents
+                )
+                
+            elif output_format == 'EPUB' and EPUB_AVAILABLE:
+                create_course_epub(
+                    self.output_path,
+                    self.generated_title,
+                    self.generated_subtitle,
+                    self.generated_chapters,
+                    self.generated_contents
+                )
+                
+        except Exception as e:
+            raise Exception(f"Export failed: {str(e)}")
+    
+    def _generation_error(self, error_message):
+        """Handle generation error."""
+        self.is_generating = False
+        
+        # Stop animations
+        self.input_border_frame.stop_animation()
+        
+        # Re-enable controls
+        self.topic_entry.configure(state='normal')
+        self.audience_entry.configure(state='normal')
+        self.chapters_slider.configure(state='normal')
+        self.start_button.configure(state='normal')
+        
+        for btn in self.format_buttons.values():
+            btn.configure(state='normal')
+        
+        # Hide progress frame
+        self.progress_frame.pack_forget()
+        
+        # Show error message
+        messagebox.showerror(
+            self.lang.get('error_title'),
+            f"Generation failed:\n{error_message}"
+        )
     
     def _update_progress(self, chapter_num):
         """Update progress display."""
@@ -766,10 +1085,20 @@ class CustomApp(ctk.CTk):
         self.chapters_slider.configure(state='normal')
         self.start_button.configure(state='normal')
         
-        # Show success message
+        # Re-enable format buttons
+        for btn in self.format_buttons.values():
+            btn.configure(state='normal')
+        
+        # Show success message with format info using translation
+        selected_format = self.selected_format.get()
+        success_message = self.lang.get('success_message').format(
+            chapters=self.total_chapters,
+            format=selected_format,
+            path=self.output_path
+        )
         messagebox.showinfo(
-            "Success",
-            f"Course generated successfully with {self.total_chapters} chapters!"
+            self.lang.get('success_title'),
+            success_message
         )
 
 

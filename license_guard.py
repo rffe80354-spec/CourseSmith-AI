@@ -76,7 +76,7 @@ NTP_SERVERS = [
     'time.cloudflare.com'
 ]
 
-# Tier configuration - Four tiers with cloud protection
+# Tier configuration - Four tiers with cloud protection and usage limits
 TIER_LIMITS = {
     'trial': {
         'max_pages': 10,
@@ -85,7 +85,10 @@ TIER_LIMITS = {
         'quizzes': False,
         'translation': False,
         'custom_branding': False,
-        'cloud_protected': True
+        'cloud_protected': True,
+        'daily_generations': 3,        # Max courses per day
+        'monthly_generations': 10,     # Max courses per month
+        'rate_limit_seconds': 60       # Min seconds between generations
     },
     'standard': {
         'max_pages': 50,
@@ -94,7 +97,10 @@ TIER_LIMITS = {
         'quizzes': False,
         'translation': False,
         'custom_branding': False,
-        'cloud_protected': True
+        'cloud_protected': True,
+        'daily_generations': 10,       # Max courses per day
+        'monthly_generations': 100,    # Max courses per month
+        'rate_limit_seconds': 30       # Min seconds between generations
     },
     'enterprise': {
         'max_pages': 300,
@@ -103,7 +109,10 @@ TIER_LIMITS = {
         'quizzes': True,
         'translation': True,
         'custom_branding': True,
-        'cloud_protected': True
+        'cloud_protected': True,
+        'daily_generations': 50,       # Max courses per day
+        'monthly_generations': 500,    # Max courses per month
+        'rate_limit_seconds': 10       # Min seconds between generations
     },
     'lifetime': {
         'max_pages': 300,
@@ -112,7 +121,10 @@ TIER_LIMITS = {
         'quizzes': True,
         'translation': True,
         'custom_branding': True,
-        'cloud_protected': True
+        'cloud_protected': True,
+        'daily_generations': 100,      # Max courses per day
+        'monthly_generations': 1000,   # Max courses per month
+        'rate_limit_seconds': 5        # Min seconds between generations
     }
 }
 
@@ -991,3 +1003,194 @@ def remove_license() -> bool:
     except (IOError, OSError) as e:
         print(f"Failed to remove session: {e}")
         return False
+
+
+# ============================================================================
+# USAGE TRACKING - API Protection and Rate Limiting
+# ============================================================================
+
+USAGE_FILE = ".usage_stats"
+
+
+def get_usage_path() -> str:
+    """Get the path to the usage stats file."""
+    return os.path.join(get_data_dir(), USAGE_FILE)
+
+
+def load_usage_stats() -> Dict[str, Any]:
+    """
+    Load usage statistics from file.
+    
+    Returns:
+        Dict with usage statistics including daily/monthly counts and timestamps.
+    """
+    try:
+        usage_path = get_usage_path()
+        if os.path.exists(usage_path):
+            with open(usage_path, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Failed to load usage stats: {e}")
+    
+    # Return default empty stats
+    return {
+        'daily_count': 0,
+        'monthly_count': 0,
+        'daily_date': datetime.now().strftime('%Y-%m-%d'),
+        'monthly_date': datetime.now().strftime('%Y-%m'),
+        'last_generation': None,
+        'total_generations': 0
+    }
+
+
+def save_usage_stats(stats: Dict[str, Any]) -> bool:
+    """
+    Save usage statistics to file.
+    
+    Args:
+        stats: Dictionary with usage statistics.
+        
+    Returns:
+        bool: True if saved successfully.
+    """
+    try:
+        usage_path = get_usage_path()
+        with open(usage_path, 'w') as f:
+            json.dump(stats, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Failed to save usage stats: {e}")
+        return False
+
+
+def check_usage_limits(tier: str = None) -> Tuple[bool, str]:
+    """
+    Check if the current usage is within limits for the given tier.
+    
+    Args:
+        tier: License tier (if None, fetched from session).
+        
+    Returns:
+        Tuple of (allowed: bool, message: str)
+        - allowed: True if generation is allowed
+        - message: Error message if not allowed, or empty string if allowed
+    """
+    from session_manager import get_tier as session_get_tier
+    
+    if tier is None:
+        tier = session_get_tier() or 'trial'
+    
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS['trial'])
+    stats = load_usage_stats()
+    
+    # Reset daily counter if new day
+    today = datetime.now().strftime('%Y-%m-%d')
+    if stats.get('daily_date') != today:
+        stats['daily_count'] = 0
+        stats['daily_date'] = today
+    
+    # Reset monthly counter if new month
+    this_month = datetime.now().strftime('%Y-%m')
+    if stats.get('monthly_date') != this_month:
+        stats['monthly_count'] = 0
+        stats['monthly_date'] = this_month
+    
+    # Check daily limit
+    daily_limit = limits.get('daily_generations', 3)
+    if stats.get('daily_count', 0) >= daily_limit:
+        return False, f"Daily limit reached ({daily_limit} courses). Please try again tomorrow."
+    
+    # Check monthly limit
+    monthly_limit = limits.get('monthly_generations', 10)
+    if stats.get('monthly_count', 0) >= monthly_limit:
+        return False, f"Monthly limit reached ({monthly_limit} courses). Please upgrade your license."
+    
+    # Check rate limit
+    rate_limit = limits.get('rate_limit_seconds', 60)
+    last_gen = stats.get('last_generation')
+    if last_gen:
+        try:
+            last_time = datetime.fromisoformat(last_gen)
+            elapsed = (datetime.now() - last_time).total_seconds()
+            if elapsed < rate_limit:
+                wait_time = int(rate_limit - elapsed)
+                return False, f"Please wait {wait_time} seconds before generating another course."
+        except Exception:
+            pass  # Ignore parsing errors
+    
+    return True, ""
+
+
+def record_generation(tier: str = None) -> bool:
+    """
+    Record a successful generation for usage tracking.
+    
+    Args:
+        tier: License tier (for logging purposes).
+        
+    Returns:
+        bool: True if recorded successfully.
+    """
+    stats = load_usage_stats()
+    
+    # Reset counters if needed
+    today = datetime.now().strftime('%Y-%m-%d')
+    if stats.get('daily_date') != today:
+        stats['daily_count'] = 0
+        stats['daily_date'] = today
+    
+    this_month = datetime.now().strftime('%Y-%m')
+    if stats.get('monthly_date') != this_month:
+        stats['monthly_count'] = 0
+        stats['monthly_date'] = this_month
+    
+    # Increment counters
+    stats['daily_count'] = stats.get('daily_count', 0) + 1
+    stats['monthly_count'] = stats.get('monthly_count', 0) + 1
+    stats['total_generations'] = stats.get('total_generations', 0) + 1
+    stats['last_generation'] = datetime.now().isoformat()
+    
+    return save_usage_stats(stats)
+
+
+def get_usage_info(tier: str = None) -> Dict[str, Any]:
+    """
+    Get current usage information with limits.
+    
+    Args:
+        tier: License tier (if None, fetched from session).
+        
+    Returns:
+        Dict with current usage and remaining limits.
+    """
+    from session_manager import get_tier as session_get_tier
+    
+    if tier is None:
+        tier = session_get_tier() or 'trial'
+    
+    limits = TIER_LIMITS.get(tier, TIER_LIMITS['trial'])
+    stats = load_usage_stats()
+    
+    # Reset counters if needed
+    today = datetime.now().strftime('%Y-%m-%d')
+    if stats.get('daily_date') != today:
+        stats['daily_count'] = 0
+        
+    this_month = datetime.now().strftime('%Y-%m')
+    if stats.get('monthly_date') != this_month:
+        stats['monthly_count'] = 0
+    
+    daily_limit = limits.get('daily_generations', 3)
+    monthly_limit = limits.get('monthly_generations', 10)
+    
+    return {
+        'tier': tier,
+        'daily_used': stats.get('daily_count', 0),
+        'daily_limit': daily_limit,
+        'daily_remaining': max(0, daily_limit - stats.get('daily_count', 0)),
+        'monthly_used': stats.get('monthly_count', 0),
+        'monthly_limit': monthly_limit,
+        'monthly_remaining': max(0, monthly_limit - stats.get('monthly_count', 0)),
+        'total_generations': stats.get('total_generations', 0),
+        'rate_limit_seconds': limits.get('rate_limit_seconds', 60)
+    }
