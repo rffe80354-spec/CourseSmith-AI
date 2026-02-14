@@ -76,6 +76,10 @@ class LanguageManager:
                 'cancel': 'Cancel',
                 'export': 'Export PDF',
                 'chapters_label': 'Chapters Generated',
+                'output_format': 'Output Format',
+                'format_pdf': '📄 PDF',
+                'format_docx': '📝 DOCX',
+                'format_epub': '📖 EPUB',
             },
             'RU': {
                 'forge': 'Создать',
@@ -91,6 +95,10 @@ class LanguageManager:
                 'cancel': 'Отмена',
                 'export': 'Экспорт PDF',
                 'chapters_label': 'Создано глав',
+                'output_format': 'Формат вывода',
+                'format_pdf': '📄 PDF',
+                'format_docx': '📝 DOCX',
+                'format_epub': '📖 EPUB',
             }
         }
         return translations.get(self.current_lang, {}).get(key, key)
@@ -536,6 +544,57 @@ class CustomApp(ctk.CTk):
         
         self.chapters_slider.configure(command=update_chapter_label)
         
+        # Output Format selector
+        format_label = ctk.CTkLabel(
+            input_inner,
+            text=self.lang.get('output_format'),
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        format_label.pack(anchor='w', pady=(20, 8))
+        
+        # Format buttons frame
+        format_buttons_frame = ctk.CTkFrame(
+            input_inner,
+            fg_color='transparent'
+        )
+        format_buttons_frame.pack(fill='x', pady=(0, 10))
+        
+        # Store selected format
+        self.selected_format = ctk.StringVar(value='PDF')
+        
+        # Create format toggle buttons
+        self.format_buttons = {}
+        formats = ['PDF', 'DOCX', 'EPUB']
+        format_icons = {'PDF': '📄', 'DOCX': '📝', 'EPUB': '📖'}
+        
+        for idx, fmt in enumerate(formats):
+            btn = ctk.CTkButton(
+                format_buttons_frame,
+                text=f"{format_icons[fmt]} {fmt}",
+                corner_radius=15,
+                height=45,
+                width=100,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                fg_color=COLORS['accent'] if fmt == 'PDF' else COLORS['background'],
+                text_color=COLORS['text_primary'] if fmt == 'PDF' else COLORS['text_secondary'],
+                hover_color=COLORS['accent_hover'],
+                border_width=2,
+                border_color=COLORS['accent'] if fmt == 'PDF' else COLORS['border'],
+                command=lambda f=fmt: self._select_format(f)
+            )
+            btn.pack(side='left', padx=(0 if idx == 0 else 10, 0))
+            self.format_buttons[fmt] = btn
+        
+        # Format description label
+        self.format_description_label = ctk.CTkLabel(
+            input_inner,
+            text="📄 PDF - Universal format with professional styling",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_secondary']
+        )
+        self.format_description_label.pack(anchor='w', pady=(0, 10))
+        
         # Start Forge button with glow
         self.start_button = PremiumButton(
             input_inner,
@@ -681,6 +740,34 @@ class CustomApp(ctk.CTk):
         )
         save_btn.pack(fill='x')
     
+    def _select_format(self, format_name):
+        """Handle format selection button click."""
+        self.selected_format.set(format_name)
+        
+        # Update button styles to show selection
+        for fmt, btn in self.format_buttons.items():
+            if fmt == format_name:
+                btn.configure(
+                    fg_color=COLORS['accent'],
+                    text_color=COLORS['text_primary'],
+                    border_color=COLORS['accent']
+                )
+            else:
+                btn.configure(
+                    fg_color=COLORS['background'],
+                    text_color=COLORS['text_secondary'],
+                    border_color=COLORS['border']
+                )
+        
+        # Update format description based on selection
+        descriptions = {
+            'PDF': "📄 PDF - Universal format with professional styling",
+            'DOCX': "📝 DOCX - Editable document for Microsoft Word",
+            'EPUB': "📖 EPUB - E-book format for digital readers"
+        }
+        if self.current_page == 'forge' and hasattr(self, 'format_description_label'):
+            self.format_description_label.configure(text=descriptions.get(format_name, ""))
+    
     def _toggle_language(self):
         """Toggle between EN and RU languages."""
         self.lang.toggle_language()
@@ -708,6 +795,10 @@ class CustomApp(ctk.CTk):
         self.audience_entry.configure(state='disabled')
         self.chapters_slider.configure(state='disabled')
         self.start_button.configure(state='disabled')
+        
+        # Disable format buttons
+        for btn in self.format_buttons.values():
+            btn.configure(state='disabled')
         
         # Start border animation
         self.input_border_frame.start_animation()
@@ -766,10 +857,16 @@ class CustomApp(ctk.CTk):
         self.chapters_slider.configure(state='normal')
         self.start_button.configure(state='normal')
         
-        # Show success message
+        # Re-enable format buttons
+        for btn in self.format_buttons.values():
+            btn.configure(state='normal')
+        
+        # Show success message with format info
+        selected_format = self.selected_format.get()
         messagebox.showinfo(
             "Success",
-            f"Course generated successfully with {self.total_chapters} chapters!"
+            f"Course generated successfully with {self.total_chapters} chapters!\n"
+            f"Output format: {selected_format}"
         )
 
 
