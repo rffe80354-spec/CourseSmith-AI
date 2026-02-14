@@ -177,6 +177,18 @@ class App(ctk.CTk):
         "HTML": {"ext": ".html", "filter": [("HTML Files", "*.html")]},
     }
 
+    def _get_format_icon(self, format_name):
+        """
+        Get the icon for a given export format.
+        
+        Args:
+            format_name: The export format (PDF, DOCX, HTML).
+            
+        Returns:
+            str: The emoji icon for the format, or default format icon if not found.
+        """
+        return self.FORMAT_ICONS.get(format_name, self.FORMAT_ICONS[self.DEFAULT_EXPORT_FORMAT])
+
     def __init__(self):
         """Initialize the application window and widgets."""
         super().__init__()
@@ -1759,9 +1771,11 @@ class App(ctk.CTk):
         self.export_status.grid(row=3, column=0, padx=20, pady=(0, 20))
 
         # Main export button - generates output in the selected format
+        # Initialize button text based on default export format for consistency
+        default_icon = self._get_format_icon(self.DEFAULT_EXPORT_FORMAT)
         self.build_export_btn = ctk.CTkButton(
             export_frame,
-            text="📑 GENERATE FINAL PDF",
+            text=f"{default_icon} GENERATE FINAL {self.DEFAULT_EXPORT_FORMAT}",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=55,
             width=300,
@@ -1870,8 +1884,8 @@ class App(ctk.CTk):
         Args:
             selected_format: The newly selected format (PDF, DOCX, or HTML).
         """
-        # Update button text based on selected format using class-level constant
-        icon = self.FORMAT_ICONS.get(selected_format, self.FORMAT_ICONS[self.DEFAULT_EXPORT_FORMAT])
+        # Update button text based on selected format using helper method
+        icon = self._get_format_icon(selected_format)
         self.build_export_btn.configure(text=f"{icon} GENERATE FINAL {selected_format}")
         
         # Update status message
@@ -2067,15 +2081,15 @@ class App(ctk.CTk):
         self.export_progress_bar.set(1.0)
         self.export_progress_label.configure(text="✓ Complete!")
         
-        # Restore button state with selected format using class-level constant
-        icon = self.FORMAT_ICONS.get(format_name, self.FORMAT_ICONS[self.DEFAULT_EXPORT_FORMAT])
+        # Restore button state with selected format using helper method
+        icon = self._get_format_icon(format_name)
         self.build_export_btn.configure(state="normal", text=f"{icon} GENERATE FINAL {format_name}")
         
         # Update status
         self.export_status.configure(text=f"✓ {format_name} exported!", text_color="#28a745")
         self._log_export(f"✓ {format_name} saved: {filepath}")
         
-        # Store output path on project
+        # Store output path on project (kept as output_pdf_path for backward compatibility)
         self.project.output_pdf_path = filepath
 
         # Show success message
@@ -2099,8 +2113,8 @@ class App(ctk.CTk):
         self.export_progress_bar.set(0)
         self.export_progress_label.configure(text="❌ Failed")
         
-        # Restore button state using class-level constant
-        icon = self.FORMAT_ICONS.get(format_name, self.FORMAT_ICONS[self.DEFAULT_EXPORT_FORMAT])
+        # Restore button state using helper method
+        icon = self._get_format_icon(format_name)
         self.build_export_btn.configure(state="normal", text=f"{icon} GENERATE FINAL {format_name}")
         
         # Update status
