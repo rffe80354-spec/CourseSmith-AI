@@ -36,9 +36,9 @@ from dotenv import load_dotenv
 
 # Load environment variables with PyInstaller support
 # PyInstaller creates a temp folder and stores path in _MEIPASS
-try:
-    base_path = sys._MEIPASS
-except AttributeError:
+# Using getattr for defensive access to this implementation detail
+base_path = getattr(sys, '_MEIPASS', None)
+if base_path is None:
     # Running in development mode
     base_path = os.path.abspath(".")
 
@@ -72,7 +72,8 @@ SECRET_NAME_COLUMN = "name"
 SECRET_VALUE_COLUMN = "value"
 
 # Global Supabase client (singleton pattern)
-_supabase_client: Optional['Client'] = None
+# Using Any type since supabase library may not be installed
+_supabase_client: Optional[any] = None
 
 
 class SecretsManagerError(Exception):
@@ -80,7 +81,7 @@ class SecretsManagerError(Exception):
     pass
 
 
-def _get_supabase_client() -> Optional['Client']:
+def _get_supabase_client() -> Optional[any]:
     """
     Get or create a Supabase client singleton.
     
@@ -207,11 +208,17 @@ def validate_api_key(api_key: str) -> bool:
     
     Returns:
         bool: True if the key format appears valid.
+    
+    Note:
+        OpenAI uses different key prefixes:
+        - 'sk-' for standard keys
+        - 'sk-proj-' for project-scoped keys
+        All valid keys start with 'sk-'.
     """
     if not api_key:
         return False
     
-    # OpenAI API keys typically start with 'sk-' and have a certain length
+    # OpenAI API keys start with 'sk-' (including 'sk-proj-' project keys)
     # This is a basic format check, not authentication
     if not api_key.startswith("sk-"):
         return False
@@ -268,7 +275,7 @@ def test_supabase_connection() -> bool:
         # Try a simple query to test connectivity
         response = client.table(SECRETS_TABLE).select("*").limit(1).execute()
         print("Supabase connection successful!")
-        print(f"Secrets table accessible: {len(response.data) >= 0}")
+        print(f"Secrets table accessible: {response.data is not None}")
         return True
     except Exception as e:
         print(f"Supabase connection failed: {e}")

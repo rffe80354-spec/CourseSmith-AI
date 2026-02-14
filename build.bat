@@ -48,7 +48,8 @@ goto :end
 echo Cleaning build artifacts...
 if exist "build" rmdir /s /q "build"
 if exist "dist" rmdir /s /q "dist"
-if exist "__pycache__" rmdir /s /q "__pycache__"
+REM Clean all __pycache__ directories recursively
+for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d"
 echo Clean complete!
 goto :end
 
