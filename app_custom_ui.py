@@ -80,6 +80,11 @@ class LanguageManager:
                 'format_pdf': '📄 PDF',
                 'format_docx': '📝 DOCX',
                 'format_epub': '📖 EPUB',
+                'format_desc_pdf': '📄 PDF - Universal format with professional styling',
+                'format_desc_docx': '📝 DOCX - Editable document for Microsoft Word',
+                'format_desc_epub': '📖 EPUB - E-book format for digital readers',
+                'success_title': 'Success',
+                'success_message': 'Course generated successfully with {chapters} chapters!\nOutput format: {format}',
             },
             'RU': {
                 'forge': 'Создать',
@@ -99,6 +104,11 @@ class LanguageManager:
                 'format_pdf': '📄 PDF',
                 'format_docx': '📝 DOCX',
                 'format_epub': '📖 EPUB',
+                'format_desc_pdf': '📄 PDF - Универсальный формат с профессиональным оформлением',
+                'format_desc_docx': '📝 DOCX - Редактируемый документ для Microsoft Word',
+                'format_desc_epub': '📖 EPUB - Формат электронных книг для читалок',
+                'success_title': 'Успех',
+                'success_message': 'Курс успешно создан с {chapters} главами!\nФормат вывода: {format}',
             }
         }
         return translations.get(self.current_lang, {}).get(key, key)
@@ -563,15 +573,14 @@ class CustomApp(ctk.CTk):
         # Store selected format
         self.selected_format = ctk.StringVar(value='PDF')
         
-        # Create format toggle buttons
+        # Create format toggle buttons using translations
         self.format_buttons = {}
         formats = ['PDF', 'DOCX', 'EPUB']
-        format_icons = {'PDF': '📄', 'DOCX': '📝', 'EPUB': '📖'}
         
         for idx, fmt in enumerate(formats):
             btn = ctk.CTkButton(
                 format_buttons_frame,
-                text=f"{format_icons[fmt]} {fmt}",
+                text=self.lang.get(f'format_{fmt.lower()}'),
                 corner_radius=15,
                 height=45,
                 width=100,
@@ -586,10 +595,10 @@ class CustomApp(ctk.CTk):
             btn.pack(side='left', padx=(0 if idx == 0 else 10, 0))
             self.format_buttons[fmt] = btn
         
-        # Format description label
+        # Format description label using translation
         self.format_description_label = ctk.CTkLabel(
             input_inner,
-            text="📄 PDF - Universal format with professional styling",
+            text=self.lang.get('format_desc_pdf'),
             font=ctk.CTkFont(size=11),
             text_color=COLORS['text_secondary']
         )
@@ -759,14 +768,10 @@ class CustomApp(ctk.CTk):
                     border_color=COLORS['border']
                 )
         
-        # Update format description based on selection
-        descriptions = {
-            'PDF': "📄 PDF - Universal format with professional styling",
-            'DOCX': "📝 DOCX - Editable document for Microsoft Word",
-            'EPUB': "📖 EPUB - E-book format for digital readers"
-        }
-        if self.current_page == 'forge' and hasattr(self, 'format_description_label'):
-            self.format_description_label.configure(text=descriptions.get(format_name, ""))
+        # Update format description using translation system
+        description_key = f'format_desc_{format_name.lower()}'
+        if hasattr(self, 'format_description_label'):
+            self.format_description_label.configure(text=self.lang.get(description_key))
     
     def _toggle_language(self):
         """Toggle between EN and RU languages."""
@@ -861,12 +866,15 @@ class CustomApp(ctk.CTk):
         for btn in self.format_buttons.values():
             btn.configure(state='normal')
         
-        # Show success message with format info
+        # Show success message with format info using translation
         selected_format = self.selected_format.get()
+        success_message = self.lang.get('success_message').format(
+            chapters=self.total_chapters,
+            format=selected_format
+        )
         messagebox.showinfo(
-            "Success",
-            f"Course generated successfully with {self.total_chapters} chapters!\n"
-            f"Output format: {selected_format}"
+            self.lang.get('success_title'),
+            success_message
         )
 
 
