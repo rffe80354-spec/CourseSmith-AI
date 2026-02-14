@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Topic</title>
+    <style>
+        :root {
+            --primary-color: #7F5AF0;
+            --primary-hover: #9D7BF2;
+            --bg-dark: #0B0E14;
+            --bg-sidebar: #151921;
+            --bg-card: #1A1F2E;
+            --text-primary: #FFFFFF;
+            --text-secondary: #8B92A8;
+            --border-color: #2A3142;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        .sidebar {
+            width: 280px;
+            background-color: var(--bg-sidebar);
+            padding: 30px 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            border-right: 1px solid var(--border-color);
+        }
+        
+        .sidebar h2 {
+            color: var(--text-primary);
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .sidebar nav ul {
+            list-style: none;
+        }
+        
+        .sidebar nav li {
+            margin-bottom: 8px;
+        }
+        
+        .sidebar nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            display: block;
+            padding: 10px 15px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+        }
+        
+        .sidebar nav a:hover {
+            background-color: var(--bg-card);
+            color: var(--primary-color);
+        }
+        
+        .sidebar nav a.active {
+            background-color: var(--primary-color);
+            color: var(--text-primary);
+        }
+        
+        .content {
+            flex: 1;
+            margin-left: 280px;
+            padding: 40px 60px;
+            max-width: 900px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+            padding-bottom: 40px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            color: var(--text-primary);
+        }
+        
+        .header .subtitle {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+        }
+        
+        .header .meta {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        
+        .chapter {
+            margin-bottom: 60px;
+            padding: 30px;
+            background-color: var(--bg-card);
+            border-radius: 15px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .chapter h2 {
+            font-size: 1.8rem;
+            color: var(--primary-color);
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .chapter h3 {
+            font-size: 1.3rem;
+            color: var(--text-primary);
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+        
+        .chapter p {
+            margin-bottom: 15px;
+            color: var(--text-secondary);
+        }
+        
+        .chapter ul, .chapter ol {
+            margin: 15px 0;
+            padding-left: 25px;
+            color: var(--text-secondary);
+        }
+        
+        .chapter li {
+            margin-bottom: 8px;
+        }
+        
+        .chapter strong {
+            color: var(--text-primary);
+        }
+        
+        .chapter em {
+            font-style: italic;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 40px 0;
+            margin-top: 40px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            
+            .content {
+                margin-left: 0;
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 1.8rem;
+            }
+        }
+        
+        @media print {
+            .sidebar {
+                display: none;
+            }
+            
+            .content {
+                margin-left: 0;
+            }
+            
+            .chapter {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <h2>📚 Contents</h2>
+            <nav>
+                <ul>
+                    <li><a href="#chapter-1">Chapter 1: Chapter 1</a></li>
+<li><a href="#chapter-2">Chapter 2: Chapter 2</a></li>
+                </ul>
+            </nav>
+        </aside>
+        <main class="content">
+            <header class="header">
+            <h1>Test Topic</h1>
+            <p class="subtitle">A Comprehensive Guide for Test Audience</p>
+            <p class="meta">Generated on February 14, 2026</p>
+        </header>
+            <section class="chapter" id="chapter-1">
+            <h2>Chapter 1: Chapter 1</h2>
+            <p>This is chapter 1 content.</p>
+        </section>
+<section class="chapter" id="chapter-2">
+            <h2>Chapter 2: Chapter 2</h2>
+            <p>This is chapter 2 content.</p>
+        </section>
+            <footer class="footer">
+            <p>Generated by CourseSmith AI</p>
+        </footer>
+        </main>
+    </div>
+    <script>
+        // Highlight active chapter on scroll
+        document.addEventListener('scroll', function() {
+            const chapters = document.querySelectorAll('.chapter');
+            const navLinks = document.querySelectorAll('.sidebar nav a');
+            
+            let currentChapter = '';
+            
+            chapters.forEach(chapter => {
+                const rect = chapter.getBoundingClientRect();
+                if (rect.top <= 100) {
+                    currentChapter = chapter.id;
+                }
+            });
+            
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + currentChapter) {
+                    link.classList.add('active');
+                }
+            });
+        });
+        
+        // Smooth scroll for navigation
+        document.querySelectorAll('.sidebar nav a').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href').slice(1);
+                const target = document.getElementById(targetId);
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
