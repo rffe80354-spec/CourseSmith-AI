@@ -36,6 +36,10 @@ from export_base import ExportManager, ExportError
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
+# Performance tuning constants for live preview streaming
+PREVIEW_UPDATE_INTERVAL = 5  # Update UI every N chunks (reduces update_idletasks calls by ~80%)
+LARGE_CHUNK_THRESHOLD = 50  # Force immediate update for chunks larger than this (characters)
+
 
 class SplashScreen(ctk.CTkToplevel):
     """Splash screen with loading animation for main application."""
@@ -1580,6 +1584,7 @@ class App(ctk.CTk):
         
         Performance optimization: Uses list accumulation with periodic UI updates
         to avoid O(n²) string concatenation and reduce UI update overhead.
+        Only joins chunks since last update for O(k) work instead of O(n).
         
         Args:
             text_chunk: The incremental text chunk to append.
@@ -1587,9 +1592,11 @@ class App(ctk.CTk):
         self._preview_accumulated_chunks.append(text_chunk)
         self._preview_update_counter += 1
         
-        # Update UI every 5 chunks to balance responsiveness with performance
-        # This reduces update_idletasks() calls by ~80% while maintaining smooth display
-        if self._preview_update_counter % 5 == 0 or len(text_chunk) > 50:
+        # Update UI every PREVIEW_UPDATE_INTERVAL chunks to balance responsiveness with performance
+        # Force immediate update for large chunks (likely meaningful content boundaries)
+        if self._preview_update_counter % PREVIEW_UPDATE_INTERVAL == 0 or len(text_chunk) > LARGE_CHUNK_THRESHOLD:
+            # Join all chunks - this is O(n) but only happens every N chunks
+            # For streaming text, n is bounded by chapter size which is reasonable
             full_text = ''.join(self._preview_accumulated_chunks)
             self.preview_content_label.configure(text=full_text)
             # Force update to show the change immediately

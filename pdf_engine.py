@@ -33,8 +33,10 @@ from generator import ContentDistributor, distribute_chapter_content
 
 # Pre-compiled regex patterns for markdown parsing performance optimization
 # Compiling once at module level avoids re-compilation on every line
+# Note: Bold pattern MUST be applied before italic to avoid false matches
 _BOLD_PATTERN = re.compile(r'\*\*(.+?)\*\*')
-_ITALIC_PATTERN = re.compile(r'\*(.+?)\*')
+# Italic pattern uses negative lookbehind/lookahead to avoid matching bold asterisks
+_ITALIC_PATTERN = re.compile(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)')
 
 
 class PDFBuilder:
