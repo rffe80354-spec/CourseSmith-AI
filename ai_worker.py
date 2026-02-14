@@ -20,6 +20,28 @@ PRIMARY_API_KEY = "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY"
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://spfwfyjpexktgnusgyib.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR")
 
+# Thread-safe singleton for Supabase client to avoid repeated connection overhead
+_supabase_client = None
+_supabase_lock = threading.Lock()
+
+
+def _get_supabase_client():
+    """
+    Get or create a thread-safe singleton Supabase client.
+    
+    Performance optimization: Reuses connection instead of creating new client
+    for each credit check/deduction, reducing network overhead significantly.
+    
+    Returns:
+        Supabase client instance
+    """
+    global _supabase_client
+    with _supabase_lock:
+        if _supabase_client is None:
+            from supabase import create_client
+            _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        return _supabase_client
+
 
 def check_remaining_credits() -> dict:
     """
@@ -33,8 +55,6 @@ def check_remaining_credits() -> dict:
         }
     """
     try:
-        from supabase import create_client
-        
         # Get current user's license key and email from session
         license_key = get_license_key()
         email = get_user_email()
@@ -46,8 +66,8 @@ def check_remaining_credits() -> dict:
                 'message': 'No active license session. Please log in.'
             }
         
-        # Connect to Supabase
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        # Use singleton Supabase client for better performance
+        supabase = _get_supabase_client()
         
         # Query for license credits
         response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).execute()
@@ -109,8 +129,6 @@ def deduct_credit(amount: int = 1) -> bool:
         bool: True if credits were successfully deducted, False otherwise.
     """
     try:
-        from supabase import create_client
-        
         license_key = get_license_key()
         email = get_user_email()
         
@@ -118,7 +136,8 @@ def deduct_credit(amount: int = 1) -> bool:
             print("Credit deduction failed: No license key or email in session")
             return False
         
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        # Use singleton Supabase client for better performance
+        supabase = _get_supabase_client()
         
         # Check if user has sufficient credits
         response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).gte("credits", amount).execute()

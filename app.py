@@ -240,29 +240,31 @@ class App(ctk.CTk):
         splash = SplashScreen(self)
         
         def load_app():
-            """Simulate loading and check license."""
-            time.sleep(0.3)
+            """Load app with minimal delays for better UX."""
+            # Reduced delays from 0.3s to 0.1s for faster startup
+            # while still providing visual feedback
+            time.sleep(0.1)
             splash.update_status("Loading modules...")
-            time.sleep(0.3)
+            time.sleep(0.1)
             splash.update_status("Loading license system...")
-            time.sleep(0.3)
+            time.sleep(0.1)
             splash.update_status("Checking saved session...")
-            time.sleep(0.3)
+            time.sleep(0.1)
             
             # Check for saved license
             has_session = self._check_license_silent()
             
             if has_session:
                 splash.update_status("Restoring session...")
-                time.sleep(0.3)
+                time.sleep(0.1)
             else:
                 splash.update_status("No saved session found...")
-                time.sleep(0.3)
+                time.sleep(0.1)
             
             splash.update_status("Loading UI components...")
-            time.sleep(0.3)
+            time.sleep(0.1)
             splash.update_status("Ready!")
-            time.sleep(0.2)
+            time.sleep(0.1)
             
             # Close splash and show main window
             self.after(0, lambda: self._finish_loading(splash, has_session))
@@ -1555,8 +1557,11 @@ class App(ctk.CTk):
         )
         self.continue_export_btn.grid(row=3, column=0, columnspan=2, padx=20, pady=(10, 15))
 
-        # Track current preview content for accumulation
-        self._preview_accumulated_text = ""
+        # Track current preview content for accumulation using list for O(1) append
+        # Performance optimization: Using list instead of string concatenation
+        # to avoid O(n²) complexity when accumulating streaming text
+        self._preview_accumulated_chunks = []
+        self._preview_update_counter = 0
 
     def _log_drafting(self, message):
         """Add message to drafting log."""
@@ -1573,24 +1578,34 @@ class App(ctk.CTk):
         Update the live preview with a new text chunk (typewriter effect).
         Called from the AI worker streaming callback.
         
+        Performance optimization: Uses list accumulation with periodic UI updates
+        to avoid O(n²) string concatenation and reduce UI update overhead.
+        
         Args:
             text_chunk: The incremental text chunk to append.
         """
-        self._preview_accumulated_text += text_chunk
-        self.preview_content_label.configure(text=self._preview_accumulated_text)
-        # Force update to show the change immediately
-        self.preview_content_label.update_idletasks()
-        # Scroll to bottom of preview using safe method
-        try:
-            # Try to scroll to bottom - CTkScrollableFrame may have internal canvas
-            if hasattr(self.preview_scroll, '_parent_canvas'):
-                self.preview_scroll._parent_canvas.yview_moveto(1.0)
-        except (AttributeError, Exception):
-            pass  # Scrolling is optional; content update is the priority
+        self._preview_accumulated_chunks.append(text_chunk)
+        self._preview_update_counter += 1
+        
+        # Update UI every 5 chunks to balance responsiveness with performance
+        # This reduces update_idletasks() calls by ~80% while maintaining smooth display
+        if self._preview_update_counter % 5 == 0 or len(text_chunk) > 50:
+            full_text = ''.join(self._preview_accumulated_chunks)
+            self.preview_content_label.configure(text=full_text)
+            # Force update to show the change immediately
+            self.preview_content_label.update_idletasks()
+            # Scroll to bottom of preview using safe method
+            try:
+                # Try to scroll to bottom - CTkScrollableFrame may have internal canvas
+                if hasattr(self.preview_scroll, '_parent_canvas'):
+                    self.preview_scroll._parent_canvas.yview_moveto(1.0)
+            except (AttributeError, Exception):
+                pass  # Scrolling is optional; content update is the priority
 
     def _clear_live_preview(self):
         """Clear the live preview content for a new chapter."""
-        self._preview_accumulated_text = ""
+        self._preview_accumulated_chunks = []
+        self._preview_update_counter = 0
         self.preview_content_label.configure(text="")
 
     def _set_preview_chapter_title(self, title, chapter_num):
