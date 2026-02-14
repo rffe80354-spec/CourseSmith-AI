@@ -20,7 +20,7 @@ from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, Menu, TclError
 
-from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, get_underlying_tk_widget
+from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, clipboard_paste, clipboard_select_all, add_context_menu, get_underlying_tk_widget, patch_ctk_scrollbar
 from license_guard import validate_license, load_license, save_license, remove_license, get_hwid
 from session_manager import set_session, set_token, is_active, get_tier, is_extended, clear_session
 from project_manager import CourseProject
@@ -31,6 +31,9 @@ from docx_exporter import DOCXExporter
 from html_exporter import HTMLExporter
 from export_base import ExportManager, ExportError
 
+# Apply scrollbar patch to prevent RecursionError in CTkScrollableFrame
+# This must be called before creating any scrollable widgets
+patch_ctk_scrollbar()
 
 # Configure appearance
 ctk.set_appearance_mode("Dark")
@@ -180,6 +183,10 @@ class App(ctk.CTk):
         "DOCX": {"ext": ".docx", "filter": [("Word Documents", "*.docx")]},
         "HTML": {"ext": ".html", "filter": [("HTML Files", "*.html")]},
     }
+    
+    # Button color constants for format selector - selected vs unselected states
+    FORMAT_BTN_SELECTED = {"fg": "#1f6aa5", "hover": "#3b8ed0", "border": "#3b8ed0"}
+    FORMAT_BTN_UNSELECTED = {"fg": "#4a4a4a", "hover": "#666666", "border": "#555555"}
 
     def _get_format_icon(self, format_name):
         """
@@ -1622,11 +1629,13 @@ class App(ctk.CTk):
     def _start_drafting(self):
         """Start the chapter drafting process."""
         if not self.project.outline:
+            self._log_drafting("❌ Cannot start: No outline confirmed")
             messagebox.showerror("Error", "Please confirm an outline in the Blueprint tab first.")
             self.tabview.set("📋 Blueprint")
             return
 
         if self.is_generating:
+            self._log_drafting("⚠️ Already generating - please wait")
             messagebox.showwarning("In Progress", "Please wait for the current operation to complete.")
             return
 
@@ -1640,7 +1649,10 @@ class App(ctk.CTk):
         self._clear_live_preview()
         self.preview_chapter_title.configure(text="")
 
-        self._log_drafting("Starting chapter generation...")
+        # Log start action
+        self._log_drafting("🚀 Starting chapter generation...")
+        self._log_drafting(f"📚 Topic: {self.project.topic}")
+        self._log_drafting(f"📋 Total chapters: {self.total_chapters}")
         self._write_next_chapter()
 
     def _write_next_chapter(self):
@@ -1651,7 +1663,8 @@ class App(ctk.CTk):
             self.draft_btn.configure(state="normal", text="🚀 Start Writing Chapters")
             self.continue_export_btn.configure(state="normal")
             self._log_drafting("=" * 40)
-            self._log_drafting("✓ All chapters written successfully!")
+            self._log_drafting("✅ All chapters written successfully!")
+            self._log_drafting(f"📄 Ready for export")
             self.drafting_progress.set(1.0)
             self.drafting_progress_label.configure(text="Complete!")
             return
@@ -1669,7 +1682,7 @@ class App(ctk.CTk):
         self._clear_live_preview()
         self._set_preview_chapter_title(chapter_title, chapter_num)
 
-        self._log_drafting(f"Writing Chapter {chapter_num}: {chapter_title}...")
+        self._log_drafting(f"✍️ Writing Chapter {chapter_num}: {chapter_title}...")
 
         def on_success(title, content):
             self.after(0, lambda: self._on_chapter_written(title, content))
@@ -1764,24 +1777,42 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=18, weight="bold"),
         ).grid(row=0, column=0, padx=20, pady=(20, 20), sticky="w")
 
-        # Format selector label and dropdown for multi-format output support
+        # Format selector label for format buttons
         ctk.CTkLabel(
             export_frame,
             text="Select Output Format:",
             font=ctk.CTkFont(size=13),
-        ).grid(row=1, column=0, padx=20, pady=(0, 5), sticky="w")
+        ).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
         
-        # Format options: PDF (default), DOCX (Microsoft Word), HTML (Web)
+        # Format buttons frame - replaces dropdown with visual buttons
+        self.format_buttons_frame = ctk.CTkFrame(export_frame, fg_color="transparent")
+        self.format_buttons_frame.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
+        
+        # Store format buttons for selection state management
+        self.format_buttons = {}
         self.export_format_var = ctk.StringVar(value=self.DEFAULT_EXPORT_FORMAT)
-        self.export_format_selector = ctk.CTkOptionMenu(
-            export_frame,
-            values=list(self.FORMAT_CONFIG.keys()),
-            variable=self.export_format_var,
-            width=200,
-            font=ctk.CTkFont(size=13),
-            command=self._on_format_changed,
-        )
-        self.export_format_selector.grid(row=2, column=0, padx=20, pady=(0, 15))
+        
+        # Create format buttons with visual feedback using class constants
+        for idx, (format_name, config) in enumerate(self.FORMAT_CONFIG.items()):
+            icon = self.FORMAT_ICONS.get(format_name, "📄")
+            is_default = format_name == self.DEFAULT_EXPORT_FORMAT
+            colors = self.FORMAT_BTN_SELECTED if is_default else self.FORMAT_BTN_UNSELECTED
+            
+            btn = ctk.CTkButton(
+                self.format_buttons_frame,
+                text=f"{icon} {format_name}",
+                font=ctk.CTkFont(size=13, weight="bold" if is_default else "normal"),
+                width=100,
+                height=40,
+                corner_radius=8,
+                fg_color=colors["fg"],
+                hover_color=colors["hover"],
+                border_width=2,
+                border_color=colors["border"],
+                command=lambda f=format_name: self._select_format(f),
+            )
+            btn.grid(row=0, column=idx, padx=(0, 10), pady=5)
+            self.format_buttons[format_name] = btn
 
         # Status label showing current export readiness
         self.export_status = ctk.CTkLabel(
@@ -1898,6 +1929,37 @@ class App(ctk.CTk):
         self._log_export(f"❌ Error: {error}")
         messagebox.showerror("Error", f"Failed to generate cover:\n\n{error}")
 
+    def _select_format(self, selected_format):
+        """
+        Handle format button click - select export format with visual feedback.
+        Updates button states and triggers format change event.
+        
+        Args:
+            selected_format: The format to select (PDF, DOCX, or HTML).
+        """
+        # Update internal format variable
+        self.export_format_var.set(selected_format)
+        
+        # Update button visual states - highlight selected, dim others
+        for format_name, btn in self.format_buttons.items():
+            is_selected = format_name == selected_format
+            icon = self.FORMAT_ICONS.get(format_name, "📄")
+            colors = self.FORMAT_BTN_SELECTED if is_selected else self.FORMAT_BTN_UNSELECTED
+            
+            btn.configure(
+                fg_color=colors["fg"],
+                hover_color=colors["hover"],
+                border_color=colors["border"],
+                font=ctk.CTkFont(size=13, weight="bold" if is_selected else "normal"),
+                text=f"{icon} {format_name}",
+            )
+        
+        # Trigger format change handler for consistency
+        self._on_format_changed(selected_format)
+        
+        # Log user action for format selection
+        self._log_export(f"📋 User selected format: {selected_format}")
+
     def _on_format_changed(self, selected_format):
         """
         Handle format selector change event.
@@ -1910,12 +1972,11 @@ class App(ctk.CTk):
         icon = self._get_format_icon(selected_format)
         self.build_export_btn.configure(text=f"{icon} GENERATE FINAL {selected_format}")
         
-        # Update status message
+        # Update status message with visual feedback
         self.export_status.configure(
-            text=f"Ready to generate {selected_format} document",
-            text_color="gray"
+            text=f"✓ Ready to generate {selected_format} document",
+            text_color="#28a745"
         )
-        self._log_export(f"Format changed to {selected_format}")
 
     def _build_export(self):
         """
@@ -1932,6 +1993,11 @@ class App(ctk.CTk):
             if len(self.project.chapters_content) < len(self.project.outline):
                 missing.append("Chapter content (Drafting tab)")
             
+            # Log validation error
+            self._log_export("❌ Export validation failed - incomplete project")
+            for m in missing:
+                self._log_export(f"   Missing: {m}")
+            
             messagebox.showerror(
                 "Incomplete Project",
                 f"Please complete the following before exporting:\n\n" + "\n".join(f"• {m}" for m in missing),
@@ -1940,6 +2006,9 @@ class App(ctk.CTk):
 
         # Get selected export format
         selected_format = self.export_format_var.get()
+        
+        # Log user action
+        self._log_export(f"🚀 Starting {selected_format} export...")
         
         # Get file extension and filter from class-level constant
         config = self.FORMAT_CONFIG.get(selected_format, self.FORMAT_CONFIG[self.DEFAULT_EXPORT_FORMAT])
@@ -1958,10 +2027,12 @@ class App(ctk.CTk):
         )
 
         if not filepath:
+            self._log_export("⚠️ Export cancelled by user")
             return
 
         # Update UI to show export in progress
-        self._log_export(f"Building {selected_format} document...")
+        self._log_export(f"📁 Output file: {os.path.basename(filepath)}")
+        self._log_export(f"⏳ Building {selected_format} document...")
         self.export_status.configure(text=f"Building {selected_format}...")
         self.export_progress_label.configure(text="Initializing...")
         self.export_progress_bar.set(0.1)

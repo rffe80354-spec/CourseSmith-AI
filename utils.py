@@ -16,9 +16,62 @@ from tkinter import Menu, TclError
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
+# Flag to track if scrollbar patch has been applied
+_scrollbar_patch_applied = False
+
 # ReportLab imports for font registration
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+
+
+def patch_ctk_scrollbar():
+    """
+    Apply a patch to CustomTkinter scrollbar to prevent recursion issues.
+    
+    This fixes the RecursionError that occurs when CTkScrollableFrame's
+    scrollbar tries to update its size and triggers an infinite loop of
+    size calculations.
+    
+    The patch wraps the _draw method with a recursion guard flag.
+    Safe to call multiple times - only applies patch once.
+    """
+    global _scrollbar_patch_applied
+    if _scrollbar_patch_applied:
+        return
+    
+    try:
+        import customtkinter as ctk
+        from customtkinter.windows.widgets.ctk_scrollbar import CTkScrollbar
+        
+        # Store original _draw method
+        original_draw = CTkScrollbar._draw
+        
+        def patched_draw(self, *args, **kwargs):
+            """
+            Patched _draw method with recursion guard.
+            Prevents infinite recursion in scrollbar size calculations.
+            """
+            # Guard against recursion using getattr for cleaner code
+            if getattr(self, '_draw_in_progress', False):
+                return  # Skip if already drawing
+            
+            self._draw_in_progress = True
+            try:
+                original_draw(self, *args, **kwargs)
+            finally:
+                self._draw_in_progress = False
+        
+        # Apply patch
+        CTkScrollbar._draw = patched_draw
+        _scrollbar_patch_applied = True
+        
+    except ImportError:
+        # CustomTkinter not available - skip patch
+        pass
+    except Exception as e:
+        # Log error but don't crash
+        _logger = logging.getLogger(__name__)
+        _logger.warning(f"Failed to apply scrollbar patch: {e}")
 
 
 # Set up module logger

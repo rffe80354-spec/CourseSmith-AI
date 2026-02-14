@@ -15,10 +15,13 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 # Import HWID and license utilities from utils module
-from utils import get_hwid, parse_hwids_array, check_license, add_context_menu
+from utils import get_hwid, parse_hwids_array, check_license, add_context_menu, patch_ctk_scrollbar
 
 # Import session manager for setting session data
 from session_manager import set_session, get_user_email, get_license_key
+
+# Apply scrollbar patch to prevent RecursionError in CTkScrollableFrame
+patch_ctk_scrollbar()
 
 
 # Suppress stdout/stderr for --noconsole mode with log file fallback

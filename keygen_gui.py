@@ -33,13 +33,16 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from utils import resource_path
+from utils import resource_path, patch_ctk_scrollbar
 from license_guard import generate_key, get_hwid
 from database_manager import (
     create_license, get_license_by_key, search_licenses,
     revoke_license, reactivate_license, list_all_licenses,
     get_license_stats, is_license_expired
 )
+
+# Apply scrollbar patch to prevent RecursionError in CTkScrollableFrame
+patch_ctk_scrollbar()
 
 
 class SplashScreen(ctk.CTkToplevel):
