@@ -177,11 +177,13 @@ class App(ctk.CTk):
     
     # Class-level constants for export format configuration
     DEFAULT_EXPORT_FORMAT = "PDF"
-    FORMAT_ICONS = {"PDF": "📄", "DOCX": "📝", "HTML": "🌐"}
+    FORMAT_ICONS = {"PDF": "📄", "DOCX": "📝", "HTML": "🌐", "EPUB": "📚", "Markdown": "📋"}
     FORMAT_CONFIG = {
         "PDF": {"ext": ".pdf", "filter": [("PDF Files", "*.pdf")]},
         "DOCX": {"ext": ".docx", "filter": [("Word Documents", "*.docx")]},
         "HTML": {"ext": ".html", "filter": [("HTML Files", "*.html")]},
+        "EPUB": {"ext": ".epub", "filter": [("EPUB Files", "*.epub")]},
+        "Markdown": {"ext": ".md", "filter": [("Markdown Files", "*.md")]},
     }
     
     # Button color constants for format selector - selected vs unselected states
@@ -193,7 +195,7 @@ class App(ctk.CTk):
         Get the icon for a given export format.
         
         Args:
-            format_name: The export format (PDF, DOCX, HTML).
+            format_name: The export format (PDF, DOCX, HTML, EPUB, Markdown).
             
         Returns:
             str: The emoji icon for the format, or default format icon if not found.
@@ -1793,16 +1795,20 @@ class App(ctk.CTk):
         self.export_format_var = ctk.StringVar(value=self.DEFAULT_EXPORT_FORMAT)
         
         # Create format buttons with visual feedback using class constants
+        # Arrange in 2 rows: first 3 on row 0, next 2 on row 1
         for idx, (format_name, config) in enumerate(self.FORMAT_CONFIG.items()):
             icon = self.FORMAT_ICONS.get(format_name, "📄")
             is_default = format_name == self.DEFAULT_EXPORT_FORMAT
             colors = self.FORMAT_BTN_SELECTED if is_default else self.FORMAT_BTN_UNSELECTED
             
+            row = 0 if idx < 3 else 1
+            col = idx if idx < 3 else idx - 3
+            
             btn = ctk.CTkButton(
                 self.format_buttons_frame,
                 text=f"{icon} {format_name}",
                 font=ctk.CTkFont(size=13, weight="bold" if is_default else "normal"),
-                width=100,
+                width=90,
                 height=40,
                 corner_radius=8,
                 fg_color=colors["fg"],
@@ -1811,7 +1817,7 @@ class App(ctk.CTk):
                 border_color=colors["border"],
                 command=lambda f=format_name: self._select_format(f),
             )
-            btn.grid(row=0, column=idx, padx=(0, 10), pady=5)
+            btn.grid(row=row, column=col, padx=(0, 10), pady=5)
             self.format_buttons[format_name] = btn
 
         # Status label showing current export readiness
@@ -2056,6 +2062,12 @@ class App(ctk.CTk):
                 elif selected_format == "HTML":
                     # Use HTML exporter for web format
                     result = self._build_html_internal(filepath)
+                elif selected_format == "EPUB":
+                    # Use EPUB exporter for e-book format
+                    result = self._build_epub_internal(filepath)
+                elif selected_format == "Markdown":
+                    # Use Markdown exporter for text format
+                    result = self._build_markdown_internal(filepath)
                 else:
                     raise ValueError(f"Unsupported format: {selected_format}")
                 
@@ -2157,6 +2169,54 @@ class App(ctk.CTk):
         result = exporter.export()
         
         self._log_export(f"[SUCCESS] HTML document exported successfully")
+        return result
+
+    def _build_epub_internal(self, filepath):
+        """
+        Internal method to build EPUB document using EPUBExporter.
+        
+        Args:
+            filepath: Output file path for the EPUB.
+            
+        Returns:
+            str: Path to the generated EPUB file.
+        """
+        from epub_exporter import EPUBExporter
+        
+        # Create EPUB exporter with the project and output path
+        exporter = EPUBExporter(self.project, filepath)
+        
+        # Update progress during export
+        self.after(0, lambda: self.export_progress_bar.set(0.5))
+        
+        # Export to EPUB format
+        result = exporter.export()
+        
+        self._log_export(f"[SUCCESS] EPUB document exported successfully")
+        return result
+
+    def _build_markdown_internal(self, filepath):
+        """
+        Internal method to build Markdown document using MarkdownExporter.
+        
+        Args:
+            filepath: Output file path for the Markdown.
+            
+        Returns:
+            str: Path to the generated Markdown file.
+        """
+        from markdown_exporter import MarkdownExporter
+        
+        # Create Markdown exporter with the project and output path
+        exporter = MarkdownExporter(self.project, filepath)
+        
+        # Update progress during export
+        self.after(0, lambda: self.export_progress_bar.set(0.5))
+        
+        # Export to Markdown format
+        result = exporter.export()
+        
+        self._log_export(f"[SUCCESS] Markdown document exported successfully")
         return result
 
     def _on_export_complete(self, filepath, format_name):
