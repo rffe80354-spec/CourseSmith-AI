@@ -39,19 +39,30 @@ def patch_ctk_scrollbar():
         return
     
     try:
-        import customtkinter as ctk
-        original_draw = ctk.windows.widgets.ctk_scrollbar.CTkScrollbar._draw
+        from customtkinter.windows.widgets.ctk_scrollbar import CTkScrollbar
+        original_draw = CTkScrollbar._draw
         
         def patched_draw(self, *args, **kwargs):
+            # Guard against recursion using instance attribute
+            if getattr(self, '_draw_in_progress', False):
+                return  # Skip if already drawing to prevent infinite recursion
+            
+            self._draw_in_progress = True
             try:
                 original_draw(self, *args, **kwargs)
             except Exception:
-                pass
+                pass  # Silently handle rendering errors to prevent UI crashes
+            finally:
+                self._draw_in_progress = False
         
-        ctk.windows.widgets.ctk_scrollbar.CTkScrollbar._draw = patched_draw
+        CTkScrollbar._draw = patched_draw
         _SCROLLBAR_PATCHED = True
+    except ImportError:
+        # CustomTkinter not available - skip patch
+        pass
     except Exception as e:
-        print(f"Failed to patch scrollbar: {e}")
+        _logger = logging.getLogger(__name__)
+        _logger.warning(f"Failed to patch scrollbar: {e}")
 
 
 # Set up module logger
