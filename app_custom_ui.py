@@ -347,16 +347,12 @@ class CustomApp(ctk.CTk):
         except ImportError:
             self.product_templates = []
         
-        # DRM: Load license and check for valid session before creating UI
-        session_token, email, tier, expires_at, _ = load_license()
+        # DRM: Always show login screen (force user to click Login each time)
+        # but auto-fill saved credentials for convenience
+        self._show_login_screen()
         
-        if session_token and email and tier:
-            # Valid session found - set session and create UI
-            set_session(session_token, email, tier, expires_at)
-            self._create_ui()
-        else:
-            # No valid session - show login screen
-            self._show_login_screen()
+        # Setup keyboard shortcuts for EN/RU layouts
+        self._setup_keyboard_shortcuts()
     
     def _show_login_screen(self):
         """Show the login screen for license validation."""
@@ -454,6 +450,13 @@ class CustomApp(ctk.CTk):
         )
         self.login_key_entry.pack(pady=(0, 25))
         
+        # Auto-fill saved credentials for convenience
+        _, saved_email, _, _, saved_key = load_license()
+        if saved_email:
+            self.login_email_entry.insert(0, saved_email)
+        if saved_key:
+            self.login_key_entry.insert(0, saved_key)
+        
         # Login button with premium styling
         self.login_button = PremiumButton(
             login_inner,
@@ -512,6 +515,58 @@ class CustomApp(ctk.CTk):
             # Failed validation
             error_msg = result.get('message', self.lang.get('login_error')) if result else self.lang.get('login_error')
             self.login_error_label.configure(text=error_msg)
+    
+    def _setup_keyboard_shortcuts(self):
+        """Fix Ctrl+A, C, V, X for both English and Russian keyboard layouts."""
+        def select_all(event):
+            widget = self.focus_get()
+            if isinstance(widget, (ctk.CTkEntry, ctk.CTkTextbox)):
+                if hasattr(widget, 'select_range'):  # For Entry
+                    widget.select_range(0, 'end')
+                    widget.icursor('end')
+                elif hasattr(widget, 'tag_add'):  # For Textbox
+                    widget.tag_add('sel', '1.0', 'end')
+            return "break"
+        
+        def copy_text(event):
+            widget = self.focus_get()
+            if widget:
+                widget.event_generate("<<Copy>>")
+            return "break"
+        
+        def paste_text(event):
+            widget = self.focus_get()
+            if widget:
+                widget.event_generate("<<Paste>>")
+            return "break"
+        
+        def cut_text(event):
+            widget = self.focus_get()
+            if widget:
+                widget.event_generate("<<Cut>>")
+            return "break"
+        
+        # Bind for both English (a, c, v, x) and Russian Cyrillic (ф, с, м, ч) layouts
+        # English lowercase and uppercase
+        self.bind_all("<Control-a>", select_all)
+        self.bind_all("<Control-A>", select_all)
+        self.bind_all("<Control-c>", copy_text)
+        self.bind_all("<Control-C>", copy_text)
+        self.bind_all("<Control-v>", paste_text)
+        self.bind_all("<Control-V>", paste_text)
+        self.bind_all("<Control-x>", cut_text)
+        self.bind_all("<Control-X>", cut_text)
+        
+        # Russian Cyrillic equivalents (same key positions on keyboard)
+        # ф = a, с = c, м = v, ч = x
+        self.bind_all("<Control-Cyrillic_ef>", select_all)  # ф (Ctrl+A position)
+        self.bind_all("<Control-Cyrillic_EF>", select_all)
+        self.bind_all("<Control-Cyrillic_es>", copy_text)   # с (Ctrl+C position)
+        self.bind_all("<Control-Cyrillic_ES>", copy_text)
+        self.bind_all("<Control-Cyrillic_em>", paste_text)  # м (Ctrl+V position)
+        self.bind_all("<Control-Cyrillic_EM>", paste_text)
+        self.bind_all("<Control-Cyrillic_che>", cut_text)   # ч (Ctrl+X position)
+        self.bind_all("<Control-Cyrillic_CHE>", cut_text)
         
     def _create_ui(self):
         """Create the main UI layout."""
