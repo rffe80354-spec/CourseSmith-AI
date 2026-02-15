@@ -1259,6 +1259,7 @@ class CustomApp(ctk.CTk):
         stats_frame.pack(fill='x', pady=(0, 25))
         
         # Get user statistics from database
+        # Note: get_user_statistics() internally ensures DB is initialized
         try:
             from user_stats import get_user_statistics
             user_stats = get_user_statistics(get_license_key())
@@ -1372,6 +1373,7 @@ class CustomApp(ctk.CTk):
         history_title.pack(anchor='w', pady=(0, 15))
         
         # Get generation history
+        # Note: get_generation_history() internally ensures DB is initialized
         try:
             from user_stats import get_generation_history
             history = get_generation_history(limit=10, license_key=get_license_key())

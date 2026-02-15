@@ -36,16 +36,18 @@ def get_stats_db_connection():
     Context manager for user stats database connections.
     Ensures proper connection handling and automatic commits/rollbacks.
     
+    Note: SQLite handles concurrent access internally. The _db_lock is only
+    used for initialization flag protection, not for connection management.
+    
     Yields:
         sqlite3.Connection: Database connection object.
     """
     conn = None
     try:
-        with _db_lock:
-            conn = sqlite3.connect(get_stats_db_path())
-            conn.row_factory = sqlite3.Row  # Enable column access by name
-            yield conn
-            conn.commit()
+        conn = sqlite3.connect(get_stats_db_path())
+        conn.row_factory = sqlite3.Row  # Enable column access by name
+        yield conn
+        conn.commit()
     except Exception as e:
         if conn:
             conn.rollback()
@@ -58,8 +60,11 @@ def get_stats_db_connection():
 def initialize_stats_database():
     """
     Initialize the user statistics database with required tables.
-    Creates the generation_history table if it doesn't exist.
+    Creates the generation_history and user_settings tables if they don't exist.
     Safe to call multiple times - won't overwrite existing data.
+    
+    This function must be called before any SELECT operations on these tables
+    to prevent error 42P01 (relation does not exist).
     """
     with get_stats_db_connection() as conn:
         cursor = conn.cursor()
@@ -84,6 +89,11 @@ def initialize_stats_database():
             CREATE INDEX IF NOT EXISTS idx_created_at ON generation_history(created_at DESC)
         """)
         
+        # Create index on license_key for faster filtering
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_license_key ON generation_history(license_key)
+        """)
+        
         # Create user_settings table for storing preferences
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_settings (
@@ -91,6 +101,40 @@ def initialize_stats_database():
                 value TEXT
             )
         """)
+
+
+# Flag to track if database has been initialized (protected by _db_lock)
+_db_initialized = False
+
+
+def ensure_db_initialized():
+    """
+    Ensure the database is initialized before any operations.
+    This function is idempotent and thread-safe - safe to call multiple times
+    from multiple threads.
+    
+    Returns:
+        bool: True if database is ready, False on initialization failure.
+    """
+    global _db_initialized
+    
+    # Fast path: already initialized (read is atomic for simple bool in CPython)
+    if _db_initialized:
+        return True
+    
+    # Slow path: need to initialize (use lock for thread safety)
+    with _db_lock:
+        # Double-check after acquiring lock
+        if _db_initialized:
+            return True
+        
+        try:
+            initialize_stats_database()
+            _db_initialized = True
+            return True
+        except Exception as e:
+            print(f"Error initializing user stats database: {e}")
+            return False
 
 
 def record_generation(
@@ -117,6 +161,9 @@ def record_generation(
     Returns:
         int: The ID of the newly created record.
     """
+    # Ensure database tables exist before INSERT
+    ensure_db_initialized()
+    
     created_at = datetime.now().isoformat()
     
     with get_stats_db_connection() as conn:
@@ -141,6 +188,9 @@ def get_generation_history(limit: int = 10, license_key: Optional[str] = None) -
     Returns:
         list: List of generation history records as dictionaries.
     """
+    # Ensure database tables exist before SELECT
+    ensure_db_initialized()
+    
     with get_stats_db_connection() as conn:
         cursor = conn.cursor()
         
@@ -173,6 +223,9 @@ def get_user_statistics(license_key: Optional[str] = None) -> Dict[str, Any]:
         dict: Statistics including total_products, total_credits_spent, 
               last_activity, products_this_month.
     """
+    # Ensure database tables exist before SELECT
+    ensure_db_initialized()
+    
     with get_stats_db_connection() as conn:
         cursor = conn.cursor()
         
@@ -237,6 +290,9 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
         str: Setting value or default.
     """
     try:
+        # Ensure database tables exist before SELECT
+        ensure_db_initialized()
+        
         with get_stats_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM user_settings WHERE key = ?", (key,))
@@ -258,6 +314,9 @@ def set_setting(key: str, value: str) -> bool:
         bool: True if successful.
     """
     try:
+        # Ensure database tables exist before INSERT/UPDATE
+        ensure_db_initialized()
+        
         with get_stats_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
