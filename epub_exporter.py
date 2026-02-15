@@ -408,11 +408,13 @@ em {
         # First escape HTML, then process markdown
         text = self._escape_html(text)
         
-        # Bold: **text**
-        text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+        # Bold: **text** - must be processed before italic
+        # Use non-greedy matching to handle nested content
+        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
         
-        # Italic: *text*
-        text = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', text)
+        # Italic: *text* - use negative lookbehind/ahead to avoid matching bold asterisks
+        # Match single asterisks that are not part of bold markers
+        text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
         
         return text
     
