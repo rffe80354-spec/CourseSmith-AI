@@ -1155,10 +1155,16 @@ class CustomApp(ctk.CTk):
             )
             cost_label.pack(side='right')
         
-        # Debug: Display active session credentials
+        # Debug: Display active session credentials (masked for security)
+        email = get_user_email() or ''
+        license_key = get_license_key() or ''
+        # Mask email: show first 3 chars and domain
+        masked_email = email[:3] + '***' + email[email.find('@'):] if email and '@' in email else email
+        # Mask license key: show only last 4 characters
+        masked_key = '***' + license_key[-4:] if license_key and len(license_key) >= 4 else license_key
         session_debug_label = ctk.CTkLabel(
             content,
-            text=f"Active Session -> Email: '{get_user_email()}' | Key: '{get_license_key()}'",
+            text=f"Active Session -> Email: '{masked_email}' | Key: '{masked_key}'",
             font=ctk.CTkFont(size=11),
             text_color=COLORS['text_secondary']
         )
