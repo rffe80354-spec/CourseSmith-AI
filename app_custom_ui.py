@@ -1096,12 +1096,21 @@ class CustomApp(ctk.CTk):
             print(f"⚠️  Unknown format '{format_type}', falling back to PDF")
             return self._build_pdf()
     
-    def _build_pdf(self) -> str:
-        """Generate a PDF file from the current project."""
-        import os
+    def _get_downloads_dir(self) -> str:
+        """
+        Get the downloads directory path and ensure it exists.
         
+        Returns:
+            str: Path to the downloads directory
+        """
+        import os
         downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
         os.makedirs(downloads_dir, exist_ok=True)
+        return downloads_dir
+    
+    def _build_pdf(self) -> str:
+        """Generate a PDF file from the current project."""
+        self._get_downloads_dir()  # Ensure downloads directory exists
         
         # Create course data structure from project
         course_data = self._create_course_data_from_project()
@@ -1111,10 +1120,7 @@ class CustomApp(ctk.CTk):
     
     def _build_docx(self) -> str:
         """Generate a DOCX file from the current project."""
-        import os
-        
-        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-        os.makedirs(downloads_dir, exist_ok=True)
+        downloads_dir = self._get_downloads_dir()
         
         exporter = DOCXExporter(self.project)
         output_path = exporter.generate_output_path(downloads_dir)
@@ -1124,10 +1130,7 @@ class CustomApp(ctk.CTk):
     
     def _build_html(self) -> str:
         """Generate an HTML file from the current project."""
-        import os
-        
-        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-        os.makedirs(downloads_dir, exist_ok=True)
+        downloads_dir = self._get_downloads_dir()
         
         exporter = HTMLExporter(self.project)
         output_path = exporter.generate_output_path(downloads_dir)
@@ -1137,10 +1140,7 @@ class CustomApp(ctk.CTk):
     
     def _build_epub(self) -> str:
         """Generate an EPUB file from the current project."""
-        import os
-        
-        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-        os.makedirs(downloads_dir, exist_ok=True)
+        downloads_dir = self._get_downloads_dir()
         
         exporter = EPUBExporter(self.project)
         output_path = exporter.generate_output_path(downloads_dir)
@@ -1150,10 +1150,7 @@ class CustomApp(ctk.CTk):
     
     def _build_markdown(self) -> str:
         """Generate a Markdown file from the current project."""
-        import os
-        
-        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-        os.makedirs(downloads_dir, exist_ok=True)
+        downloads_dir = self._get_downloads_dir()
         
         exporter = MarkdownExporter(self.project)
         output_path = exporter.generate_output_path(downloads_dir)
@@ -1299,7 +1296,6 @@ class CustomApp(ctk.CTk):
         
         for fmt in formats:
             try:
-                print(f"📄 Rendering {fmt.upper()} document...")
                 output_path = self._generate_document_by_format(fmt)
                 exported_files.append((fmt.upper(), output_path))
                 print(f"✅ {fmt.upper()} exported: {output_path}")
