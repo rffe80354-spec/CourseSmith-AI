@@ -1316,8 +1316,9 @@ class CustomApp(ctk.CTk):
                     chapter_num = i + 1
                     
                     # Update progress label with current chapter
-                    self.after(0, lambda cn=chapter_num, ct=chapter_title: self.progress_title.configure(
-                        text=f"{self.lang.get('generating')} ({cn}/{actual_chapters}: {ct[:30]}...)"
+                    truncated_title = (chapter_title[:30] + '...') if len(chapter_title) > 30 else chapter_title
+                    self.after(0, lambda cn=chapter_num, tt=truncated_title: self.progress_title.configure(
+                        text=f"{self.lang.get('generating')} ({cn}/{actual_chapters}: {tt})"
                     ))
                     
                     chapter_content = None
@@ -1391,7 +1392,7 @@ class CustomApp(ctk.CTk):
             for child in btn_frame.winfo_children():
                 try:
                     child.configure(state='normal')
-                except:
+                except Exception:
                     pass
         
         # Re-enable format buttons
