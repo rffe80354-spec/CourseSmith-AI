@@ -12,12 +12,16 @@ from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
 
-from utils import resource_path, get_data_dir, patch_ctk_scrollbar
+from utils import resource_path, get_data_dir, patch_ctk_scrollbar, generate_pdf
 from license_guard import validate_license, load_license, save_license, remove_license
 from session_manager import set_session, is_active, get_tier, clear_session
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator
 from pdf_engine import PDFBuilder
+from docx_exporter import DOCXExporter
+from html_exporter import HTMLExporter
+from epub_exporter import EPUBExporter
+from markdown_exporter import MarkdownExporter
 
 # Apply scrollbar patch to prevent RecursionError in CTkScrollableFrame
 patch_ctk_scrollbar()
@@ -1029,8 +1033,8 @@ class CustomApp(ctk.CTk):
     
     def _update_format_buttons(self):
         """Update format button visual states based on selection."""
-        format_icons = {'pdf': '📄', 'docx': '📝', 'html': '🌐'}
-        format_names = {'pdf': 'PDF', 'docx': 'DOCX', 'html': 'HTML'}
+        format_icons = {'pdf': '📄', 'docx': '📝', 'html': '🌐', 'epub': '📚', 'markdown': '📋'}
+        format_names = {'pdf': 'PDF', 'docx': 'DOCX', 'html': 'HTML', 'epub': 'EPUB', 'markdown': 'Markdown'}
         
         for fmt_id, btn in self.format_buttons.items():
             is_selected = self.selected_export_formats.get(fmt_id, False)
@@ -1062,6 +1066,120 @@ class CustomApp(ctk.CTk):
     def _get_selected_formats(self):
         """Get list of selected export format IDs."""
         return [fmt_id for fmt_id, selected in self.selected_export_formats.items() if selected]
+    
+    def _generate_document_by_format(self, format_type: str) -> str:
+        """
+        Generate a document in the specified format from the current project data.
+        Routes to the appropriate exporter based on format_type.
+        
+        Args:
+            format_type: The export format (pdf, docx, html, epub, markdown)
+            
+        Returns:
+            str: Path to the generated document file
+        """
+        format_type_upper = format_type.upper()
+        print(f"📄 Rendering {format_type_upper} document...")
+        
+        if format_type_upper == "PDF":
+            return self._build_pdf()
+        elif format_type_upper == "DOCX":
+            return self._build_docx()
+        elif format_type_upper == "HTML":
+            return self._build_html()
+        elif format_type_upper == "EPUB":
+            return self._build_epub()
+        elif format_type_upper == "MARKDOWN":
+            return self._build_markdown()
+        else:
+            # Fallback to PDF for unknown formats
+            print(f"⚠️  Unknown format '{format_type}', falling back to PDF")
+            return self._build_pdf()
+    
+    def _build_pdf(self) -> str:
+        """Generate a PDF file from the current project."""
+        import os
+        
+        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        # Create course data structure from project
+        course_data = self._create_course_data_from_project()
+        
+        # Use the shared generate_pdf utility
+        return generate_pdf(course_data, page_count=self.total_chapters, media_files=None)
+    
+    def _build_docx(self) -> str:
+        """Generate a DOCX file from the current project."""
+        import os
+        
+        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        exporter = DOCXExporter(self.project)
+        output_path = exporter.generate_output_path(downloads_dir)
+        exporter.output_path = output_path
+        
+        return exporter.export()
+    
+    def _build_html(self) -> str:
+        """Generate an HTML file from the current project."""
+        import os
+        
+        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        exporter = HTMLExporter(self.project)
+        output_path = exporter.generate_output_path(downloads_dir)
+        exporter.output_path = output_path
+        
+        return exporter.export()
+    
+    def _build_epub(self) -> str:
+        """Generate an EPUB file from the current project."""
+        import os
+        
+        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        exporter = EPUBExporter(self.project)
+        output_path = exporter.generate_output_path(downloads_dir)
+        exporter.output_path = output_path
+        
+        return exporter.export()
+    
+    def _build_markdown(self) -> str:
+        """Generate a Markdown file from the current project."""
+        import os
+        
+        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        exporter = MarkdownExporter(self.project)
+        output_path = exporter.generate_output_path(downloads_dir)
+        exporter.output_path = output_path
+        
+        return exporter.export()
+    
+    def _create_course_data_from_project(self) -> dict:
+        """
+        Create course data structure from the current project for PDF generation.
+        
+        Returns:
+            dict: Course data with 'title' and 'chapters' list
+        """
+        chapters = []
+        for chapter_title in self.project.outline:
+            content = self.project.chapters_content.get(chapter_title, '')
+            chapters.append({
+                'title': chapter_title,
+                'content': content
+            })
+        
+        return {
+            'title': self.project.topic,
+            'chapters': chapters
+        }
     
     def _toggle_language(self):
         """Toggle between EN and RU languages."""
@@ -1160,7 +1278,7 @@ class CustomApp(ctk.CTk):
         )
     
     def _generation_complete(self):
-        """Handle generation completion."""
+        """Handle generation completion and export documents in selected formats."""
         self.is_generating = False
         
         # Stop animations
@@ -1168,6 +1286,27 @@ class CustomApp(ctk.CTk):
         
         # Update UI
         self.progress_title.configure(text=self.lang.get('complete'))
+        
+        # Get selected formats
+        formats = self._get_selected_formats()
+        if not formats:
+            formats = ['pdf']
+        formats_str = ", ".join([f.upper() for f in formats])
+        
+        # Export documents in selected formats
+        exported_files = []
+        export_errors = []
+        
+        for fmt in formats:
+            try:
+                print(f"📄 Rendering {fmt.upper()} document...")
+                output_path = self._generate_document_by_format(fmt)
+                exported_files.append((fmt.upper(), output_path))
+                print(f"✅ {fmt.upper()} exported: {output_path}")
+            except Exception as e:
+                error_msg = f"Failed to export {fmt.upper()}: {str(e)}"
+                print(f"❌ {error_msg}")
+                export_errors.append(error_msg)
         
         # Re-enable controls
         self.topic_entry.configure(state='normal')
@@ -1193,21 +1332,23 @@ class CustomApp(ctk.CTk):
                 product_name = template['name']
                 break
         
-        # Get selected formats
-        formats = self._get_selected_formats()
-        formats_str = ", ".join([f.upper() for f in formats])
-        
         # Log success with emoji prefix and context
         topic = self.topic_entry.get().strip() if hasattr(self, 'topic_entry') else "Unknown"
         print(f"✅ Generation complete: Topic='{topic}', Chapters={self.total_chapters}, Formats={formats_str}")
         
+        # Build success message
+        if exported_files:
+            files_msg = "\n".join([f"  • {fmt}: {path}" for fmt, path in exported_files])
+            success_msg = f"{product_name} generated successfully!\n\nSections: {self.total_chapters}\nExported files:\n{files_msg}"
+        else:
+            success_msg = f"{product_name} content generated but export failed.\n\nExport formats: {formats_str}"
+        
+        # Add any errors to the message
+        if export_errors:
+            success_msg += "\n\nExport errors:\n" + "\n".join([f"  • {err}" for err in export_errors])
+        
         # Show success message
-        messagebox.showinfo(
-            "Success",
-            f"{product_name} generated successfully!\n\n"
-            f"Sections: {self.total_chapters}\n"
-            f"Export formats: {formats_str}"
-        )
+        messagebox.showinfo("Success", success_msg)
 
 
 def main():
