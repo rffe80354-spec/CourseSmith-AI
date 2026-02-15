@@ -5,20 +5,24 @@ SECURITY: Requires valid session token to function (anti-tamper protection).
 
 API Key Retrieval:
     The OpenAI API key is retrieved from a Supabase Edge Function
-    at each generation cycle for enhanced security.
+    with TTL-based caching for security and performance.
 """
 
 import os
 import re
 import threading
 import tempfile
+import time
 import requests
 from openai import OpenAI
 
 from session_manager import is_active, SecurityError, get_user_email, get_license_key
 
-# Supabase Edge Function URL for secure API key retrieval
-SUPABASE_EDGE_FUNCTION_URL = "https://spfwfyjpexktgnusgyib.functions.supabase.co/get_openai_key"
+# Supabase Edge Function URL for secure API key retrieval (configurable via env var)
+SUPABASE_EDGE_FUNCTION_URL = os.getenv(
+    "SUPABASE_EDGE_FUNCTION_URL",
+    "https://spfwfyjpexktgnusgyib.functions.supabase.co/get_openai_key"
+)
 
 # Supabase configuration for credit checking and Edge Function authorization
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://spfwfyjpexktgnusgyib.supabase.co")
@@ -28,14 +32,30 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_tmwenU0VyOChNWKG90X_bw_
 _supabase_client = None
 _supabase_lock = threading.Lock()
 
-# Thread-safe cache for OpenAI API key
+# Thread-safe cache for OpenAI API key with TTL
 _openai_api_key_cache = None
+_openai_api_key_cache_time = None
 _openai_api_key_lock = threading.Lock()
+
+# Cache TTL in seconds (10 minutes for balance between security and performance)
+API_KEY_CACHE_TTL = 600
 
 
 class KeyRetrievalError(Exception):
     """Exception raised when API key retrieval from Supabase Edge Function fails."""
     pass
+
+
+def _is_cache_valid() -> bool:
+    """
+    Check if the cached API key is still valid based on TTL.
+    
+    Returns:
+        bool: True if cache is valid, False if expired or empty.
+    """
+    if _openai_api_key_cache is None or _openai_api_key_cache_time is None:
+        return False
+    return (time.time() - _openai_api_key_cache_time) < API_KEY_CACHE_TTL
 
 
 def fetch_openai_api_key() -> str:
@@ -44,7 +64,7 @@ def fetch_openai_api_key() -> str:
     
     This function makes a GET request to the Supabase Edge Function
     to retrieve the OpenAI API key securely. The key is cached
-    for the duration of the session.
+    with a TTL (time-to-live) for security and performance.
     
     Returns:
         str: The OpenAI API key.
@@ -52,11 +72,11 @@ def fetch_openai_api_key() -> str:
     Raises:
         KeyRetrievalError: If the key cannot be retrieved from the Edge Function.
     """
-    global _openai_api_key_cache
+    global _openai_api_key_cache, _openai_api_key_cache_time
     
     with _openai_api_key_lock:
-        # Return cached key if available
-        if _openai_api_key_cache is not None:
+        # Return cached key if valid (within TTL)
+        if _is_cache_valid():
             return _openai_api_key_cache
         
         try:
@@ -69,7 +89,7 @@ def fetch_openai_api_key() -> str:
             response = requests.get(
                 SUPABASE_EDGE_FUNCTION_URL,
                 headers=headers,
-                timeout=30
+                timeout=10
             )
             
             # Check for HTTP errors
@@ -95,14 +115,15 @@ def fetch_openai_api_key() -> str:
                     "Ключ API не найден в ответе сервера."
                 )
             
-            # Validate key format
+            # Validate key format (OpenAI keys start with 'sk-')
             if not api_key.startswith("sk-"):
                 raise KeyRetrievalError(
                     "Получен некорректный формат ключа API."
                 )
             
-            # Cache the key
+            # Cache the key with timestamp
             _openai_api_key_cache = api_key
+            _openai_api_key_cache_time = time.time()
             return api_key
             
         except requests.exceptions.Timeout:
@@ -130,9 +151,10 @@ def reset_api_key_cache():
     Call this if you need to force a fresh key retrieval,
     for example after a key rotation.
     """
-    global _openai_api_key_cache
+    global _openai_api_key_cache, _openai_api_key_cache_time
     with _openai_api_key_lock:
         _openai_api_key_cache = None
+        _openai_api_key_cache_time = None
 
 
 def _get_supabase_client():
