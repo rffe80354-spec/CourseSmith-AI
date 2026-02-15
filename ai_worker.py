@@ -205,10 +205,13 @@ def check_remaining_credits() -> dict:
         response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).execute()
         
         if not response.data or len(response.data) == 0:
+            # Mask sensitive values for security
+            masked_key = '***' + license_key[-4:] if license_key and len(license_key) >= 4 else license_key
+            masked_email = email[:3] + '***' + email[email.find('@'):] if email and '@' in email else email
             return {
                 'has_credits': False,
                 'credits': 0,
-                'message': 'License not found in database.'
+                'message': f"License not found in DB.\nSearched Key: '{masked_key}'\nSearched Email: '{masked_email}'"
             }
         
         credits = response.data[0].get('credits', 0)

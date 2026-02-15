@@ -14,7 +14,7 @@ from tkinter import messagebox, filedialog
 
 from utils import resource_path, get_data_dir, patch_ctk_scrollbar, generate_pdf
 from license_guard import validate_license, load_license, save_license, remove_license
-from session_manager import set_session, is_active, get_tier, clear_session
+from session_manager import set_session, is_active, get_tier, clear_session, get_user_email, get_license_key
 from project_manager import CourseProject
 from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator
 from pdf_engine import PDFBuilder
@@ -1154,6 +1154,34 @@ class CustomApp(ctk.CTk):
                 text_color=COLORS['accent']
             )
             cost_label.pack(side='right')
+        
+        # Debug: Display active session credentials (masked for security)
+        email = get_user_email() or ''
+        license_key = get_license_key() or ''
+        # Mask email: show first 3 chars and domain
+        masked_email = email[:3] + '***' + email[email.find('@'):] if email and '@' in email else email
+        # Mask license key: show only last 4 characters
+        masked_key = '***' + license_key[-4:] if license_key and len(license_key) >= 4 else license_key
+        session_debug_label = ctk.CTkLabel(
+            content,
+            text=f"Active Session -> Email: '{masked_email}' | Key: '{masked_key}'",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_secondary']
+        )
+        session_debug_label.pack(anchor='w', pady=(20, 10))
+        
+        # Logout / Reset Session button
+        logout_btn = ctk.CTkButton(
+            content,
+            text="Logout / Reset Session",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=COLORS['error'],
+            hover_color='#D9534F',
+            corner_radius=10,
+            height=40,
+            command=self._logout
+        )
+        logout_btn.pack(anchor='w', pady=(0, 20))
     
     def _show_settings_page(self):
         """Show the Settings page."""
@@ -1203,6 +1231,22 @@ class CustomApp(ctk.CTk):
             justify="left"
         )
         info_text.pack(anchor='w', pady=(0, 20))
+    
+    def _logout(self):
+        """Logout and reset the session, clearing all stored credentials."""
+        # Clear the session manager
+        clear_session()
+        
+        # Physically delete the token file
+        if os.path.exists('.session_token'):
+            os.remove('.session_token')
+        
+        # Destroy all widgets
+        for w in self.winfo_children():
+            w.destroy()
+        
+        # Show login screen
+        self._show_login_screen()
     
     def _select_product_type(self, product_type_id):
         """Handle product type selection."""
