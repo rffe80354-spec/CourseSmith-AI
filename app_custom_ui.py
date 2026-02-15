@@ -1246,23 +1246,165 @@ class CustomApp(ctk.CTk):
             text=f"{self.lang.get('chapters_label')}: 0/{self.total_chapters}"
         )
         
-        # Simulate generation (replace with actual generation)
-        self._simulate_generation()
+        # Start real AI generation with workers
+        self._run_real_generation()
     
-    def _simulate_generation(self):
-        """Simulate product generation with progress updates."""
+    def _run_real_generation(self):
+        """
+        Run real AI-powered product generation using OutlineGenerator and ChapterWriter.
+        
+        This method:
+        1. Initializes OutlineGenerator with the selected product template
+        2. Loops through the generated outline and calls ChapterWriter for each chapter
+        3. Updates UI progress bar and labels in real-time (thread-safe via self.after)
+        4. Calls _generation_complete() only after all AI operations are successful
+        """
         def generate():
-            for i in range(self.total_chapters):
-                time.sleep(1.5)  # Simulate chapter generation time
+            try:
+                topic = self.project.topic
+                audience = self.project.audience
+                product_type = self.selected_product_type
                 
-                # Update progress on main thread
-                self.after(0, self._update_progress, i + 1)
-            
-            # Complete
-            self.after(0, self._generation_complete)
+                # Step 1: Generate outline using OutlineGenerator
+                self.after(0, lambda: self.progress_title.configure(
+                    text=self.lang.get('generating') + " (Creating outline...)"
+                ))
+                
+                outline_result = []
+                outline_error = None
+                outline_done = threading.Event()
+                
+                def on_outline_complete(chapters):
+                    nonlocal outline_result
+                    outline_result = chapters
+                    outline_done.set()
+                
+                def on_outline_error(error):
+                    nonlocal outline_error
+                    outline_error = error
+                    outline_done.set()
+                
+                outline_gen = OutlineGenerator(
+                    topic=topic,
+                    audience=audience,
+                    callback=on_outline_complete,
+                    error_callback=on_outline_error,
+                    product_type=product_type
+                )
+                outline_gen.start()
+                
+                # Wait for outline generation to complete
+                outline_done.wait()
+                
+                if outline_error:
+                    self.after(0, lambda e=outline_error: self._handle_generation_error(e))
+                    return
+                
+                if not outline_result:
+                    self.after(0, lambda: self._handle_generation_error("Failed to generate outline"))
+                    return
+                
+                # Update project outline
+                self.project.set_outline(outline_result)
+                
+                # Adjust total_chapters to match actual outline
+                actual_chapters = len(outline_result)
+                self.after(0, lambda: self._update_total_chapters(actual_chapters))
+                
+                # Step 2: Generate each chapter using ChapterWriter
+                for i, chapter_title in enumerate(outline_result):
+                    chapter_num = i + 1
+                    
+                    # Update progress label with current chapter
+                    truncated_title = (chapter_title[:30] + '...') if len(chapter_title) > 30 else chapter_title
+                    self.after(0, lambda cn=chapter_num, tt=truncated_title: self.progress_title.configure(
+                        text=f"{self.lang.get('generating')} ({cn}/{actual_chapters}: {tt})"
+                    ))
+                    
+                    chapter_content = None
+                    chapter_error = None
+                    chapter_done = threading.Event()
+                    
+                    def on_chapter_complete(title, content):
+                        nonlocal chapter_content
+                        chapter_content = content
+                        chapter_done.set()
+                    
+                    def on_chapter_error(error):
+                        nonlocal chapter_error
+                        chapter_error = error
+                        chapter_done.set()
+                    
+                    chapter_writer = ChapterWriter(
+                        topic=topic,
+                        chapter_title=chapter_title,
+                        chapter_num=chapter_num,
+                        callback=on_chapter_complete,
+                        error_callback=on_chapter_error,
+                        product_type=product_type
+                    )
+                    chapter_writer.start()
+                    
+                    # Wait for chapter generation to complete
+                    chapter_done.wait()
+                    
+                    if chapter_error:
+                        self.after(0, lambda e=chapter_error: self._handle_generation_error(e))
+                        return
+                    
+                    # Store chapter content in project
+                    if chapter_content:
+                        self.project.set_chapter_content(chapter_title, chapter_content)
+                    
+                    # Update progress on main thread
+                    self.after(0, self._update_progress, chapter_num)
+                
+                # All chapters generated successfully
+                self.after(0, self._generation_complete)
+                
+            except Exception as e:
+                self.after(0, lambda err=str(e): self._handle_generation_error(err))
         
         thread = threading.Thread(target=generate, daemon=True)
         thread.start()
+    
+    def _update_total_chapters(self, count):
+        """Update the total chapters count to match actual outline."""
+        self.total_chapters = count
+        self.progress_label.configure(
+            text=f"{self.lang.get('chapters_label')}: 0/{self.total_chapters}"
+        )
+    
+    def _handle_generation_error(self, error_message):
+        """Handle errors during AI generation."""
+        self.is_generating = False
+        
+        # Stop animations
+        self.input_border_frame.stop_animation()
+        
+        # Re-enable controls
+        self.topic_entry.configure(state='normal')
+        self.audience_entry.configure(state='normal')
+        self.start_button.configure(state='normal')
+        
+        # Re-enable product type buttons
+        for btn_frame in self.type_buttons.values():
+            for child in btn_frame.winfo_children():
+                try:
+                    child.configure(state='normal')
+                except Exception:
+                    pass
+        
+        # Re-enable format buttons
+        for btn in self.format_buttons.values():
+            btn.configure(state='normal')
+        
+        # Hide progress frame
+        self.progress_frame.pack_forget()
+        
+        # Show error message
+        print(f"❌ Generation error: {error_message}")
+        messagebox.showerror("Generation Error", f"An error occurred during generation:\n\n{error_message}")
     
     def _update_progress(self, chapter_num):
         """Update progress display."""

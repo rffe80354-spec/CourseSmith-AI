@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for CourseSmith_v2 (main.py).
+PyInstaller spec file for CourseSmith_v2 (app_custom_ui.py).
 This spec includes all necessary data files and hidden imports.
 
 Usage:
@@ -20,7 +20,7 @@ pydantic_datas = collect_data_files('pydantic')
 
 # Prepare data files list
 datas_list = [
-    # Include fonts directory with TTF files for PDF generation
+    # Include fonts directory with TTF files for PDF generation (Cyrillic support)
     ('fonts', 'fonts'),
     # Include resources directory with icons
     ('resources', 'resources'),
@@ -32,12 +32,12 @@ if os.path.exists('.env'):
 
 # Define analysis
 a = Analysis(
-    ['main.py'],
+    ['app_custom_ui.py'],
     pathex=[],
     binaries=[],
     datas=datas_list,
     hiddenimports=[
-        # Local modules that main.py imports directly or indirectly
+        # Local modules that app_custom_ui.py imports directly or indirectly
         'utils',
         'license_guard',
         'session_manager',
@@ -49,6 +49,7 @@ a = Analysis(
         'export_base',
         'generator',
         'html_exporter',
+        'epub_exporter',
         'markdown_exporter',
         'pdf_engine',
         'product_templates',
@@ -60,6 +61,7 @@ a = Analysis(
         'pydantic.deprecated',
         'pydantic.deprecated.decorator',
         # ReportLab modules for PDF generation
+        'reportlab',
         'reportlab.pdfbase',
         'reportlab.pdfbase.ttfonts',
         'reportlab.pdfbase.pdfmetrics',
@@ -67,6 +69,14 @@ a = Analysis(
         'reportlab.lib.units',
         'reportlab.lib.colors',
         'reportlab.platypus',
+        # python-docx for DOCX export
+        'docx',
+        'docx.shared',
+        'docx.enum',
+        'docx.enum.text',
+        # ebooklib for EPUB export
+        'ebooklib',
+        'ebooklib.epub',
         # Supabase and related modules
         'supabase',
         'gotrue',
@@ -94,11 +104,7 @@ a = Analysis(
         'customtkinter',
         'customtkinter.windows',
         'customtkinter.windows.widgets',
-        # python-docx for DOCX export
-        'docx',
-        'docx.shared',
-        'docx.enum',
-        'docx.enum.text',
+        # lxml for document processing
         'lxml',
         'lxml._elementpath',
         'lxml.etree',
