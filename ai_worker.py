@@ -2,6 +2,10 @@
 AI Worker Module - Threaded AI Operations for CourseSmith ENTERPRISE.
 Provides background workers for outline, chapter, and cover generation.
 SECURITY: Requires valid session token to function (anti-tamper protection).
+
+API Key Retrieval:
+    The OpenAI API key is retrieved from a Supabase Edge Function
+    at each generation cycle for enhanced security.
 """
 
 import os
@@ -13,16 +17,122 @@ from openai import OpenAI
 
 from session_manager import is_active, SecurityError, get_user_email, get_license_key
 
-# Hardcoded primary API key - users cannot change this
-PRIMARY_API_KEY = "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY"
+# Supabase Edge Function URL for secure API key retrieval
+SUPABASE_EDGE_FUNCTION_URL = "https://spfwfyjpexktgnusgyib.functions.supabase.co/get_openai_key"
 
-# Supabase configuration for credit checking
+# Supabase configuration for credit checking and Edge Function authorization
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://spfwfyjpexktgnusgyib.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR")
 
 # Thread-safe singleton for Supabase client to avoid repeated connection overhead
 _supabase_client = None
 _supabase_lock = threading.Lock()
+
+# Thread-safe cache for OpenAI API key
+_openai_api_key_cache = None
+_openai_api_key_lock = threading.Lock()
+
+
+class KeyRetrievalError(Exception):
+    """Exception raised when API key retrieval from Supabase Edge Function fails."""
+    pass
+
+
+def fetch_openai_api_key() -> str:
+    """
+    Fetch the OpenAI API key from Supabase Edge Function.
+    
+    This function makes a GET request to the Supabase Edge Function
+    to retrieve the OpenAI API key securely. The key is cached
+    for the duration of the session.
+    
+    Returns:
+        str: The OpenAI API key.
+        
+    Raises:
+        KeyRetrievalError: If the key cannot be retrieved from the Edge Function.
+    """
+    global _openai_api_key_cache
+    
+    with _openai_api_key_lock:
+        # Return cached key if available
+        if _openai_api_key_cache is not None:
+            return _openai_api_key_cache
+        
+        try:
+            # Make GET request to Supabase Edge Function
+            headers = {
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(
+                SUPABASE_EDGE_FUNCTION_URL,
+                headers=headers,
+                timeout=30
+            )
+            
+            # Check for HTTP errors
+            if response.status_code == 401:
+                raise KeyRetrievalError(
+                    "Ошибка авторизации ключа. Проверьте настройки доступа."
+                )
+            elif response.status_code == 403:
+                raise KeyRetrievalError(
+                    "Доступ запрещён. Недостаточно прав для получения ключа."
+                )
+            elif response.status_code != 200:
+                raise KeyRetrievalError(
+                    f"Ошибка получения ключа. Код ответа: {response.status_code}"
+                )
+            
+            # Parse JSON response and extract key
+            data = response.json()
+            api_key = data.get("key")
+            
+            if not api_key:
+                raise KeyRetrievalError(
+                    "Ключ API не найден в ответе сервера."
+                )
+            
+            # Validate key format
+            if not api_key.startswith("sk-"):
+                raise KeyRetrievalError(
+                    "Получен некорректный формат ключа API."
+                )
+            
+            # Cache the key
+            _openai_api_key_cache = api_key
+            return api_key
+            
+        except requests.exceptions.Timeout:
+            raise KeyRetrievalError(
+                "Превышено время ожидания ответа от сервера ключей."
+            )
+        except requests.exceptions.ConnectionError:
+            raise KeyRetrievalError(
+                "Ошибка подключения к серверу ключей. Проверьте интернет-соединение."
+            )
+        except requests.exceptions.RequestException as e:
+            raise KeyRetrievalError(
+                f"Ошибка запроса ключа: {str(e)}"
+            )
+        except ValueError:  # JSON decode error
+            raise KeyRetrievalError(
+                "Ошибка разбора ответа сервера ключей."
+            )
+
+
+def reset_api_key_cache():
+    """
+    Reset the cached OpenAI API key.
+    
+    Call this if you need to force a fresh key retrieval,
+    for example after a key rotation.
+    """
+    global _openai_api_key_cache
+    with _openai_api_key_lock:
+        _openai_api_key_cache = None
 
 
 def _get_supabase_client():
@@ -254,13 +364,16 @@ class AIWorkerBase:
     def get_client(cls):
         """
         Get or create the OpenAI client (thread-safe singleton).
-        Uses the hardcoded primary API key.
+        
+        Fetches the API key from Supabase Edge Function before each
+        generation cycle for enhanced security.
         
         Returns:
             OpenAI: The OpenAI client instance.
             
         Raises:
-            ValueError: If API key is not configured or no credits remaining.
+            ValueError: If API key cannot be retrieved or no credits remaining.
+            KeyRetrievalError: If key retrieval from Edge Function fails.
             SecurityError: If no valid session exists.
         """
         # SECURITY CHECK: Require valid session
@@ -271,21 +384,21 @@ class AIWorkerBase:
         
         with cls._client_lock:
             if cls._client is None:
-                # Use hardcoded primary API key
-                api_key = PRIMARY_API_KEY
-                if not api_key or api_key == "sk-proj-REPLACE_WITH_YOUR_PRIMARY_API_KEY":
-                    raise ValueError(
-                        "Primary API key not configured. "
-                        "Please contact the administrator."
-                    )
+                # Fetch API key from Supabase Edge Function
+                try:
+                    api_key = fetch_openai_api_key()
+                except KeyRetrievalError as e:
+                    raise ValueError(str(e))
+                
                 cls._client = OpenAI(api_key=api_key)
             return cls._client
     
     @classmethod
     def reset_client(cls):
-        """Reset the OpenAI client."""
+        """Reset the OpenAI client and API key cache."""
         with cls._client_lock:
             cls._client = None
+        reset_api_key_cache()
 
 
 class OutlineGenerator(AIWorkerBase):
