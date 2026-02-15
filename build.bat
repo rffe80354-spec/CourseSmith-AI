@@ -89,7 +89,19 @@ goto :end
 
 :full_build
 echo ============================================
-echo Step 1: Installing Dependencies
+echo Step 1: Cleaning Build Artifacts
+echo ============================================
+echo.
+
+REM Clean __pycache__ and old build folders before starting
+if exist "build" rmdir /s /q "build"
+if exist "dist" rmdir /s /q "dist"
+for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d"
+echo Clean complete!
+
+echo.
+echo ============================================
+echo Step 2: Installing Dependencies
 echo ============================================
 echo.
 
@@ -103,7 +115,7 @@ echo Dependencies installed successfully!
 
 echo.
 echo ============================================
-echo Step 2: Building CourseSmith_v2
+echo Step 3: Building CourseSmith_v2
 echo ============================================
 echo.
 pyinstaller --clean --noconfirm CourseSmith_v2.spec
@@ -115,7 +127,7 @@ echo CourseSmith_v2 build complete!
 
 echo.
 echo ============================================
-echo Step 3: Building KeyGen_Admin
+echo Step 4: Building KeyGen_Admin
 echo ============================================
 echo.
 pyinstaller --clean --noconfirm KeyGen_Admin.spec
