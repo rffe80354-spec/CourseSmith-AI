@@ -92,7 +92,7 @@ DURATION_MAP = {
 }
 
 # Lazy loading configuration
-LAZY_LOAD_BATCH_SIZE = 50  # Number of license rows to render per batch
+LAZY_LOAD_BATCH_SIZE = 10  # Number of license rows to render per batch
 
 # HWID display truncation length
 HWID_TRUNCATE_LENGTH = 25
@@ -853,14 +853,14 @@ class AdminKeygenApp(ctk.CTk):
             return
         
         try:
-            # Order by created_at (most recent first)
-            response = client.table("licenses").select("*").order("created_at", desc=True).limit(50).execute()
+            # Order by created_at (most recent first), limit to 10 for performance
+            response = client.table("licenses").select("*").order("created_at", desc=True).limit(10).execute()
             
             if response.data:
                 self.all_licenses = response.data
                 self.current_offset = len(response.data)
                 # Track if there might be more licenses
-                self.has_more_licenses = len(response.data) >= 50
+                self.has_more_licenses = len(response.data) >= 10
                 self.filtered_licenses = self.all_licenses.copy()
                 # Update UI on main thread - display ALL licenses from response
                 self.after(0, lambda: self._display_licenses(self.filtered_licenses))
@@ -879,7 +879,7 @@ class AdminKeygenApp(ctk.CTk):
             self.after(0, lambda: self._finish_loading())
     
     def _load_more_licenses_async(self):
-        """Load more licenses from Supabase (pagination - next 50 rows)."""
+        """Load more licenses from Supabase (pagination - next 10 rows)."""
         if self.is_loading:
             return
         
@@ -891,7 +891,7 @@ class AdminKeygenApp(ctk.CTk):
         thread.start()
     
     def _fetch_more_licenses(self):
-        """Fetch next batch of 50 licenses from Supabase (runs in background thread)."""
+        """Fetch next batch of 10 licenses from Supabase (runs in background thread)."""
         client = get_supabase_client()
         
         if not client:
@@ -899,9 +899,9 @@ class AdminKeygenApp(ctk.CTk):
             return
         
         try:
-            # Fetch next 50 licenses starting from current offset
-            # .range(start, end) is inclusive, so end = start + 49 for 50 records
-            end_offset = self.current_offset + 49
+            # Fetch next 10 licenses starting from current offset
+            # .range(start, end) is inclusive, so end = start + 9 for 10 records
+            end_offset = self.current_offset + 9
             response = client.table("licenses").select("*").order("created_at", desc=True).range(self.current_offset, end_offset).execute()
             
             if response.data:
@@ -909,7 +909,7 @@ class AdminKeygenApp(ctk.CTk):
                 self.all_licenses.extend(response.data)
                 self.current_offset += len(response.data)
                 # Track if there might be more licenses
-                self.has_more_licenses = len(response.data) >= 50
+                self.has_more_licenses = len(response.data) >= 10
                 self.filtered_licenses = self.all_licenses.copy()
                 # Update UI on main thread (re-display all)
                 self.after(0, lambda: self._display_licenses(self.filtered_licenses))
@@ -946,7 +946,7 @@ class AdminKeygenApp(ctk.CTk):
         error_label.pack(pady=50)
     
     def _display_licenses(self, licenses):
-        """Display licenses in the Global Key Explorer with lazy loading (first 50 rows)."""
+        """Display licenses in the Global Key Explorer with lazy loading (first 10 rows)."""
         # Clear existing widgets
         for widget in self.explorer_frame.winfo_children():
             widget.destroy()
@@ -989,7 +989,7 @@ class AdminKeygenApp(ctk.CTk):
             )
             header_label.grid(row=0, column=idx, padx=10, pady=10, sticky="ew")
         
-        # LAZY LOADING: Render first 50 rows initially
+        # LAZY LOADING: Render first 10 rows initially
         self.displayed_count = 0
         self.total_licenses = licenses
         self._render_next_batch()
@@ -999,9 +999,9 @@ class AdminKeygenApp(ctk.CTk):
         Render the next batch of licenses using lazy loading.
         
         This method implements pagination by rendering licenses in batches of
-        LAZY_LOAD_BATCH_SIZE (default: 50) to improve performance when dealing
-        with large numbers of licenses (e.g., 165+ rows). After each batch,
-        a "Load More" button appears to load the next batch on demand.
+        LAZY_LOAD_BATCH_SIZE (default: 10) to improve performance when dealing
+        with large numbers of licenses. After each batch, a "Load More" button
+        appears to load the next batch on demand.
         
         This approach prevents UI freezing that would occur if all licenses
         were rendered simultaneously.
