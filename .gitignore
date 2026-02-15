@@ -99,3 +99,9 @@ Test Topic_*.docx
 Test Topic_*.html
 Test Topic_*.md
 Test Topic_*.epub
+
+# Account tab screenshots
+account_tab_screenshot.png
+
+# User stats test database
+user_stats.db
