@@ -112,6 +112,24 @@ class LanguageManager:
                 'login_button': 'Login',
                 'login_error': 'Login Error',
                 'login_required': 'Please enter email and license key',
+                'user_header': 'User Profile',
+                'credit_balance': 'Credit Balance',
+                'upgrade_plan': 'Upgrade Plan',
+                'topup_credits': 'Top Up Credits',
+                'statistics': 'Statistics',
+                'last_activity': 'Last Activity',
+                'current_model': 'AI Model',
+                'api_status': 'API Status',
+                'generation_history': 'Generation History',
+                'product_name': 'Product Name',
+                'status': 'Status',
+                'no_history': 'No generation history yet',
+                'api_online': 'Online',
+                'api_offline': 'Offline',
+                'checking': 'Checking...',
+                'never': 'Never',
+                'logout': 'Logout',
+                'reset_session': 'Reset Session',
             },
             'RU': {
                 'forge': 'Создать',
@@ -149,6 +167,24 @@ class LanguageManager:
                 'login_button': 'Войти',
                 'login_error': 'Ошибка входа',
                 'login_required': 'Пожалуйста, введите email и лицензионный ключ',
+                'user_header': 'Профиль пользователя',
+                'credit_balance': 'Баланс кредитов',
+                'upgrade_plan': 'Улучшить план',
+                'topup_credits': 'Пополнить баланс',
+                'statistics': 'Статистика',
+                'last_activity': 'Последняя активность',
+                'current_model': 'AI Модель',
+                'api_status': 'Статус API',
+                'generation_history': 'История генераций',
+                'product_name': 'Название продукта',
+                'status': 'Статус',
+                'no_history': 'История генераций пуста',
+                'api_online': 'Онлайн',
+                'api_offline': 'Офлайн',
+                'checking': 'Проверка...',
+                'never': 'Никогда',
+                'logout': 'Выход',
+                'reset_session': 'Сбросить сессию',
             }
         }
         return translations.get(self.current_lang, {}).get(key, key)
@@ -1037,47 +1073,240 @@ class CustomApp(ctk.CTk):
         placeholder.pack(pady=50)
     
     def _show_account_page(self):
-        """Show the Account page with statistics."""
-        content = ctk.CTkScrollableFrame(
+        """
+        Show the enhanced Account page with user statistics, credit tracker,
+        and generation history. Implements thread-safe data loading.
+        """
+        # Store reference for updates from background threads
+        self._account_content = ctk.CTkScrollableFrame(
             self.main_area,
             fg_color='transparent'
         )
-        content.pack(fill='both', expand=True, padx=40, pady=30)
+        self._account_content.pack(fill='both', expand=True, padx=40, pady=30)
         
-        title_label = ctk.CTkLabel(
-            content,
-            text=self.lang.get('account'),
-            font=ctk.CTkFont(size=36, weight="bold"),
+        # ===== HEADER SECTION: User Profile =====
+        self._create_account_header(self._account_content)
+        
+        # ===== CREDIT TRACKER SECTION =====
+        self._create_credit_tracker(self._account_content)
+        
+        # ===== STATISTICS GRID: 4 Cards =====
+        self._create_statistics_grid(self._account_content)
+        
+        # ===== GENERATION HISTORY TABLE =====
+        self._create_history_table(self._account_content)
+        
+        # ===== SESSION INFO & LOGOUT =====
+        self._create_session_section(self._account_content)
+        
+        # Start background thread to check API status
+        self._check_api_status_async()
+    
+    def _create_account_header(self, parent):
+        """Create the header section with user info and tier."""
+        header_card = ctk.CTkFrame(
+            parent,
+            corner_radius=20,
+            fg_color=COLORS['card'],
+            border_width=1,
+            border_color=COLORS['border']
+        )
+        header_card.pack(fill='x', pady=(0, 20))
+        
+        header_inner = ctk.CTkFrame(header_card, fg_color='transparent')
+        header_inner.pack(fill='both', padx=30, pady=25)
+        
+        # Left side: User info
+        user_frame = ctk.CTkFrame(header_inner, fg_color='transparent')
+        user_frame.pack(side='left', fill='x', expand=True)
+        
+        # User icon and name
+        user_icon = ctk.CTkLabel(
+            user_frame,
+            text="👤",
+            font=ctk.CTkFont(size=42)
+        )
+        user_icon.pack(side='left', padx=(0, 15))
+        
+        user_info = ctk.CTkFrame(user_frame, fg_color='transparent')
+        user_info.pack(side='left', fill='y')
+        
+        # Get user email
+        email = get_user_email() or 'Unknown User'
+        # Mask email for display
+        if '@' in email:
+            masked_email = email[:3] + '***' + email[email.find('@'):]
+        else:
+            masked_email = email
+        
+        user_name_label = ctk.CTkLabel(
+            user_info,
+            text=masked_email,
+            font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS['text_primary']
         )
-        title_label.pack(anchor='w', pady=(0, 30))
+        user_name_label.pack(anchor='w')
         
-        # Stats cards grid
-        stats_frame = ctk.CTkFrame(content, fg_color='transparent')
-        stats_frame.pack(fill='x', pady=(0, 30))
+        # Get tier
+        tier = get_tier() or 'trial'
+        tier_display = {
+            'trial': '🆓 Starter Pack',
+            'standard': '⭐ Standard',
+            'enterprise': '🚀 Pro / Enterprise',
+            'lifetime': '💎 Lifetime Pro'
+        }.get(tier, f'⭐ {tier.title()}')
+        
+        tier_label = ctk.CTkLabel(
+            user_info,
+            text=tier_display,
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['accent']
+        )
+        tier_label.pack(anchor='w', pady=(5, 0))
+    
+    def _create_credit_tracker(self, parent):
+        """Create the credit tracker section with progress bar."""
+        credit_card = ctk.CTkFrame(
+            parent,
+            corner_radius=20,
+            fg_color=COLORS['card'],
+            border_width=1,
+            border_color=COLORS['border']
+        )
+        credit_card.pack(fill='x', pady=(0, 20))
+        
+        credit_inner = ctk.CTkFrame(credit_card, fg_color='transparent')
+        credit_inner.pack(fill='both', padx=30, pady=25)
+        
+        # Title row
+        title_row = ctk.CTkFrame(credit_inner, fg_color='transparent')
+        title_row.pack(fill='x', pady=(0, 15))
+        
+        credit_title = ctk.CTkLabel(
+            title_row,
+            text=f"💳 {self.lang.get('credit_balance')}",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        credit_title.pack(side='left')
         
         # Get credit info
         try:
             from ai_worker import check_remaining_credits
             credit_info = check_remaining_credits()
             credits_available = credit_info.get('credits', 0)
-        except:
+        except Exception:
             credits_available = 0
         
-        # Get tier
-        try:
-            from session_manager import get_tier
-            tier = get_tier() or 'trial'
-        except:
-            tier = 'trial'
+        # Determine total credits based on tier
+        tier = get_tier() or 'trial'
+        tier_credit_limits = {
+            'trial': 3,
+            'standard': 50,
+            'enterprise': 300,
+            'lifetime': 999
+        }
+        total_credits = tier_credit_limits.get(tier, 10)
         
-        # Stats data
+        # Calculate progress
+        progress_value = min(credits_available / max(total_credits, 1), 1.0)
+        
+        # Credits display
+        credits_label = ctk.CTkLabel(
+            title_row,
+            text=f"{credits_available} / {total_credits}",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS['success'] if credits_available > 0 else COLORS['error']
+        )
+        credits_label.pack(side='right')
+        
+        # Progress bar
+        progress_bar = SmoothProgressBar(
+            credit_inner,
+            height=20,
+            corner_radius=10,
+            fg_color=COLORS['background'],
+            progress_color=COLORS['accent']
+        )
+        progress_bar.pack(fill='x', pady=(0, 15))
+        progress_bar.set(progress_value)
+        
+        # Upgrade/Top-up button
+        upgrade_btn = PremiumButton(
+            credit_inner,
+            text=f"🚀 {self.lang.get('topup_credits')}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            corner_radius=15,
+            height=45,
+            glow=True,
+            command=self._open_upgrade_url
+        )
+        upgrade_btn.pack(anchor='w')
+    
+    def _create_statistics_grid(self, parent):
+        """Create the 4-card statistics grid."""
+        stats_title = ctk.CTkLabel(
+            parent,
+            text=f"📊 {self.lang.get('statistics')}",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        stats_title.pack(anchor='w', pady=(0, 15))
+        
+        stats_frame = ctk.CTkFrame(parent, fg_color='transparent')
+        stats_frame.pack(fill='x', pady=(0, 25))
+        
+        # Get user statistics from database
+        try:
+            from user_stats import get_user_statistics
+            user_stats = get_user_statistics(get_license_key())
+        except Exception:
+            user_stats = {
+                'total_products': 0,
+                'total_credits_spent': 0,
+                'last_activity': None,
+                'products_this_month': 0
+            }
+        
+        # Format last activity date
+        last_activity = user_stats.get('last_activity')
+        if last_activity:
+            try:
+                dt = datetime.fromisoformat(last_activity)
+                last_activity_str = dt.strftime('%Y-%m-%d %H:%M')
+            except Exception:
+                last_activity_str = self.lang.get('never')
+        else:
+            last_activity_str = self.lang.get('never')
+        
+        # Stats data for 4 cards
         stats = [
-            {"icon": "💳", "label": self.lang.get('credits_available'), "value": str(credits_available)},
-            {"icon": "⭐", "label": self.lang.get('license_tier'), "value": tier.title()},
-            {"icon": "📦", "label": self.lang.get('total_products'), "value": "0"},
-            {"icon": "📊", "label": self.lang.get('total_credits_spent'), "value": "0"},
+            {
+                "icon": "📦",
+                "label": self.lang.get('total_products'),
+                "value": str(user_stats.get('total_products', 0))
+            },
+            {
+                "icon": "📅",
+                "label": self.lang.get('last_activity'),
+                "value": last_activity_str
+            },
+            {
+                "icon": "🤖",
+                "label": self.lang.get('current_model'),
+                "value": "gpt-4o"
+            },
+            {
+                "icon": "🌐",
+                "label": self.lang.get('api_status'),
+                "value": self.lang.get('checking'),
+                "id": "api_status_value"
+            },
         ]
+        
+        self._stat_value_labels = {}
         
         for i, stat in enumerate(stats):
             card = ctk.CTkFrame(
@@ -1087,101 +1316,232 @@ class CustomApp(ctk.CTk):
                 border_width=1,
                 border_color=COLORS['border']
             )
-            card.grid(row=0, column=i, padx=10, pady=10, sticky='nsew')
+            card.grid(row=0, column=i, padx=8, pady=8, sticky='nsew')
             stats_frame.grid_columnconfigure(i, weight=1)
             
             card_inner = ctk.CTkFrame(card, fg_color='transparent')
-            card_inner.pack(fill='both', expand=True, padx=20, pady=20)
+            card_inner.pack(fill='both', expand=True, padx=15, pady=18)
             
             icon_label = ctk.CTkLabel(
                 card_inner,
                 text=stat['icon'],
-                font=ctk.CTkFont(size=32)
+                font=ctk.CTkFont(size=28)
             )
             icon_label.pack()
             
             value_label = ctk.CTkLabel(
                 card_inner,
                 text=stat['value'],
-                font=ctk.CTkFont(size=24, weight="bold"),
+                font=ctk.CTkFont(size=16, weight="bold"),
                 text_color=COLORS['text_primary']
             )
             value_label.pack(pady=(5, 0))
             
+            # Store reference for API status updates
+            if stat.get('id'):
+                self._stat_value_labels[stat['id']] = value_label
+            
             label_label = ctk.CTkLabel(
                 card_inner,
                 text=stat['label'],
-                font=ctk.CTkFont(size=11),
+                font=ctk.CTkFont(size=10),
                 text_color=COLORS['text_secondary']
             )
             label_label.pack()
-        
-        # Credit costs info
-        info_card = ctk.CTkFrame(
-            content,
+    
+    def _create_history_table(self, parent):
+        """Create the generation history table."""
+        history_card = ctk.CTkFrame(
+            parent,
             corner_radius=20,
-            fg_color=COLORS['card']
+            fg_color=COLORS['card'],
+            border_width=1,
+            border_color=COLORS['border']
         )
-        info_card.pack(fill='x', pady=(0, 20))
+        history_card.pack(fill='x', pady=(0, 20))
         
-        info_inner = ctk.CTkFrame(info_card, fg_color='transparent')
-        info_inner.pack(fill='both', padx=30, pady=30)
+        history_inner = ctk.CTkFrame(history_card, fg_color='transparent')
+        history_inner.pack(fill='both', padx=30, pady=25)
         
-        info_title = ctk.CTkLabel(
-            info_inner,
-            text="💡 Credit Costs by Product Type",
+        history_title = ctk.CTkLabel(
+            history_inner,
+            text=f"📜 {self.lang.get('generation_history')}",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=COLORS['text_primary']
         )
-        info_title.pack(anchor='w', pady=(0, 15))
+        history_title.pack(anchor='w', pady=(0, 15))
         
-        for template in self.product_templates:
-            cost_row = ctk.CTkFrame(info_inner, fg_color='transparent')
-            cost_row.pack(fill='x', pady=3)
-            
-            name_label = ctk.CTkLabel(
-                cost_row,
-                text=f"{template['icon']} {template['name']}",
-                font=ctk.CTkFont(size=13),
-                text_color=COLORS['text_primary']
-            )
-            name_label.pack(side='left')
-            
-            cost_label = ctk.CTkLabel(
-                cost_row,
-                text=f"{template['credits']} credit(s)",
-                font=ctk.CTkFont(size=13),
-                text_color=COLORS['accent']
-            )
-            cost_label.pack(side='right')
+        # Get generation history
+        try:
+            from user_stats import get_generation_history
+            history = get_generation_history(limit=10, license_key=get_license_key())
+        except Exception:
+            history = []
         
-        # Debug: Display active session credentials (masked for security)
+        if not history:
+            # No history message
+            no_history_label = ctk.CTkLabel(
+                history_inner,
+                text=f"📭 {self.lang.get('no_history')}",
+                font=ctk.CTkFont(size=13),
+                text_color=COLORS['text_secondary']
+            )
+            no_history_label.pack(pady=20)
+        else:
+            # Create table header
+            header_frame = ctk.CTkFrame(history_inner, fg_color=COLORS['background'], corner_radius=8)
+            header_frame.pack(fill='x', pady=(0, 5))
+            
+            header_inner = ctk.CTkFrame(header_frame, fg_color='transparent')
+            header_inner.pack(fill='x', padx=15, pady=10)
+            
+            # Header columns
+            headers = [
+                (self.lang.get('product_name'), 0.4),
+                (self.lang.get('date'), 0.3),
+                (self.lang.get('status'), 0.3)
+            ]
+            
+            for header_text, weight in headers:
+                header_label = ctk.CTkLabel(
+                    header_inner,
+                    text=header_text,
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=COLORS['text_secondary']
+                )
+                header_label.pack(side='left', expand=True, fill='x')
+            
+            # Table rows
+            for i, record in enumerate(history[:10]):
+                row_bg = COLORS['card'] if i % 2 == 0 else COLORS['background']
+                row_frame = ctk.CTkFrame(history_inner, fg_color=row_bg, corner_radius=5)
+                row_frame.pack(fill='x', pady=2)
+                
+                row_inner = ctk.CTkFrame(row_frame, fg_color='transparent')
+                row_inner.pack(fill='x', padx=15, pady=8)
+                
+                # Product name
+                product_name = record.get('product_name', 'Unknown')
+                if len(product_name) > 30:
+                    product_name = product_name[:27] + '...'
+                name_label = ctk.CTkLabel(
+                    row_inner,
+                    text=product_name,
+                    font=ctk.CTkFont(size=12),
+                    text_color=COLORS['text_primary']
+                )
+                name_label.pack(side='left', expand=True, fill='x')
+                
+                # Date
+                created_at = record.get('created_at', '')
+                try:
+                    dt = datetime.fromisoformat(created_at)
+                    date_str = dt.strftime('%Y-%m-%d %H:%M')
+                except Exception:
+                    date_str = created_at[:16] if created_at else ''
+                date_label = ctk.CTkLabel(
+                    row_inner,
+                    text=date_str,
+                    font=ctk.CTkFont(size=12),
+                    text_color=COLORS['text_secondary']
+                )
+                date_label.pack(side='left', expand=True, fill='x')
+                
+                # Status with color
+                status = record.get('status', 'Unknown')
+                status_color = COLORS['success'] if status == 'Completed' else COLORS['error']
+                status_label = ctk.CTkLabel(
+                    row_inner,
+                    text=status,
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=status_color
+                )
+                status_label.pack(side='left', expand=True, fill='x')
+    
+    def _create_session_section(self, parent):
+        """Create session info and logout section."""
+        # Session info (masked credentials)
         email = get_user_email() or ''
         license_key = get_license_key() or ''
+        
         # Mask email: show first 3 chars and domain
-        masked_email = email[:3] + '***' + email[email.find('@'):] if email and '@' in email else email
+        if email and '@' in email:
+            masked_email = email[:3] + '***' + email[email.find('@'):]
+        else:
+            masked_email = email
+        
         # Mask license key: show only last 4 characters
-        masked_key = '***' + license_key[-4:] if license_key and len(license_key) >= 4 else license_key
-        session_debug_label = ctk.CTkLabel(
-            content,
-            text=f"Active Session -> Email: '{masked_email}' | Key: '{masked_key}'",
+        if license_key and len(license_key) >= 4:
+            masked_key = '***' + license_key[-4:]
+        else:
+            masked_key = license_key
+        
+        session_label = ctk.CTkLabel(
+            parent,
+            text=f"🔐 Session: {masked_email} | Key: {masked_key}",
             font=ctk.CTkFont(size=11),
             text_color=COLORS['text_secondary']
         )
-        session_debug_label.pack(anchor='w', pady=(20, 10))
+        session_label.pack(anchor='w', pady=(10, 15))
         
-        # Logout / Reset Session button
+        # Logout button
         logout_btn = ctk.CTkButton(
-            content,
-            text="Logout / Reset Session",
+            parent,
+            text=f"🚪 {self.lang.get('logout')} / {self.lang.get('reset_session')}",
             font=ctk.CTkFont(size=14, weight="bold"),
             fg_color=COLORS['error'],
             hover_color='#D9534F',
-            corner_radius=10,
-            height=40,
+            corner_radius=12,
+            height=42,
             command=self._logout
         )
         logout_btn.pack(anchor='w', pady=(0, 20))
+    
+    def _check_api_status_async(self):
+        """Check API status in a background thread to avoid blocking GUI."""
+        def check_status():
+            try:
+                from ai_worker import fetch_openai_api_key
+                # Try to fetch API key as connectivity test
+                api_key = fetch_openai_api_key()
+                is_online = api_key is not None and api_key.startswith('sk-')
+            except Exception:
+                is_online = False
+            
+            # Update UI from main thread
+            self.after(0, lambda: self._update_api_status(is_online))
+        
+        # Start background thread
+        api_thread = threading.Thread(target=check_status, daemon=True)
+        api_thread.start()
+    
+    def _update_api_status(self, is_online: bool):
+        """Update the API status label in the UI (called from main thread)."""
+        try:
+            if hasattr(self, '_stat_value_labels') and 'api_status_value' in self._stat_value_labels:
+                status_label = self._stat_value_labels['api_status_value']
+                if is_online:
+                    status_label.configure(
+                        text=f"✅ {self.lang.get('api_online')}",
+                        text_color=COLORS['success']
+                    )
+                else:
+                    status_label.configure(
+                        text=f"❌ {self.lang.get('api_offline')}",
+                        text_color=COLORS['error']
+                    )
+        except Exception:
+            pass  # Widget may have been destroyed
+    
+    def _open_upgrade_url(self):
+        """Open the upgrade/top-up URL in the default browser."""
+        import webbrowser
+        # Default upgrade URL - can be configured
+        upgrade_url = "https://coursesmith.ai/upgrade"
+        try:
+            webbrowser.open(upgrade_url)
+        except Exception:
+            messagebox.showinfo("Upgrade", f"Visit: {upgrade_url}")
     
     def _show_settings_page(self):
         """Show the Settings page."""
@@ -1718,6 +2078,23 @@ class CustomApp(ctk.CTk):
         # Log success with emoji prefix and context
         prompt_text = self.prompt_textbox.get("1.0", "end-1c").strip()[:MAX_PROMPT_LOG_LENGTH] if hasattr(self, 'prompt_textbox') else "Unknown"
         print(f"✅ Generation complete: Prompt='{prompt_text}...', Chapters={self.total_chapters}, Formats={formats_str}")
+        
+        # Record generation in history database
+        try:
+            from user_stats import record_generation
+            from product_templates import get_credit_cost
+            credits_used = get_credit_cost(self.selected_product_type)
+            record_generation(
+                product_name=prompt_text[:100] if prompt_text else product_name,
+                product_type=self.selected_product_type,
+                chapters_count=self.total_chapters,
+                export_format=formats_str,
+                credits_used=credits_used,
+                status='Completed' if exported_files else 'Failed',
+                license_key=get_license_key()
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to record generation history: {e}")
         
         # Build success message
         if exported_files:
