@@ -625,8 +625,9 @@ def validate_license(email: str, key: str, hwid: Optional[str] = None,
         
         license_data = response.data[0]
         
-        # Verify email matches
-        if license_data.get('email', '').lower() != email:
+        # Verify email matches - case-insensitive and whitespace-tolerant comparison in Python
+        db_email = license_data.get('email', '').strip().lower()
+        if db_email != email:
             return {
                 'valid': False,
                 'message': 'License key does not match the provided email address.'

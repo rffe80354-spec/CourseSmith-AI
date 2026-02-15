@@ -198,20 +198,33 @@ def check_remaining_credits() -> dict:
                 'message': 'No active license session. Please log in.'
             }
         
+        # Clean inputs to handle whitespace and case-sensitivity issues
+        clean_key = license_key.strip()
+        clean_email = email.strip().lower()
+        
         # Use singleton Supabase client for better performance
         supabase = _get_supabase_client()
         
-        # Query for license credits
-        response = supabase.table("licenses").select("credits").eq("license_key", license_key).eq("email", email).execute()
+        # Query ONLY by license key to avoid Postgres case-sensitivity issues
+        response = supabase.table("licenses").select("credits", "email").eq("license_key", clean_key).execute()
         
         if not response.data or len(response.data) == 0:
             # Mask sensitive values for security
-            masked_key = '***' + license_key[-4:] if license_key and len(license_key) >= 4 else license_key
-            masked_email = email[:3] + '***' + email[email.find('@'):] if email and '@' in email else email
+            masked_key = '***' + clean_key[-4:] if clean_key and len(clean_key) >= 4 else clean_key
+            masked_email = clean_email[:3] + '***' + clean_email[clean_email.find('@'):] if clean_email and '@' in clean_email else clean_email
             return {
                 'has_credits': False,
                 'credits': 0,
                 'message': f"License not found in DB.\nSearched Key: '{masked_key}'\nSearched Email: '{masked_email}'"
+            }
+        
+        # Perform case-insensitive email validation in Python
+        db_email = response.data[0].get('email', '').strip().lower()
+        if db_email != clean_email:
+            return {
+                'has_credits': False,
+                'credits': 0,
+                'message': "Email mismatch. Please check your login credentials."
             }
         
         credits = response.data[0].get('credits', 0)
