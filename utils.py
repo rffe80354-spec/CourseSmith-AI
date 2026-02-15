@@ -16,8 +16,8 @@ from tkinter import Menu, TclError
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
-# Flag to track if scrollbar patch has been applied
-_scrollbar_patch_applied = False
+# Global flag to track if scrollbar patch has been applied (prevents multiple patches)
+_SCROLLBAR_PATCHED = False
 
 # ReportLab imports for font registration
 from reportlab.pdfbase import pdfmetrics
@@ -26,52 +26,43 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 def patch_ctk_scrollbar():
     """
-    Apply a patch to CustomTkinter scrollbar to prevent recursion issues.
+    Apply a patch to fix CTkScrollbar rendering issues, ensuring it only applies once.
     
     This fixes the RecursionError that occurs when CTkScrollableFrame's
     scrollbar tries to update its size and triggers an infinite loop of
     size calculations.
     
-    The patch wraps the _draw method with a recursion guard flag.
-    Safe to call multiple times - only applies patch once.
+    Safe to call multiple times - only applies patch once via global flag.
     """
-    global _scrollbar_patch_applied
-    if _scrollbar_patch_applied:
+    global _SCROLLBAR_PATCHED
+    if _SCROLLBAR_PATCHED:
         return
     
     try:
-        import customtkinter as ctk
         from customtkinter.windows.widgets.ctk_scrollbar import CTkScrollbar
-        
-        # Store original _draw method
         original_draw = CTkScrollbar._draw
         
         def patched_draw(self, *args, **kwargs):
-            """
-            Patched _draw method with recursion guard.
-            Prevents infinite recursion in scrollbar size calculations.
-            """
-            # Guard against recursion using getattr for cleaner code
+            # Guard against recursion using instance attribute
             if getattr(self, '_draw_in_progress', False):
-                return  # Skip if already drawing
+                return  # Skip if already drawing to prevent infinite recursion
             
             self._draw_in_progress = True
             try:
                 original_draw(self, *args, **kwargs)
+            except Exception:
+                pass  # Silently handle rendering errors to prevent UI crashes
             finally:
                 self._draw_in_progress = False
         
-        # Apply patch
         CTkScrollbar._draw = patched_draw
-        _scrollbar_patch_applied = True
-        
+        _SCROLLBAR_PATCHED = True
     except ImportError:
         # CustomTkinter not available - skip patch
         pass
     except Exception as e:
-        # Log error but don't crash
         _logger = logging.getLogger(__name__)
-        _logger.warning(f"Failed to apply scrollbar patch: {e}")
+        _logger.warning(f"Failed to patch scrollbar: {e}")
 
 
 # Set up module logger

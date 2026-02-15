@@ -503,8 +503,8 @@ class CustomApp(ctk.CTk):
             # Save license for persistent session
             save_license(email, license_key, tier, expires_at)
             
-            # Set session
-            set_session(token, email, tier, expires_at)
+            # Set session with license key for product generation
+            set_session(token, email, tier, license_key=license_key)
             
             # Clear login screen and create main UI
             for widget in self.winfo_children():
