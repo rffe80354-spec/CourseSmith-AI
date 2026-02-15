@@ -1,0 +1,442 @@
+"""
+EPUB Exporter Module - Export CourseSmith content to EPUB format.
+Uses ebooklib library for professional EPUB generation.
+
+Dependencies:
+    pip install ebooklib
+"""
+
+import os
+import re
+from datetime import datetime
+from typing import Optional
+
+try:
+    from ebooklib import epub
+    EPUB_AVAILABLE = True
+except ImportError:
+    EPUB_AVAILABLE = False
+
+from export_base import ExporterBase, ExportError, ExportManager
+
+
+class EPUBExporter(ExporterBase):
+    """
+    Exporter for EPUB format.
+    
+    Creates professional EPUB e-books with:
+    - Cover page with title and subtitle
+    - Table of contents
+    - Formatted chapter content
+    - Proper metadata
+    """
+    
+    file_extension = "epub"
+    format_name = "EPUB"
+    
+    def __init__(self, project, output_path: str = None):
+        """
+        Initialize the EPUB exporter.
+        
+        Args:
+            project: CourseProject object with content to export.
+            output_path: Optional output file path.
+        """
+        super().__init__(project, output_path)
+        
+        if not EPUB_AVAILABLE:
+            raise ImportError(
+                "ebooklib is required for EPUB export. "
+                "Install it with: pip install ebooklib"
+            )
+        
+        self.book = None
+    
+    def export(self) -> str:
+        """
+        Export the project to EPUB format.
+        
+        Returns:
+            str: Path to the exported EPUB file.
+            
+        Raises:
+            ExportError: If export fails.
+        """
+        if not self.validate_project():
+            raise ExportError(f"Invalid project: {', '.join(self.errors)}")
+        
+        try:
+            # Create book
+            self.book = epub.EpubBook()
+            
+            # Set metadata
+            self._set_metadata()
+            
+            # Create chapters
+            chapters = self._create_chapters()
+            
+            # Add navigation
+            self._add_navigation(chapters)
+            
+            # Add CSS
+            self._add_styles()
+            
+            # Generate output path if needed
+            output_path = self.generate_output_path()
+            
+            # Write EPUB file
+            epub.write_epub(output_path, self.book, {})
+            
+            return output_path
+            
+        except Exception as e:
+            raise ExportError(f"Failed to export EPUB: {str(e)}")
+    
+    def _set_metadata(self):
+        """Set EPUB metadata."""
+        # Basic metadata
+        self.book.set_identifier(f'coursesmith-{datetime.now().strftime("%Y%m%d%H%M%S")}')
+        self.book.set_title(self.project.topic)
+        self.book.set_language('en')
+        
+        # Author
+        branding = self.project.branding
+        author_name = branding.get('author_name', 'CourseSmith AI')
+        self.book.add_author(author_name)
+        
+        # Description
+        self.book.add_metadata('DC', 'description', 
+                               f"A comprehensive guide for {self.project.audience}")
+        
+        # Publisher
+        company_name = branding.get('company_name', 'CourseSmith AI')
+        self.book.add_metadata('DC', 'publisher', company_name)
+    
+    def _create_chapters(self):
+        """
+        Create EPUB chapters.
+        
+        Returns:
+            list: List of EpubHtml chapter objects.
+        """
+        chapters = []
+        
+        # Create cover/title page
+        title_page = self._create_title_page()
+        self.book.add_item(title_page)
+        chapters.append(title_page)
+        
+        # Create chapters
+        for i, chapter_title in enumerate(self.project.outline, 1):
+            chapter = self._create_chapter(i, chapter_title)
+            self.book.add_item(chapter)
+            chapters.append(chapter)
+        
+        return chapters
+    
+    def _create_title_page(self):
+        """Create the title/cover page."""
+        title_page = epub.EpubHtml(
+            title='Title Page',
+            file_name='title.xhtml',
+            lang='en'
+        )
+        
+        branding = self.project.branding
+        author_name = branding.get('author_name', '')
+        company_name = branding.get('company_name', '')
+        
+        # Build author info HTML
+        author_html = ''
+        if author_name:
+            author_html += f'<p class="author">By {self._escape_html(author_name)}</p>'
+        if company_name:
+            author_html += f'<p class="company">{self._escape_html(company_name)}</p>'
+        
+        content = f'''<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>{self._escape_html(self.project.topic)}</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<div class="title-page">
+<h1 class="title">{self._escape_html(self.project.topic)}</h1>
+<p class="subtitle">A Comprehensive Guide for {self._escape_html(self.project.audience)}</p>
+<div class="author-info">
+{author_html}
+</div>
+<p class="generated">Generated by CourseSmith AI</p>
+<p class="date">{datetime.now().strftime('%B %d, %Y')}</p>
+</div>
+</body>
+</html>'''
+        
+        title_page.set_content(content)
+        return title_page
+    
+    def _create_chapter(self, chapter_num: int, chapter_title: str):
+        """
+        Create a single chapter.
+        
+        Args:
+            chapter_num: The chapter number.
+            chapter_title: The chapter title.
+            
+        Returns:
+            EpubHtml: The chapter object.
+        """
+        chapter = epub.EpubHtml(
+            title=f'Chapter {chapter_num}: {chapter_title}',
+            file_name=f'chapter_{chapter_num}.xhtml',
+            lang='en'
+        )
+        
+        # Get chapter content
+        content = self.project.chapters_content.get(chapter_title, "")
+        content_html = self._markdown_to_html(content)
+        
+        # If no content, provide placeholder text
+        if not content_html.strip():
+            content_html = "<p>Chapter content not available.</p>"
+        
+        chapter_content = f'''<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Chapter {chapter_num}: {self._escape_html(chapter_title)}</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<div class="chapter">
+<h2 class="chapter-title">Chapter {chapter_num}: {self._escape_html(chapter_title)}</h2>
+<div class="chapter-content">
+{content_html}
+</div>
+</div>
+</body>
+</html>'''
+        
+        chapter.set_content(chapter_content)
+        return chapter
+    
+    def _add_navigation(self, chapters):
+        """
+        Add navigation to the EPUB.
+        
+        Args:
+            chapters: List of chapter objects.
+        """
+        # Add chapters to spine
+        self.book.spine = ['nav'] + chapters
+        
+        # Create table of contents
+        self.book.toc = tuple(chapters)
+        
+        # Add navigation files
+        self.book.add_item(epub.EpubNcx())
+        self.book.add_item(epub.EpubNav())
+    
+    def _add_styles(self):
+        """Add CSS styles to the EPUB."""
+        style_content = '''
+body {
+    font-family: Georgia, serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 1em;
+    color: #333;
+}
+
+.title-page {
+    text-align: center;
+    padding-top: 30%;
+}
+
+.title {
+    font-size: 2.5em;
+    margin-bottom: 0.5em;
+    color: #1a1a2e;
+}
+
+.subtitle {
+    font-size: 1.2em;
+    color: #666;
+    margin-bottom: 2em;
+}
+
+.author-info {
+    margin: 2em 0;
+}
+
+.author, .company {
+    font-size: 1.1em;
+    margin: 0.5em 0;
+}
+
+.generated, .date {
+    font-size: 0.9em;
+    color: #888;
+    margin-top: 3em;
+}
+
+.chapter {
+    page-break-before: always;
+}
+
+.chapter-title {
+    font-size: 1.8em;
+    color: #7F5AF0;
+    margin-bottom: 1em;
+    padding-bottom: 0.5em;
+    border-bottom: 2px solid #eee;
+}
+
+.chapter-content h3 {
+    font-size: 1.3em;
+    color: #333;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+}
+
+.chapter-content p {
+    margin: 1em 0;
+    text-align: justify;
+}
+
+.chapter-content ul, .chapter-content ol {
+    margin: 1em 0;
+    padding-left: 1.5em;
+}
+
+.chapter-content li {
+    margin: 0.5em 0;
+}
+
+strong {
+    font-weight: bold;
+}
+
+em {
+    font-style: italic;
+}
+'''
+        
+        style = epub.EpubItem(
+            uid='style',
+            file_name='style.css',
+            media_type='text/css',
+            content=style_content
+        )
+        self.book.add_item(style)
+    
+    def _markdown_to_html(self, content: str) -> str:
+        """
+        Convert markdown content to HTML.
+        
+        Args:
+            content: Markdown content.
+            
+        Returns:
+            str: HTML content.
+        """
+        lines = content.split('\n')
+        html_parts = []
+        current_para = []
+        in_list = False
+        
+        for line in lines:
+            stripped = line.strip()
+            
+            # Headers
+            if stripped.startswith('## '):
+                self._flush_paragraph(html_parts, current_para)
+                current_para = []
+                if in_list:
+                    html_parts.append('</ul>')
+                    in_list = False
+                header_text = self._escape_html(stripped[3:])
+                html_parts.append(f'<h3>{header_text}</h3>')
+                
+            elif stripped.startswith('# '):
+                self._flush_paragraph(html_parts, current_para)
+                current_para = []
+                if in_list:
+                    html_parts.append('</ul>')
+                    in_list = False
+                header_text = self._escape_html(stripped[2:])
+                html_parts.append(f'<h3>{header_text}</h3>')
+                
+            # Bullet points
+            elif stripped.startswith('* ') or stripped.startswith('- '):
+                self._flush_paragraph(html_parts, current_para)
+                current_para = []
+                if not in_list:
+                    html_parts.append('<ul>')
+                    in_list = True
+                item_text = self._process_inline_markdown(stripped[2:])
+                html_parts.append(f'<li>{item_text}</li>')
+                
+            # Empty line
+            elif stripped == '':
+                self._flush_paragraph(html_parts, current_para)
+                current_para = []
+                if in_list:
+                    html_parts.append('</ul>')
+                    in_list = False
+                    
+            # Regular text
+            else:
+                if in_list:
+                    html_parts.append('</ul>')
+                    in_list = False
+                current_para.append(stripped)
+        
+        # Flush remaining content
+        self._flush_paragraph(html_parts, current_para)
+        if in_list:
+            html_parts.append('</ul>')
+        
+        return '\n'.join(html_parts)
+    
+    def _flush_paragraph(self, html_parts: list, para_lines: list):
+        """Flush accumulated paragraph lines to HTML."""
+        if para_lines:
+            text = ' '.join(para_lines)
+            processed = self._process_inline_markdown(text)
+            html_parts.append(f'<p>{processed}</p>')
+    
+    def _process_inline_markdown(self, text: str) -> str:
+        """Process inline markdown (bold, italic) to HTML."""
+        # First escape HTML, then process markdown
+        text = self._escape_html(text)
+        
+        # Bold: **text** - must be processed before italic
+        # Use non-greedy matching to handle nested content
+        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+        
+        # Italic: *text* - use negative lookbehind/ahead to avoid matching bold asterisks
+        # Match single asterisks that are not part of bold markers
+        text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
+        
+        return text
+    
+    def _escape_html(self, text: str) -> str:
+        """
+        Escape HTML special characters.
+        
+        Args:
+            text: Text to escape.
+            
+        Returns:
+            str: Escaped text.
+        """
+        if not text:
+            return ""
+        return (text
+                .replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;')
+                .replace('"', '&quot;')
+                .replace("'", '&#39;'))
+
+
+# Register the exporter
+ExportManager.register_exporter('epub', EPUBExporter)

@@ -875,10 +875,13 @@ class EnterpriseApp(ctk.CTk):
         self.format_buttons = {}
         self.selected_export_format = "PDF"  # Default format
         
+        # All export formats: PDF, DOCX, HTML, EPUB, Markdown
         export_formats = [
             {'id': 'PDF', 'name': 'PDF', 'icon': '📄'},
             {'id': 'DOCX', 'name': 'DOCX', 'icon': '📝'},
-            {'id': 'HTML', 'name': 'HTML', 'icon': '🌐'}
+            {'id': 'HTML', 'name': 'HTML', 'icon': '🌐'},
+            {'id': 'EPUB', 'name': 'EPUB', 'icon': '📚'},
+            {'id': 'Markdown', 'name': 'Markdown', 'icon': '📋'}
         ]
         
         for i, fmt in enumerate(export_formats):
@@ -889,7 +892,7 @@ class EnterpriseApp(ctk.CTk):
                 format_buttons_frame,
                 text=f"{fmt['icon']} {fmt['name']}",
                 font=ctk.CTkFont(size=13, weight="bold" if is_default else "normal"),
-                width=100,
+                width=90,
                 height=40,
                 corner_radius=8,
                 fg_color=colors["fg"],
@@ -1404,6 +1407,142 @@ class EnterpriseApp(ctk.CTk):
         target_pages = page_count.get() if page_count else 10
         return generate_pdf(course_data, page_count=target_pages, media_files=media_files)
     
+    def _generate_document(self, course_data: dict, media_files: list = None) -> str:
+        """
+        Generate a document in the selected format from course data.
+        Routes to the appropriate exporter based on self.selected_export_format.
+        
+        Args:
+            course_data: Dictionary containing 'title' and 'chapters' list
+            media_files: Optional list of media file paths to include
+            
+        Returns:
+            str: Path to the generated document file
+        """
+        # Get selected format (default to PDF)
+        selected_format = getattr(self, 'selected_export_format', 'PDF').upper()
+        
+        # Log the format being generated
+        print(f"📋 Generating document in format: {selected_format}")
+        
+        # Route to appropriate generator based on format
+        if selected_format == "PDF":
+            return self._generate_pdf_file(course_data, media_files)
+        
+        elif selected_format == "DOCX":
+            return self._generate_docx_file(course_data)
+        
+        elif selected_format == "HTML":
+            return self._generate_html_file(course_data)
+        
+        elif selected_format == "EPUB":
+            return self._generate_epub_file(course_data)
+        
+        elif selected_format == "MARKDOWN":
+            return self._generate_markdown_file(course_data)
+        
+        else:
+            # Fallback to PDF for unknown formats
+            print(f"⚠️  Unknown format '{selected_format}', falling back to PDF")
+            return self._generate_pdf_file(course_data, media_files)
+    
+    def _create_project_from_course_data(self, course_data: dict):
+        """
+        Create a CourseProject from course data for use with exporters.
+        
+        Args:
+            course_data: Dictionary containing 'title' and 'chapters' list
+            
+        Returns:
+            CourseProject: Project object populated with course data
+        """
+        from project_manager import CourseProject
+        
+        project = CourseProject()
+        project.topic = course_data.get('title', 'Untitled Course')
+        project.audience = "General Audience"
+        
+        # Extract chapter titles and content
+        chapters = course_data.get('chapters', [])
+        project.outline = []
+        project.chapters_content = {}
+        
+        for chapter in chapters:
+            title = chapter.get('title', f"Chapter {len(project.outline) + 1}")
+            content = chapter.get('content', '')
+            project.outline.append(title)
+            project.chapters_content[title] = content
+        
+        return project
+    
+    def _generate_docx_file(self, course_data: dict) -> str:
+        """Generate a DOCX file from course data."""
+        from docx_exporter import DOCXExporter
+        import os
+        
+        project = self._create_project_from_course_data(course_data)
+        
+        # Generate output path to Downloads
+        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        exporter = DOCXExporter(project)
+        output_path = exporter.generate_output_path(downloads_dir)
+        exporter.output_path = output_path
+        
+        return exporter.export()
+    
+    def _generate_html_file(self, course_data: dict) -> str:
+        """Generate an HTML file from course data."""
+        from html_exporter import HTMLExporter
+        import os
+        
+        project = self._create_project_from_course_data(course_data)
+        
+        # Generate output path to Downloads
+        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        exporter = HTMLExporter(project)
+        output_path = exporter.generate_output_path(downloads_dir)
+        exporter.output_path = output_path
+        
+        return exporter.export()
+    
+    def _generate_epub_file(self, course_data: dict) -> str:
+        """Generate an EPUB file from course data."""
+        from epub_exporter import EPUBExporter
+        import os
+        
+        project = self._create_project_from_course_data(course_data)
+        
+        # Generate output path to Downloads
+        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        exporter = EPUBExporter(project)
+        output_path = exporter.generate_output_path(downloads_dir)
+        exporter.output_path = output_path
+        
+        return exporter.export()
+    
+    def _generate_markdown_file(self, course_data: dict) -> str:
+        """Generate a Markdown file from course data."""
+        from markdown_exporter import MarkdownExporter
+        import os
+        
+        project = self._create_project_from_course_data(course_data)
+        
+        # Generate output path to Downloads
+        downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        
+        exporter = MarkdownExporter(project)
+        output_path = exporter.generate_output_path(downloads_dir)
+        exporter.output_path = output_path
+        
+        return exporter.export()
+    
     def _start_generation(self):
         """Start course generation with animated progress and detailed logging."""
         instruction = self.instruction_textbox.get("1.0", "end-1c").strip()
@@ -1486,14 +1625,15 @@ class EnterpriseApp(ctk.CTk):
                     # Store the result
                     self.generated_course_data = course_data
                     
-                    # Generate PDF file to Downloads folder
-                    self.after(0, lambda: self._log_message("📄 Rendering PDF document..."))
-                    pdf_path = self._generate_pdf_file(course_data, media_files=self.selected_media_files)
-                    self.generated_pdf_path = pdf_path
+                    # Generate document in selected format to Downloads folder
+                    fmt = getattr(self, 'selected_export_format', 'PDF')
+                    self.after(0, lambda f=fmt: self._log_message(f"📄 Rendering {f} document..."))
+                    doc_path = self._generate_document(course_data, media_files=self.selected_media_files)
+                    self.generated_pdf_path = doc_path  # Keep variable name for compatibility
                     
-                    # Log PDF save location
-                    pdf_filename = os.path.basename(pdf_path)
-                    self.after(0, lambda fn=pdf_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
+                    # Log file save location
+                    doc_filename = os.path.basename(doc_path)
+                    self.after(0, lambda fn=doc_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
                     
                     # Deduct credit after successful generation
                     # Note: Credit was already verified before generation started
@@ -1576,34 +1716,34 @@ class EnterpriseApp(ctk.CTk):
                         self.after(0, lambda nc=num_chapters, ll=log_limit: self._log_message(f"[Generative]: Creating {nc - ll} more chapters..."))
                         time.sleep(smart_delay * 0.5)
                     
-                    # Step N+1: Rendering PDF document
-                    self.after(0, lambda: self._log_message("[PDF]: Rendering document..."))
-                    self.after(0, lambda: self.progress_label.configure(text="Rendering PDF document..."))
+                    # Step N+1: Rendering document in selected format
+                    fmt = getattr(self, 'selected_export_format', 'PDF')
+                    self.after(0, lambda f=fmt: self._log_message(f"[{f}]: Rendering document..."))
+                    self.after(0, lambda f=fmt: self.progress_label.configure(text=f"Rendering {f} document..."))
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     time.sleep(PACKAGING_DELAY_SECONDS)
                     
-                    # Create course data - generate_pdf will handle UNIQUE chapter generation
-                    # We pass minimal data; the procedural generator in utils.py creates unique content
+                    # Create course data - generator will handle UNIQUE chapter generation
+                    # We pass minimal data; the procedural generator creates unique content
                     course_data = {
                         'title': f"Course: {instruction[:50]}",
-                        'chapters': [],  # Empty - let generate_pdf create unique chapters procedurally
+                        'chapters': [],  # Empty - let generator create unique chapters procedurally
                         'language': 'en'
                     }
                     
                     self.generated_course_data = course_data
                     
-                    # Generate real PDF file to Downloads folder
-                    # The generate_pdf function uses PROCEDURAL GENERATION to create
-                    # unique chapter titles and varied content based on target_pages
-                    pdf_path = self._generate_pdf_file(course_data, media_files=self.selected_media_files)
+                    # Generate document file in selected format to Downloads folder
+                    # Routes to appropriate exporter based on selected_export_format
+                    doc_path = self._generate_document(course_data, media_files=self.selected_media_files)
                     
                     # Step N+2: File saved to Downloads (include filename)
-                    pdf_filename = os.path.basename(pdf_path)
-                    self.after(0, lambda fn=pdf_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
+                    doc_filename = os.path.basename(doc_path)
+                    self.after(0, lambda fn=doc_filename: self._log_message(f"[System]: File saved to Downloads: {fn}"))
                     self.after(0, lambda: self.update_idletasks())  # Force UI refresh
                     
-                    # Store PDF path for success message
-                    self.generated_pdf_path = pdf_path
+                    # Store document path for success message
+                    self.generated_pdf_path = doc_path  # Keep variable name for compatibility
                     
                     # Notify completion on main thread
                     self.after(0, lambda: self._finish_generation(success=True))

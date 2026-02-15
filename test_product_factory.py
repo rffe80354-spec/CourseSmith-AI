@@ -77,13 +77,14 @@ def test_export_formats_for_ui():
     from export_base import get_export_formats_for_ui
     
     formats = get_export_formats_for_ui()
-    assert len(formats) == 4
+    assert len(formats) == 5  # PDF, DOCX, HTML, EPUB, Markdown
     
     format_ids = [f['id'] for f in formats]
     assert 'pdf' in format_ids
     assert 'docx' in format_ids
     assert 'markdown' in format_ids
     assert 'html' in format_ids
+    assert 'epub' in format_ids
 
 
 def test_markdown_exporter():
@@ -183,6 +184,41 @@ def test_docx_exporter():
     with tempfile.TemporaryDirectory() as tmpdir:
         output_path = exporter.generate_output_path(tmpdir)
         assert output_path.endswith('.docx')
+        
+        # Export
+        result = exporter.export()
+        assert os.path.exists(result)
+
+
+def test_epub_exporter():
+    """Test EPUB exporter basic functionality."""
+    try:
+        from epub_exporter import EPUBExporter, EPUB_AVAILABLE
+    except ImportError:
+        print("ebooklib not available, skipping EPUB test")
+        return
+    
+    if not EPUB_AVAILABLE:
+        print("EPUB export not available")
+        return
+    
+    from project_manager import CourseProject
+    
+    # Create test project
+    project = CourseProject()
+    project.set_topic("Test Topic")
+    project.set_audience("Test Audience")
+    project.set_outline(["Chapter 1", "Chapter 2"])
+    project.set_chapter_content("Chapter 1", "This is chapter 1 content.")
+    project.set_chapter_content("Chapter 2", "This is chapter 2 content.")
+    
+    # Create exporter
+    exporter = EPUBExporter(project)
+    
+    # Generate output path
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_path = exporter.generate_output_path(tmpdir)
+        assert output_path.endswith('.epub')
         
         # Export
         result = exporter.export()

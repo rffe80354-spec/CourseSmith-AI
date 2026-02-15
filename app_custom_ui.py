@@ -317,7 +317,7 @@ class CustomApp(ctk.CTk):
         
         # Product type and export format selections
         self.selected_product_type = 'full_course'
-        self.selected_export_formats = {'pdf': True, 'docx': False, 'markdown': False, 'html': False}
+        self.selected_export_formats = {'pdf': True, 'docx': False, 'html': False, 'epub': False, 'markdown': False}
         
         # Load product templates
         try:
@@ -621,18 +621,23 @@ class CustomApp(ctk.CTk):
         formats_frame.pack(fill='x', pady=(0, 20))
         
         # Format buttons with visual feedback (replaces checkboxes)
-        # Note: Only showing PDF/DOCX/HTML as per requirements; markdown exporter
-        # is still available via export_base.py if needed programmatically
+        # All export formats: PDF, DOCX, HTML, EPUB, Markdown
         self.format_buttons = {}
         export_formats = [
             {'id': 'pdf', 'name': 'PDF', 'icon': '📄'},
             {'id': 'docx', 'name': 'DOCX', 'icon': '📝'},
-            {'id': 'html', 'name': 'HTML', 'icon': '🌐'}
+            {'id': 'html', 'name': 'HTML', 'icon': '🌐'},
+            {'id': 'epub', 'name': 'EPUB', 'icon': '📚'},
+            {'id': 'markdown', 'name': 'Markdown', 'icon': '📋'}
         ]
         
         for i, fmt in enumerate(export_formats):
             is_selected = self.selected_export_formats.get(fmt['id'], False)
             colors = FORMAT_BTN_SELECTED if is_selected else FORMAT_BTN_UNSELECTED
+            
+            # Arrange in 2 rows: first 3 on row 0, next 2 on row 1
+            row = 0 if i < 3 else 1
+            col = i if i < 3 else i - 3
             
             btn = ctk.CTkButton(
                 formats_frame,
@@ -647,7 +652,7 @@ class CustomApp(ctk.CTk):
                 border_color=colors["border"],
                 command=lambda f_id=fmt['id']: self._toggle_format_btn(f_id)
             )
-            btn.grid(row=0, column=i, padx=(0, 10), pady=5)
+            btn.grid(row=row, column=col, padx=(0, 10), pady=5)
             self.format_buttons[fmt['id']] = btn
         
         # ===== CREDIT INFO =====

@@ -281,18 +281,25 @@ def get_export_formats_for_ui() -> List[Dict]:
             'extension': '.docx'
         },
         {
-            'id': 'markdown',
-            'name': 'Markdown',
-            'description': 'Markdown text file',
-            'icon': '📋',
-            'extension': '.md'
-        },
-        {
             'id': 'html',
             'name': 'HTML',
             'description': 'Web page document',
             'icon': '🌐',
             'extension': '.html'
+        },
+        {
+            'id': 'epub',
+            'name': 'EPUB',
+            'description': 'E-book format',
+            'icon': '📚',
+            'extension': '.epub'
+        },
+        {
+            'id': 'markdown',
+            'name': 'Markdown',
+            'description': 'Markdown text file',
+            'icon': '📋',
+            'extension': '.md'
         }
     ]
     return formats
