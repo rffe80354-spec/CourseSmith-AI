@@ -77,7 +77,7 @@ def fetch_openai_api_key() -> str:
             supabase = _get_supabase_client()
             
             # Query the secrets table for OPENAI_API_KEY
-            response = supabase.table("secrets").select("value").eq("name", "OPENAI_API_KEY").execute()
+            response = supabase.table("secrets").select("value").eq("name", "OPENAI_API_KEY").limit(1).execute()
             
             if not response.data or len(response.data) == 0:
                 raise KeyRetrievalError(
@@ -107,7 +107,7 @@ def fetch_openai_api_key() -> str:
             raise
         except Exception as e:
             raise KeyRetrievalError(
-                f"Не удалось получить ключ API из защищенного хранилища."
+                "Не удалось получить ключ API из защищенного хранилища."
             )
 
 
