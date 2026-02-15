@@ -48,6 +48,9 @@ FORMAT_BTN_UNSELECTED = {"fg": "#2A3142", "hover": "#3A4152", "border": "#3A4152
 # Sidebar width constant
 SIDEBAR_WIDTH = 200
 
+# Max length for prompt text in log messages
+MAX_PROMPT_LOG_LENGTH = 50
+
 
 class LanguageManager:
     """Manages multilingual support for EN/RU languages."""
@@ -102,6 +105,13 @@ class LanguageManager:
                 'products_this_month': 'Products This Month',
                 'select_product_type': 'Select Product Type',
                 'select_formats': 'Select Export Formats',
+                'prompt_label': 'Generation Instructions (Prompt)',
+                'login_title': 'Login',
+                'email': 'Email',
+                'license_key': 'License Key',
+                'login_button': 'Login',
+                'login_error': 'Login Error',
+                'login_required': 'Please enter email and license key',
             },
             'RU': {
                 'forge': 'Создать',
@@ -132,6 +142,13 @@ class LanguageManager:
                 'products_this_month': 'Продуктов за месяц',
                 'select_product_type': 'Выберите тип продукта',
                 'select_formats': 'Выберите форматы экспорта',
+                'prompt_label': 'Инструкция для генерации (Промт)',
+                'login_title': 'Вход',
+                'email': 'Email',
+                'license_key': 'Лицензионный ключ',
+                'login_button': 'Войти',
+                'login_error': 'Ошибка входа',
+                'login_required': 'Пожалуйста, введите email и лицензионный ключ',
             }
         }
         return translations.get(self.current_lang, {}).get(key, key)
@@ -330,8 +347,171 @@ class CustomApp(ctk.CTk):
         except ImportError:
             self.product_templates = []
         
-        # Create UI
-        self._create_ui()
+        # DRM: Load license and check for valid session before creating UI
+        session_token, email, tier, expires_at, _ = load_license()
+        
+        if session_token and email and tier:
+            # Valid session found - set session and create UI
+            set_session(session_token, email, tier, expires_at)
+            self._create_ui()
+        else:
+            # No valid session - show login screen
+            self._show_login_screen()
+    
+    def _show_login_screen(self):
+        """Show the login screen for license validation."""
+        # Clear any existing widgets
+        for widget in self.winfo_children():
+            widget.destroy()
+        
+        # Create login container centered on screen
+        login_container = ctk.CTkFrame(
+            self,
+            fg_color=COLORS['card'],
+            corner_radius=20,
+            border_width=2,
+            border_color=COLORS['border']
+        )
+        login_container.place(relx=0.5, rely=0.5, anchor='center')
+        
+        login_inner = ctk.CTkFrame(login_container, fg_color='transparent')
+        login_inner.pack(padx=50, pady=40)
+        
+        # Logo/Title
+        logo_label = ctk.CTkLabel(
+            login_inner,
+            text="🏭",
+            font=ctk.CTkFont(size=64)
+        )
+        logo_label.pack(pady=(0, 10))
+        
+        title_label = ctk.CTkLabel(
+            login_inner,
+            text="CourseSmith AI",
+            font=ctk.CTkFont(size=28, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        title_label.pack(pady=(0, 5))
+        
+        subtitle_label = ctk.CTkLabel(
+            login_inner,
+            text="Digital Product Factory",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text_secondary']
+        )
+        subtitle_label.pack(pady=(0, 30))
+        
+        # Login title
+        login_title = ctk.CTkLabel(
+            login_inner,
+            text=self.lang.get('login_title'),
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        login_title.pack(anchor='w', pady=(0, 20))
+        
+        # Email field
+        email_label = ctk.CTkLabel(
+            login_inner,
+            text=self.lang.get('email'),
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        email_label.pack(anchor='w', pady=(0, 5))
+        
+        self.login_email_entry = ctk.CTkEntry(
+            login_inner,
+            width=350,
+            height=45,
+            corner_radius=15,
+            font=ctk.CTkFont(size=14),
+            fg_color=COLORS['background'],
+            border_color=COLORS['border'],
+            text_color=COLORS['text_primary'],
+            placeholder_text="your@email.com"
+        )
+        self.login_email_entry.pack(pady=(0, 15))
+        
+        # License Key field
+        key_label = ctk.CTkLabel(
+            login_inner,
+            text=self.lang.get('license_key'),
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS['text_primary']
+        )
+        key_label.pack(anchor='w', pady=(0, 5))
+        
+        self.login_key_entry = ctk.CTkEntry(
+            login_inner,
+            width=350,
+            height=45,
+            corner_radius=15,
+            font=ctk.CTkFont(size=14),
+            fg_color=COLORS['background'],
+            border_color=COLORS['border'],
+            text_color=COLORS['text_primary'],
+            placeholder_text="CS-XXXX-XXXX-XXXX..."
+        )
+        self.login_key_entry.pack(pady=(0, 25))
+        
+        # Login button with premium styling
+        self.login_button = PremiumButton(
+            login_inner,
+            text=self.lang.get('login_button'),
+            width=350,
+            height=50,
+            corner_radius=20,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            text_color=COLORS['text_primary'],
+            glow=True,
+            command=self._handle_login
+        )
+        self.login_button.pack(pady=(0, 10))
+        
+        # Error message label (hidden initially)
+        self.login_error_label = ctk.CTkLabel(
+            login_inner,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['error']
+        )
+        self.login_error_label.pack(pady=(10, 0))
+    
+    def _handle_login(self):
+        """Handle login button click and validate credentials."""
+        email = self.login_email_entry.get().strip()
+        license_key = self.login_key_entry.get().strip()
+        
+        if not email or not license_key:
+            self.login_error_label.configure(text=self.lang.get('login_required'))
+            return
+        
+        # Validate with license_guard
+        result = validate_license(email, license_key)
+        
+        if result and result.get('valid'):
+            # Successful validation
+            tier = result.get('tier', 'standard')
+            expires_at = result.get('expires_at')
+            token = result.get('token', '')
+            
+            # Save license for persistent session
+            save_license(email, license_key, tier, expires_at)
+            
+            # Set session
+            set_session(token, email, tier, expires_at)
+            
+            # Clear login screen and create main UI
+            for widget in self.winfo_children():
+                widget.destroy()
+            
+            self._create_ui()
+        else:
+            # Failed validation
+            error_msg = result.get('message', self.lang.get('login_error')) if result else self.lang.get('login_error')
+            self.login_error_label.configure(text=error_msg)
         
     def _create_ui(self):
         """Create the main UI layout."""
@@ -570,47 +750,26 @@ class CustomApp(ctk.CTk):
             
             self.type_buttons[template['id']] = btn_frame
         
-        # ===== TOPIC INPUT =====
-        topic_label = ctk.CTkLabel(
+        # ===== MASTER PROMPT INPUT =====
+        prompt_label = ctk.CTkLabel(
             input_inner,
-            text=self.lang.get('course_topic'),
+            text=self.lang.get('prompt_label'),
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS['text_primary']
         )
-        topic_label.pack(anchor='w', pady=(10, 8))
+        prompt_label.pack(anchor='w', pady=(10, 8))
         
-        self.topic_entry = ctk.CTkEntry(
+        self.prompt_textbox = ctk.CTkTextbox(
             input_inner,
-            height=45,
+            height=150,
             corner_radius=15,
             font=ctk.CTkFont(size=14),
             fg_color=COLORS['background'],
             border_color=COLORS['border'],
             text_color=COLORS['text_primary'],
-            placeholder_text="e.g., Python Programming, Digital Marketing, Personal Finance..."
+            border_width=1
         )
-        self.topic_entry.pack(fill='x', pady=(0, 20))
-        
-        # ===== AUDIENCE INPUT =====
-        audience_label = ctk.CTkLabel(
-            input_inner,
-            text=self.lang.get('target_audience'),
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=COLORS['text_primary']
-        )
-        audience_label.pack(anchor='w', pady=(0, 8))
-        
-        self.audience_entry = ctk.CTkEntry(
-            input_inner,
-            height=45,
-            corner_radius=15,
-            font=ctk.CTkFont(size=14),
-            fg_color=COLORS['background'],
-            border_color=COLORS['border'],
-            text_color=COLORS['text_primary'],
-            placeholder_text="e.g., Beginners, Business Owners, Students..."
-        )
-        self.audience_entry.pack(fill='x', pady=(0, 20))
+        self.prompt_textbox.pack(fill='x', pady=(0, 20))
         
         # ===== EXPORT FORMATS SELECTION =====
         formats_label = ctk.CTkLabel(
@@ -1015,21 +1174,19 @@ class CustomApp(ctk.CTk):
                 break
     
     def _toggle_format_btn(self, format_id):
-        """Handle export format button click with visual feedback."""
-        # Toggle the format selection state
-        current_state = self.selected_export_formats.get(format_id, False)
-        self.selected_export_formats[format_id] = not current_state
+        """Handle export format button click with radio-button behavior (only one format at a time)."""
+        # Deselect all formats first
+        for fmt in self.selected_export_formats:
+            self.selected_export_formats[fmt] = False
         
-        # Ensure at least one format is selected
-        if not any(self.selected_export_formats.values()):
-            self.selected_export_formats['pdf'] = True
+        # Select only the clicked format
+        self.selected_export_formats[format_id] = True
         
         # Update all button visual states
         self._update_format_buttons()
         
         # Log format change with emoji prefix
-        selected_formats = [f.upper() for f, v in self.selected_export_formats.items() if v]
-        print(f"📋 Format selection changed: {', '.join(selected_formats)}")
+        print(f"📋 Format selection changed: {format_id.upper()}")
     
     def _update_format_buttons(self):
         """Update format button visual states based on selection."""
@@ -1188,15 +1345,11 @@ class CustomApp(ctk.CTk):
     
     def _start_generation(self):
         """Start product generation process with selected template and formats."""
-        topic = self.topic_entry.get().strip()
-        audience = self.audience_entry.get().strip()
+        # Get prompt text from the master prompt textbox
+        prompt_text = self.prompt_textbox.get("1.0", "end-1c").strip()
         
-        if not topic:
-            messagebox.showwarning("Input Required", "Please enter a topic")
-            return
-        
-        if not audience:
-            messagebox.showwarning("Input Required", "Please enter a target audience")
+        if not prompt_text:
+            messagebox.showwarning("Input Required", "Please enter generation instructions (prompt)")
             return
         
         # Get selected export formats
@@ -1206,19 +1359,18 @@ class CustomApp(ctk.CTk):
         
         # Log generation start with emoji prefix and context
         formats_str = ', '.join([f.upper() for f in export_formats])
-        print(f"🚀 Starting generation: Topic='{topic}', Chapters={self.total_chapters}, Formats={formats_str}")
+        print(f"🚀 Starting generation: Prompt='{prompt_text[:MAX_PROMPT_LOG_LENGTH]}...', Chapters={self.total_chapters}, Formats={formats_str}")
         
         # Setup project with selected options
+        # Use prompt_text as the topic for AI generation (audience is now part of prompt)
         self.project = CourseProject()
-        self.project.set_topic(topic)
-        self.project.set_audience(audience)
+        self.project.set_topic(prompt_text)
         self.project.set_product_type(self.selected_product_type)
         self.project.set_export_formats(export_formats)
         
         # Disable inputs
         self.is_generating = True
-        self.topic_entry.configure(state='disabled')
-        self.audience_entry.configure(state='disabled')
+        self.prompt_textbox.configure(state='disabled')
         self.start_button.configure(state='disabled')
         
         # Disable product type buttons
@@ -1383,8 +1535,7 @@ class CustomApp(ctk.CTk):
         self.input_border_frame.stop_animation()
         
         # Re-enable controls
-        self.topic_entry.configure(state='normal')
-        self.audience_entry.configure(state='normal')
+        self.prompt_textbox.configure(state='normal')
         self.start_button.configure(state='normal')
         
         # Re-enable product type buttons
@@ -1447,8 +1598,7 @@ class CustomApp(ctk.CTk):
                 export_errors.append(error_msg)
         
         # Re-enable controls
-        self.topic_entry.configure(state='normal')
-        self.audience_entry.configure(state='normal')
+        self.prompt_textbox.configure(state='normal')
         self.start_button.configure(state='normal')
         
         # Re-enable product type buttons
@@ -1471,8 +1621,8 @@ class CustomApp(ctk.CTk):
                 break
         
         # Log success with emoji prefix and context
-        topic = self.topic_entry.get().strip() if hasattr(self, 'topic_entry') else "Unknown"
-        print(f"✅ Generation complete: Topic='{topic}', Chapters={self.total_chapters}, Formats={formats_str}")
+        prompt_text = self.prompt_textbox.get("1.0", "end-1c").strip()[:MAX_PROMPT_LOG_LENGTH] if hasattr(self, 'prompt_textbox') else "Unknown"
+        print(f"✅ Generation complete: Prompt='{prompt_text}...', Chapters={self.total_chapters}, Formats={formats_str}")
         
         # Build success message
         if exported_files:
