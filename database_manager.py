@@ -234,7 +234,8 @@ def initialize_database():
 
 
 def create_license(email: str, key: str, tier: str, duration: str, 
-                  expires_at: Optional[str] = None, notes: Optional[str] = None) -> int:
+                  expires_at: Optional[str] = None, notes: Optional[str] = None,
+                  credits: int = 10) -> int:
     """
     Create a new license entry in the database.
     
@@ -245,6 +246,7 @@ def create_license(email: str, key: str, tier: str, duration: str,
         duration: License duration ('3_day', '1_month', '3_month', '6_month', '1_year', 'lifetime').
         expires_at: Expiration date in ISO format (optional, calculated if None).
         notes: Additional notes about this license (optional).
+        credits: Initial generation credits for this license (default: 10).
         
     Returns:
         int: The ID of the newly created license record.
@@ -293,7 +295,8 @@ def create_license(email: str, key: str, tier: str, duration: str,
             'created_at': created_at,
             'expires_at': expires_at,
             'status': 'Active',
-            'notes': notes
+            'notes': notes,
+            'credits': credits
         }
         sync_to_cloud(license_data)
     

@@ -517,7 +517,13 @@ class CustomApp(ctk.CTk):
             self.login_error_label.configure(text=error_msg)
     
     def _setup_keyboard_shortcuts(self):
-        """Fix Ctrl+A, C, V, X for both English and Russian keyboard layouts."""
+        """
+        Setup keyboard shortcuts for Russian Cyrillic keyboard layout only.
+        
+        NOTE: English Ctrl+C/V/X/A are handled natively by CustomTkinter.
+        Adding custom bindings for English keys causes DOUBLE copy/paste actions.
+        Only bind Russian Cyrillic equivalents for users with Russian keyboard layouts.
+        """
         def select_all(event):
             widget = self.focus_get()
             if isinstance(widget, (ctk.CTkEntry, ctk.CTkTextbox)):
@@ -546,18 +552,8 @@ class CustomApp(ctk.CTk):
                 widget.event_generate("<<Cut>>")
             return "break"
         
-        # Bind for both English (a, c, v, x) and Russian Cyrillic (ф, с, м, ч) layouts
-        # English lowercase and uppercase
-        self.bind_all("<Control-a>", select_all)
-        self.bind_all("<Control-A>", select_all)
-        self.bind_all("<Control-c>", copy_text)
-        self.bind_all("<Control-C>", copy_text)
-        self.bind_all("<Control-v>", paste_text)
-        self.bind_all("<Control-V>", paste_text)
-        self.bind_all("<Control-x>", cut_text)
-        self.bind_all("<Control-X>", cut_text)
-        
-        # Russian Cyrillic equivalents (same key positions on keyboard)
+        # Only bind Russian Cyrillic equivalents (same key positions on keyboard)
+        # English Ctrl+C/V/X/A are already handled natively by CustomTkinter
         # ф = a, с = c, м = v, ч = x
         self.bind_all("<Control-Cyrillic_ef>", select_all)  # ф (Ctrl+A position)
         self.bind_all("<Control-Cyrillic_EF>", select_all)
