@@ -208,7 +208,7 @@ def check_remaining_credits() -> dict:
             return {
                 'has_credits': False,
                 'credits': 0,
-                'message': 'License not found in database.'
+                'message': f"License not found in DB.\nSearched Key: '{license_key}'\nSearched Email: '{email}'"
             }
         
         credits = response.data[0].get('credits', 0)
