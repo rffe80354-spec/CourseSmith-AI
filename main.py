@@ -1017,12 +1017,16 @@ class EnterpriseApp(ctk.CTk):
         Updates button states and stores the selected format.
         
         Args:
-            selected_format: The format to select (PDF, DOCX, or HTML).
+            selected_format: The format to select (PDF, DOCX, HTML, EPUB, or Markdown).
         """
         self.selected_export_format = selected_format
         
+        # DEBUG: Print format selection to console for verification
+        print(f"DEBUG: Selected format changed to {self.selected_export_format}")
+        
         # Update button visual states - highlight selected, dim others
-        format_icons = {'PDF': '📄', 'DOCX': '📝', 'HTML': '🌐'}
+        # All 5 export formats with their icons
+        format_icons = {'PDF': '📄', 'DOCX': '📝', 'HTML': '🌐', 'EPUB': '📚', 'Markdown': '📋'}
         
         for format_name, btn in self.format_buttons.items():
             is_selected = format_name == selected_format
@@ -1422,28 +1426,23 @@ class EnterpriseApp(ctk.CTk):
         # Get selected format (default to PDF)
         selected_format = getattr(self, 'selected_export_format', 'PDF').upper()
         
+        # DEBUG: Log routing decision to console
+        print(f"DEBUG: SYSTEM: Routing to {selected_format} exporter...")
+        
         # Log the format being generated
-        print(f"📋 Generating document in format: {selected_format}")
+        self._log_message(f"SYSTEM: Routing to {selected_format} exporter...")
         
         # Route to appropriate generator based on format
-        if selected_format == "PDF":
-            return self._generate_pdf_file(course_data, media_files)
-        
-        elif selected_format == "DOCX":
+        if selected_format == "DOCX":
             return self._generate_docx_file(course_data)
-        
         elif selected_format == "HTML":
             return self._generate_html_file(course_data)
-        
         elif selected_format == "EPUB":
             return self._generate_epub_file(course_data)
-        
         elif selected_format == "MARKDOWN":
             return self._generate_markdown_file(course_data)
-        
         else:
-            # Fallback to PDF for unknown formats
-            print(f"⚠️  Unknown format '{selected_format}', falling back to PDF")
+            # Default to PDF for PDF and unknown formats
             return self._generate_pdf_file(course_data, media_files)
     
     def _create_project_from_course_data(self, course_data: dict):
