@@ -48,6 +48,9 @@ FORMAT_BTN_UNSELECTED = {"fg": "#2A3142", "hover": "#3A4152", "border": "#3A4152
 # Sidebar width constant
 SIDEBAR_WIDTH = 200
 
+# Max length for prompt text in log messages
+MAX_PROMPT_LOG_LENGTH = 50
+
 
 class LanguageManager:
     """Manages multilingual support for EN/RU languages."""
@@ -345,7 +348,7 @@ class CustomApp(ctk.CTk):
             self.product_templates = []
         
         # DRM: Load license and check for valid session before creating UI
-        session_token, email, tier, expires_at, license_key = load_license()
+        session_token, email, tier, expires_at, _ = load_license()
         
         if session_token and email and tier:
             # Valid session found - set session and create UI
@@ -1356,13 +1359,12 @@ class CustomApp(ctk.CTk):
         
         # Log generation start with emoji prefix and context
         formats_str = ', '.join([f.upper() for f in export_formats])
-        print(f"🚀 Starting generation: Prompt='{prompt_text[:50]}...', Chapters={self.total_chapters}, Formats={formats_str}")
+        print(f"🚀 Starting generation: Prompt='{prompt_text[:MAX_PROMPT_LOG_LENGTH]}...', Chapters={self.total_chapters}, Formats={formats_str}")
         
         # Setup project with selected options
-        # Use prompt_text as the topic for AI generation
+        # Use prompt_text as the topic for AI generation (audience is now part of prompt)
         self.project = CourseProject()
         self.project.set_topic(prompt_text)
-        self.project.set_audience("")  # Audience now part of prompt
         self.project.set_product_type(self.selected_product_type)
         self.project.set_export_formats(export_formats)
         
@@ -1619,7 +1621,7 @@ class CustomApp(ctk.CTk):
                 break
         
         # Log success with emoji prefix and context
-        prompt_text = self.prompt_textbox.get("1.0", "end-1c").strip()[:50] if hasattr(self, 'prompt_textbox') else "Unknown"
+        prompt_text = self.prompt_textbox.get("1.0", "end-1c").strip()[:MAX_PROMPT_LOG_LENGTH] if hasattr(self, 'prompt_textbox') else "Unknown"
         print(f"✅ Generation complete: Prompt='{prompt_text}...', Chapters={self.total_chapters}, Formats={formats_str}")
         
         # Build success message
