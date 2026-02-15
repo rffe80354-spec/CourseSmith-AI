@@ -4,7 +4,7 @@ Provides background workers for outline, chapter, and cover generation.
 SECURITY: Requires valid session token to function (anti-tamper protection).
 
 API Key Retrieval:
-    The OpenAI API key is retrieved from a Supabase Edge Function
+    The OpenAI API key is retrieved from the Supabase 'secrets' table
     with TTL-based caching for security and performance.
 """
 
@@ -13,18 +13,11 @@ import re
 import threading
 import tempfile
 import time
-import requests
 from openai import OpenAI
 
 from session_manager import is_active, SecurityError, get_user_email, get_license_key
 
-# Supabase Edge Function URL for secure API key retrieval (configurable via env var)
-SUPABASE_EDGE_FUNCTION_URL = os.getenv(
-    "SUPABASE_EDGE_FUNCTION_URL",
-    "https://spfwfyjpexktgnusgyib.functions.supabase.co/get_openai_key"
-)
-
-# Supabase configuration for credit checking and Edge Function authorization
+# Supabase configuration for credit checking and API key retrieval
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://spfwfyjpexktgnusgyib.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_tmwenU0VyOChNWKG90X_bw_HYf9X5kR")
 
@@ -42,7 +35,7 @@ API_KEY_CACHE_TTL = 600
 
 
 class KeyRetrievalError(Exception):
-    """Exception raised when API key retrieval from Supabase Edge Function fails."""
+    """Exception raised when API key retrieval from Supabase secrets table fails."""
     pass
 
 
@@ -60,17 +53,17 @@ def _is_cache_valid() -> bool:
 
 def fetch_openai_api_key() -> str:
     """
-    Fetch the OpenAI API key from Supabase Edge Function.
+    Fetch the OpenAI API key from Supabase secrets table.
     
-    This function makes a GET request to the Supabase Edge Function
-    to retrieve the OpenAI API key securely. The key is cached
-    with a TTL (time-to-live) for security and performance.
+    This function queries the Supabase 'secrets' table to retrieve
+    the OpenAI API key securely. The key is cached with a TTL 
+    (time-to-live) for security and performance.
     
     Returns:
         str: The OpenAI API key.
         
     Raises:
-        KeyRetrievalError: If the key cannot be retrieved from the Edge Function.
+        KeyRetrievalError: If the key cannot be retrieved from Supabase.
     """
     global _openai_api_key_cache, _openai_api_key_cache_time
     
@@ -80,39 +73,22 @@ def fetch_openai_api_key() -> str:
             return _openai_api_key_cache
         
         try:
-            # Make GET request to Supabase Edge Function
-            headers = {
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json"
-            }
+            # Get Supabase client
+            supabase = _get_supabase_client()
             
-            response = requests.get(
-                SUPABASE_EDGE_FUNCTION_URL,
-                headers=headers,
-                timeout=10
-            )
+            # Query the secrets table for OPENAI_API_KEY
+            response = supabase.table("secrets").select("value").eq("name", "OPENAI_API_KEY").execute()
             
-            # Check for HTTP errors
-            if response.status_code == 401:
+            if not response.data or len(response.data) == 0:
                 raise KeyRetrievalError(
-                    "Ошибка авторизации ключа. Проверьте настройки доступа."
-                )
-            elif response.status_code == 403:
-                raise KeyRetrievalError(
-                    "Доступ запрещён. Недостаточно прав для получения ключа."
-                )
-            elif response.status_code != 200:
-                raise KeyRetrievalError(
-                    f"Ошибка получения ключа. Код ответа: {response.status_code}"
+                    "Не удалось получить ключ API из защищенного хранилища."
                 )
             
-            # Parse JSON response and extract key
-            data = response.json()
-            api_key = data.get("key")
+            api_key = response.data[0].get("value")
             
             if not api_key:
                 raise KeyRetrievalError(
-                    "Ключ API не найден в ответе сервера."
+                    "Не удалось получить ключ API из защищенного хранилища."
                 )
             
             # Validate key format (OpenAI keys start with 'sk-')
@@ -126,21 +102,12 @@ def fetch_openai_api_key() -> str:
             _openai_api_key_cache_time = time.time()
             return api_key
             
-        except requests.exceptions.Timeout:
+        except KeyRetrievalError:
+            # Re-raise KeyRetrievalError without wrapping
+            raise
+        except Exception as e:
             raise KeyRetrievalError(
-                "Превышено время ожидания ответа от сервера ключей."
-            )
-        except requests.exceptions.ConnectionError:
-            raise KeyRetrievalError(
-                "Ошибка подключения к серверу ключей. Проверьте интернет-соединение."
-            )
-        except requests.exceptions.RequestException as e:
-            raise KeyRetrievalError(
-                f"Ошибка запроса ключа: {str(e)}"
-            )
-        except ValueError:  # JSON decode error
-            raise KeyRetrievalError(
-                "Ошибка разбора ответа сервера ключей."
+                f"Не удалось получить ключ API из защищенного хранилища."
             )
 
 
