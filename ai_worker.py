@@ -13,7 +13,6 @@ import re
 import threading
 import tempfile
 import time
-from openai import OpenAI
 
 from session_manager import is_active, SecurityError, get_user_email, get_license_key
 
@@ -395,6 +394,7 @@ class AIWorkerBase:
                 except KeyRetrievalError as e:
                     raise ValueError(str(e))
                 
+                from openai import OpenAI
                 cls._client = OpenAI(api_key=api_key)
             return cls._client
     

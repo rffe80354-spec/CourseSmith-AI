@@ -24,12 +24,6 @@ from utils import resource_path, get_data_dir, clipboard_cut, clipboard_copy, cl
 from license_guard import validate_license, load_license, save_license, remove_license, get_hwid
 from session_manager import set_session, set_token, is_active, get_tier, is_extended, clear_session
 from project_manager import CourseProject
-from ai_worker import OutlineGenerator, ChapterWriter, CoverGenerator, AIWorkerBase
-from pdf_engine import PDFBuilder
-# Import exporters for multi-format output support
-from docx_exporter import DOCXExporter
-from html_exporter import HTMLExporter
-from export_base import ExportManager, ExportError
 
 # Apply scrollbar patch to prevent RecursionError in CTkScrollableFrame
 # This must be called before creating any scrollable widgets
@@ -1397,6 +1391,7 @@ class App(ctk.CTk):
         def on_error(error):
             self.after(0, lambda: self._on_generation_error(error))
 
+        from ai_worker import OutlineGenerator
         worker = OutlineGenerator(
             self.project.topic,
             self.project.audience,
@@ -1697,6 +1692,7 @@ class App(ctk.CTk):
             # Capture text_chunk by value to avoid race conditions
             self.after(0, lambda chunk=text_chunk: self.update_live_preview(chunk))
 
+        from ai_worker import ChapterWriter
         worker = ChapterWriter(
             self.project.topic,
             chapter_title,
@@ -1912,6 +1908,7 @@ class App(ctk.CTk):
         def on_error(error):
             self.after(0, lambda: self._on_cover_error(error))
 
+        from ai_worker import CoverGenerator
         worker = CoverGenerator(
             self.project.topic,
             callback=on_success,
@@ -2102,6 +2099,7 @@ class App(ctk.CTk):
             self.after(i * 100, lambda p=i: update_progress(p))
         
         # Create PDF builder with tier parameter
+        from pdf_engine import PDFBuilder
         builder = PDFBuilder(filepath, tier=current_tier)
         
         # Get custom images from project UI settings
@@ -2138,6 +2136,7 @@ class App(ctk.CTk):
             str: Path to the generated DOCX file.
         """
         # Create DOCX exporter with the project and output path
+        from docx_exporter import DOCXExporter
         exporter = DOCXExporter(self.project, filepath)
         
         # Update progress during export
@@ -2160,6 +2159,7 @@ class App(ctk.CTk):
             str: Path to the generated HTML file.
         """
         # Create HTML exporter with the project and output path
+        from html_exporter import HTMLExporter
         exporter = HTMLExporter(self.project, filepath)
         
         # Update progress during export

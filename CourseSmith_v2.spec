@@ -2,6 +2,7 @@
 """
 PyInstaller spec file for CourseSmith_v2 (app_custom_ui.py).
 This spec includes all necessary data files and hidden imports.
+Uses --onedir mode for faster startup and selective --collect-submodules.
 
 Usage:
     pyinstaller CourseSmith_v2.spec
@@ -14,9 +15,9 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # Get customtkinter data files
 ctk_datas = collect_data_files('customtkinter')
 
-# Collect additional package data
-babel_datas = collect_data_files('babel')
-pydantic_datas = collect_data_files('pydantic')
+# Collect only necessary submodules instead of entire packages
+ctk_submodules = collect_submodules('customtkinter')
+reportlab_submodules = collect_submodules('reportlab')
 
 # Prepare data files list
 datas_list = [
@@ -24,7 +25,7 @@ datas_list = [
     ('fonts', 'fonts'),
     # Include resources directory with icons
     ('resources', 'resources'),
-] + ctk_datas + babel_datas + pydantic_datas
+] + ctk_datas
 
 # Include .env file only if it exists
 if os.path.exists('.env'):
@@ -57,9 +58,6 @@ a = Analysis(
         'secrets_manager',  # For Supabase API key retrieval
         # Standard library modules that might be missed
         'babel.numbers',
-        'pydantic',
-        'pydantic.deprecated',
-        'pydantic.deprecated.decorator',
         # ReportLab modules for PDF generation
         'reportlab',
         'reportlab.pdfbase',
@@ -108,7 +106,7 @@ a = Analysis(
         'lxml',
         'lxml._elementpath',
         'lxml.etree',
-    ],
+    ] + ctk_submodules + reportlab_submodules,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -119,19 +117,17 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# Use --onedir mode (COLLECT) for faster startup instead of --onefile
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='CourseSmith_v2',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,  # windowed mode
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -139,4 +135,14 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='resources/coursesmithai.ico',
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='CourseSmith_v2',
 )

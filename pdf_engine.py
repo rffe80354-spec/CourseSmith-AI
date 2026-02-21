@@ -10,22 +10,6 @@ import os
 import re
 import tempfile
 import shutil
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch, mm
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
-from reportlab.platypus import (
-    BaseDocTemplate,
-    PageTemplate,
-    Frame,
-    Paragraph,
-    Spacer,
-    Image,
-    PageBreak,
-    NextPageTemplate,
-)
-from reportlab.lib.colors import HexColor, Color
-from reportlab.pdfgen import canvas
 
 from utils import resource_path, _register_roboto_fonts
 from session_manager import is_active, get_tier, SecurityError
@@ -37,6 +21,56 @@ from generator import ContentDistributor, distribute_chapter_content
 _BOLD_PATTERN = re.compile(r'\*\*(.+?)\*\*')
 # Italic pattern uses negative lookbehind/lookahead to avoid matching bold asterisks
 _ITALIC_PATTERN = re.compile(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)')
+
+# Lazy-loaded reportlab references (populated on first use)
+_reportlab_loaded = False
+
+
+def _ensure_reportlab():
+    """Lazy-load all reportlab symbols into the module namespace on first use."""
+    global _reportlab_loaded
+    if _reportlab_loaded:
+        return
+    global letter, getSampleStyleSheet, ParagraphStyle
+    global inch, mm
+    global TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
+    global BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer
+    global Image, PageBreak, NextPageTemplate
+    global HexColor, Color, canvas
+
+    from reportlab.lib.pagesizes import letter as _letter
+    from reportlab.lib.styles import getSampleStyleSheet as _gss, ParagraphStyle as _ps
+    from reportlab.lib.units import inch as _inch, mm as _mm
+    from reportlab.lib.enums import TA_CENTER as _c, TA_JUSTIFY as _j, TA_LEFT as _l, TA_RIGHT as _r
+    from reportlab.platypus import (
+        BaseDocTemplate as _bdt, PageTemplate as _pt, Frame as _fr,
+        Paragraph as _par, Spacer as _sp, Image as _img,
+        PageBreak as _pb, NextPageTemplate as _npt,
+    )
+    from reportlab.lib.colors import HexColor as _hc, Color as _co
+    from reportlab.pdfgen import canvas as _canvas
+
+    letter = _letter
+    getSampleStyleSheet = _gss
+    ParagraphStyle = _ps
+    inch = _inch
+    mm = _mm
+    TA_CENTER = _c
+    TA_JUSTIFY = _j
+    TA_LEFT = _l
+    TA_RIGHT = _r
+    BaseDocTemplate = _bdt
+    PageTemplate = _pt
+    Frame = _fr
+    Paragraph = _par
+    Spacer = _sp
+    Image = _img
+    PageBreak = _pb
+    NextPageTemplate = _npt
+    HexColor = _hc
+    Color = _co
+    canvas = _canvas
+    _reportlab_loaded = True
 
 
 class PDFBuilder:
@@ -59,6 +93,7 @@ class PDFBuilder:
             filename: The output PDF filename.
             tier: License tier for pagination limits (if None, fetched from session).
         """
+        _ensure_reportlab()
         self.filename = filename
         self.page_width, self.page_height = letter
         self.margin = 20 * mm  # 20mm margins on all sides as per spec

@@ -3,12 +3,14 @@ CourseSmith Ultimate Engine - Professional Educational Course Generator
 Generates multi-format educational courses with UTF-8 and Cyrillic support.
 
 Features:
-- Language detection (English/Russian)
+- Multilingual content generation (target_language parameter)
+- Language detection (English/Russian and more)
 - Professional course titles
 - 10-chapter logical structure
 - Expert-level content (~1500 chars per chapter)
 - Markdown formatting with subheaders and bullet points
 - Clean UTF-8 output with full Cyrillic support
+- Post-processing regex filter to strip residual technical headers
 - Structured output format for easy conversion to PDF, DOCX, EPUB
 
 API Key Management:
@@ -21,12 +23,7 @@ API Key Management:
 
 import os
 import re
-from typing import Dict, List, Tuple
-from openai import OpenAI
-
-# Import secrets manager for secure API key retrieval from Supabase
-# The API key is stored in Supabase 'secrets' table with name='OPENAI_API_KEY'
-from secrets_manager import get_openai_api_key, is_supabase_configured
+from typing import Dict, List, Optional, Tuple
 
 
 class CourseSmithEngine:
@@ -38,18 +35,32 @@ class CourseSmithEngine:
         If no api_key is provided, it will be fetched automatically.
     """
 
-    def __init__(self, api_key: str = None, require_api_key: bool = True):
+    # Regex patterns for post-processing: strip residual technical headers from AI output
+    _TECHNICAL_HEADER_PATTERNS = [
+        re.compile(r'^\s*(?:Chapter|Глава|Раздел|Section|Introduction|Введение)\s*\d*\s*[:.\-—]?\s*', re.IGNORECASE | re.MULTILINE),
+        re.compile(r'^\s*(?:Here is (?:your|the) (?:content|chapter|text|course))[.:!]?\s*', re.IGNORECASE | re.MULTILINE),
+        re.compile(r'^\s*(?:Вот (?:ваш|ваше|ваша) (?:содержание|контент|глава|текст|курс))[.:!]?\s*', re.IGNORECASE | re.MULTILINE),
+        re.compile(r'^\s*#{1,3}\s*(?:Chapter|Глава)\s+\d+\s*[:.\-—]?\s*.*$', re.IGNORECASE | re.MULTILINE),
+    ]
+
+    def __init__(self, api_key: str = None, require_api_key: bool = True,
+                 target_language: Optional[str] = None):
         """
         Initialize the CourseSmith Ultimate Engine.
 
         Args:
             api_key: OpenAI API key. If None, will be retrieved from Supabase.
             require_api_key: If False, allows initialization without API key (for testing).
+            target_language: Target language code for content generation (e.g. 'ru', 'en', 'cn').
+                             If None, language is auto-detected from the user instruction.
         
         Raises:
             ValueError: If API key is required but cannot be retrieved from Supabase.
         """
         if api_key is None and require_api_key:
+            # Lazy import: secrets_manager for secure API key retrieval from Supabase
+            from secrets_manager import get_openai_api_key, is_supabase_configured
+
             # Retrieve API key from Supabase database
             # The key is stored in 'secrets' table with name='OPENAI_API_KEY'
             api_key = get_openai_api_key()
@@ -67,7 +78,13 @@ class CourseSmithEngine:
                         "Please ensure 'OPENAI_API_KEY' exists in the 'secrets' table."
                     )
         
-        self.client = OpenAI(api_key=api_key) if api_key else None
+        if api_key:
+            from openai import OpenAI
+            self.client = OpenAI(api_key=api_key)
+        else:
+            self.client = None
+
+        self.target_language = target_language
         self.language = None
         self.course_title = None
         self.chapters = []
@@ -99,6 +116,55 @@ class CourseSmithEngine:
         
         return text.strip()
 
+    @staticmethod
+    def _clean_content(text: str) -> str:
+        """
+        Post-processing filter: strip residual technical headers and 
+        leading/trailing empty lines from AI-generated content.
+
+        Args:
+            text: Raw AI-generated text.
+
+        Returns:
+            str: Cleaned text with technical boilerplate removed.
+        """
+        if not text:
+            return text
+
+        for pattern in CourseSmithEngine._TECHNICAL_HEADER_PATTERNS:
+            text = pattern.sub('', text)
+
+        # Strip leading/trailing blank lines while preserving internal structure
+        lines = text.split('\n')
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+
+        return '\n'.join(lines)
+
+    def _get_language_instruction(self, language: str) -> str:
+        """
+        Build a strict language instruction for the LLM system prompt.
+
+        Args:
+            language: Language code (e.g. 'ru', 'en', 'cn').
+
+        Returns:
+            str: Instruction string to append to system prompts.
+        """
+        lang_names = {
+            'ru': 'Russian', 'en': 'English', 'cn': 'Chinese',
+            'es': 'Spanish', 'fr': 'French', 'de': 'German',
+            'pt': 'Portuguese', 'ja': 'Japanese', 'ko': 'Korean',
+            'ar': 'Arabic', 'hi': 'Hindi', 'it': 'Italian',
+        }
+        name = lang_names.get(language, language.upper())
+        return (
+            f" You MUST generate ALL content strictly in {name}."
+            f" Do NOT include any text in other languages."
+        )
+
     def detect_language(self, text: str) -> str:
         """
         Detect if the text is in Russian or English.
@@ -128,9 +194,12 @@ class CourseSmithEngine:
         try:
             # Sanitize input
             user_instruction = self._sanitize_input(user_instruction)
+
+            lang_instr = self._get_language_instruction(language)
+            strict_rule = " Output ONLY the course title itself — no prefixes like 'Title:', no quotes, no explanations."
             
             if language == 'ru':
-                system_content = "Вы эксперт по созданию профессиональных образовательных курсов."
+                system_content = "Вы эксперт по созданию профессиональных образовательных курсов." + lang_instr + strict_rule
                 prompt = f"""На основе следующей инструкции создайте профессиональное, авторитетное название для образовательного курса:
 
 "{user_instruction}"
@@ -143,7 +212,7 @@ class CourseSmithEngine:
 
 Предоставьте только название курса, без дополнительных объяснений."""
             else:
-                system_content = "You are an expert at creating professional educational courses."
+                system_content = "You are an expert at creating professional educational courses." + lang_instr + strict_rule
                 prompt = f"""Based on the following instruction, create a professional, high-authority title for an educational course:
 
 "{user_instruction}"
@@ -169,7 +238,7 @@ Provide only the course title, without additional explanations."""
             title = response.choices[0].message.content.strip()
             # Remove quotes if present
             title = title.strip('"\'')
-            return title
+            return self._clean_content(title)
 
         except Exception as e:
             raise Exception(f"Failed to generate course title: {str(e)}")
@@ -188,9 +257,15 @@ Provide only the course title, without additional explanations."""
         try:
             # Sanitize input
             user_instruction = self._sanitize_input(user_instruction)
+
+            lang_instr = self._get_language_instruction(language)
+            strict_rule = (
+                " Do NOT prepend labels like 'Chapter', 'Глава', or 'Introduction'."
+                " Output only descriptive topic titles for each chapter."
+            )
             
             if language == 'ru':
-                system_content = "Вы эксперт по разработке структуры образовательных курсов."
+                system_content = "Вы эксперт по разработке структуры образовательных курсов." + lang_instr + strict_rule
                 prompt = f"""На основе следующей инструкции создайте структуру из РОВНО 10 глав для образовательного курса:
 
 "{user_instruction}"
@@ -209,7 +284,7 @@ Provide only the course title, without additional explanations."""
 
 Предоставьте только список глав, ничего больше."""
             else:
-                system_content = "You are an expert at structuring educational courses."
+                system_content = "You are an expert at structuring educational courses." + lang_instr + strict_rule
                 prompt = f"""Based on the following instruction, create a structure of EXACTLY 10 chapters for an educational course:
 
 "{user_instruction}"
@@ -248,7 +323,7 @@ Provide only the list of chapters, nothing else."""
                     # Remove numbering
                     cleaned = re.sub(r'^(\d+[\.\)\:\-]\s*)', '', line).strip()
                     if cleaned:
-                        chapters.append(cleaned)
+                        chapters.append(self._clean_content(cleaned))
 
             # Ensure exactly 10 chapters
             if len(chapters) < 10:
@@ -286,9 +361,16 @@ Provide only the list of chapters, nothing else."""
             # Sanitize inputs
             chapter_title = self._sanitize_input(chapter_title, max_length=500)
             course_context = self._sanitize_input(course_context)
+
+            lang_instr = self._get_language_instruction(language)
+            strict_rule = (
+                " NEVER start your response with headings like 'Chapter N', 'Глава N',"
+                " 'Introduction', 'Введение', or phrases like 'Here is your content'."
+                " Output ONLY the educational body text with markdown sub-headers (##)."
+            )
             
             if language == 'ru':
-                system_content = "Вы эксперт-преподаватель, который создает профессиональный образовательный контент высокого уровня."
+                system_content = "Вы эксперт-преподаватель, который создает профессиональный образовательный контент высокого уровня." + lang_instr + strict_rule
                 prompt = f"""Напишите экспертный контент для Главы {chapter_num}: "{chapter_title}"
 в образовательном курсе на тему: "{course_context}"
 
@@ -304,7 +386,7 @@ Provide only the list of chapters, nothing else."""
 
 Напишите содержание главы напрямую."""
             else:
-                system_content = "You are an expert educator who creates professional high-level educational content."
+                system_content = "You are an expert educator who creates professional high-level educational content." + lang_instr + strict_rule
                 prompt = f"""Write expert-level content for Chapter {chapter_num}: "{chapter_title}"
 in an educational course about: "{course_context}"
 
@@ -331,7 +413,7 @@ Write the chapter content directly."""
             )
 
             content = response.choices[0].message.content.strip()
-            return content
+            return self._clean_content(content)
 
         except Exception as e:
             raise Exception(f"Failed to generate chapter {chapter_num} content: {str(e)}")
@@ -349,11 +431,14 @@ Write the chapter content directly."""
             dict: Complete course data with title and chapters.
         """
         try:
-            # Step 1: Detect language
+            # Step 1: Determine language
             if progress_callback:
                 progress_callback(1, 12, "Detecting language...")
             
-            self.language = self.detect_language(user_instruction)
+            if self.target_language:
+                self.language = self.target_language
+            else:
+                self.language = self.detect_language(user_instruction)
 
             # Step 2: Generate course title
             if progress_callback:
@@ -431,7 +516,8 @@ Write the chapter content directly."""
 
 
 def generate_course_from_instruction(user_instruction: str, api_key: str = None,
-                                     progress_callback=None) -> str:
+                                     progress_callback=None,
+                                     target_language: str = None) -> str:
     """
     Convenience function to generate a complete course and return formatted output.
 
@@ -439,6 +525,7 @@ def generate_course_from_instruction(user_instruction: str, api_key: str = None,
         user_instruction: The user's master instruction for the course.
         api_key: Optional OpenAI API key. If None, loads from environment.
         progress_callback: Optional callback function(step, total, message).
+        target_language: Optional language code (e.g. 'ru', 'en', 'cn').
 
     Returns:
         str: Formatted course output ready for conversion to PDF/DOCX/EPUB.
@@ -447,7 +534,7 @@ def generate_course_from_instruction(user_instruction: str, api_key: str = None,
         >>> output = generate_course_from_instruction("Machine Learning for Beginners")
         >>> print(output)
     """
-    engine = CourseSmithEngine(api_key=api_key)
+    engine = CourseSmithEngine(api_key=api_key, target_language=target_language)
     course_data = engine.generate_full_course(user_instruction, progress_callback)
     return engine.format_output(course_data)
 
