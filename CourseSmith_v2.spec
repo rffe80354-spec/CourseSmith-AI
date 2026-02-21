@@ -58,15 +58,6 @@ a = Analysis(
         'secrets_manager',  # For Supabase API key retrieval
         # Standard library modules that might be missed
         'babel.numbers',
-        # ReportLab modules for PDF generation
-        'reportlab',
-        'reportlab.pdfbase',
-        'reportlab.pdfbase.ttfonts',
-        'reportlab.pdfbase.pdfmetrics',
-        'reportlab.lib.pagesizes',
-        'reportlab.lib.units',
-        'reportlab.lib.colors',
-        'reportlab.platypus',
         # python-docx for DOCX export
         'docx',
         'docx.shared',
@@ -98,10 +89,6 @@ a = Analysis(
         'tkinter',
         'tkinter.messagebox',
         'tkinter.filedialog',
-        # CustomTkinter submodules
-        'customtkinter',
-        'customtkinter.windows',
-        'customtkinter.windows.widgets',
         # lxml for document processing
         'lxml',
         'lxml._elementpath',

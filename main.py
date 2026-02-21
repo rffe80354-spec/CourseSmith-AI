@@ -93,7 +93,7 @@ def _mark_env_ready():
         pass
 
 
-def check_remote_ban():
+def check_remote_ban(app_ref=None):
     """
     Check if the current HWID is authorized for license activation.
     Implements device binding support:
@@ -102,10 +102,26 @@ def check_remote_ban():
     - Validates device HWID matches stored HWID
     - Uses single 'hwid' column instead of 'used_hwids' array
     
-    If banned, expired, or HWID mismatch, shows error and exits.
+    If banned, expired, or HWID mismatch, schedules error display and exit
+    on the main thread via app_ref.after() for thread safety.
     Allows offline usage by catching connection errors.
     Uses .ready_state cache to skip dependency checks on subsequent launches.
+
+    Args:
+        app_ref: Optional reference to the CTk app instance for thread-safe UI updates.
     """
+    def _show_error_and_exit(title, message):
+        """Show error dialog and exit, thread-safe via app.after() if available."""
+        if app_ref is not None:
+            app_ref.after(0, lambda: _do_exit(title, message))
+        else:
+            messagebox.showerror(title, message)
+            sys.exit()
+
+    def _do_exit(title, message):
+        messagebox.showerror(title, message)
+        sys.exit()
+
     try:
         from supabase import create_client, Client
         # Get current hardware ID
@@ -132,11 +148,11 @@ def check_remote_ban():
         
         # Check if license is banned
         if license_record.get("is_banned") is True:
-            messagebox.showerror(
+            _show_error_and_exit(
                 "Access Denied",
                 "Access Denied. License Revoked."
             )
-            sys.exit()
+            return
         
         # Check if license has expired
         valid_until = license_record.get("valid_until")
@@ -146,19 +162,19 @@ def check_remote_ban():
                 current_date = datetime.now(timezone.utc)
                 
                 if current_date > expiration_date:
-                    messagebox.showerror(
+                    _show_error_and_exit(
                         "Subscription Expired",
                         "Your subscription for CourseSmith AI has expired. Please renew to continue."
                     )
-                    sys.exit()
+                    return
             except Exception as e:
                 # If date parsing fails, fail closed for security
                 print(f"Error: Invalid expiration date format: {e}")
-                messagebox.showerror(
+                _show_error_and_exit(
                     "License Error",
                     "Invalid license expiration date. Please contact support."
                 )
-                sys.exit()
+                return
         
         # If we reach here, license is valid and HWID is authorized
         _mark_env_ready()
@@ -1931,12 +1947,14 @@ def main():
     # Create custom theme with enterprise colors
     ctk.set_default_color_theme("blue")
     
-    # Run remote ban check in a background thread so the GUI is not blocked
-    ban_thread = threading.Thread(target=check_remote_ban, daemon=True)
-    ban_thread.start()
-    
     # Create and run the enterprise application
     app = EnterpriseApp()
+
+    # Run remote ban check in a background thread so the GUI is not blocked.
+    # Pass app reference so error dialogs are scheduled on the main thread.
+    ban_thread = threading.Thread(target=check_remote_ban, args=(app,), daemon=True)
+    ban_thread.start()
+
     app.mainloop()
 
 

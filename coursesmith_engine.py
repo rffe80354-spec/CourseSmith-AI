@@ -36,6 +36,7 @@ class CourseSmithEngine:
     """
 
     # Regex patterns for post-processing: strip residual technical headers from AI output
+    # Uses \d* to match both numbered ("Chapter 1") and unnumbered ("Introduction") variants
     _TECHNICAL_HEADER_PATTERNS = [
         re.compile(r'^\s*(?:Chapter|Глава|Раздел|Section|Introduction|Введение)\s*\d*\s*[:.\-—]?\s*', re.IGNORECASE | re.MULTILINE),
         re.compile(r'^\s*(?:Here is (?:your|the) (?:content|chapter|text|course))[.:!]?\s*', re.IGNORECASE | re.MULTILINE),

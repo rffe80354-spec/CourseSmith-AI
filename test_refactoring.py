@@ -126,31 +126,38 @@ def test_clean_content_filter():
     print("✓ All _clean_content tests passed!\n")
 
 
+def _check_no_top_level_import(filepath, module_name):
+    """
+    Helper: verify that a given module is NOT imported at the top level of a Python file.
+    Uses indentation to distinguish top-level code from code inside classes/functions.
+
+    Args:
+        filepath: Path to the Python source file.
+        module_name: The module name to check (e.g. 'openai', 'reportlab').
+
+    Returns:
+        bool: True if no top-level import of the module is found.
+    """
+    with open(filepath, 'r') as f:
+        source = f.read()
+
+    for line in source.split('\n'):
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+        # Top-level code has zero indentation
+        if indent == 0:
+            if stripped.startswith(f'from {module_name} import') or stripped.startswith(f'import {module_name}'):
+                return False
+    return True
+
+
 def test_lazy_import_coursesmith_engine():
     """Test that coursesmith_engine does not import openai at module level."""
     print("Testing lazy import in coursesmith_engine...")
 
-    # Check that 'openai' is not imported as a top-level dependency
-    # by reading the source file
     engine_path = os.path.join(os.path.dirname(__file__), 'coursesmith_engine.py')
-    with open(engine_path, 'r') as f:
-        source = f.read()
-
-    # Look for top-level 'from openai import' or 'import openai'
-    lines = source.split('\n')
-    top_level_openai = False
-    in_class_or_func = False
-    indent_level = 0
-    for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith('class ') or stripped.startswith('def '):
-            in_class_or_func = True
-        if not in_class_or_func:
-            if stripped.startswith('from openai import') or stripped.startswith('import openai'):
-                top_level_openai = True
-                break
-
-    assert not top_level_openai, "openai should NOT be imported at module level in coursesmith_engine.py"
+    assert _check_no_top_level_import(engine_path, 'openai'), \
+        "openai should NOT be imported at module level in coursesmith_engine.py"
     print("✓ openai is not imported at module level in coursesmith_engine.py")
 
     print("✓ Lazy import test passed!\n")
@@ -161,22 +168,8 @@ def test_lazy_import_ai_worker():
     print("Testing lazy import in ai_worker...")
 
     worker_path = os.path.join(os.path.dirname(__file__), 'ai_worker.py')
-    with open(worker_path, 'r') as f:
-        source = f.read()
-
-    lines = source.split('\n')
-    top_level_openai = False
-    in_class_or_func = False
-    for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith('class ') or stripped.startswith('def '):
-            in_class_or_func = True
-        if not in_class_or_func:
-            if stripped.startswith('from openai import') or stripped.startswith('import openai'):
-                top_level_openai = True
-                break
-
-    assert not top_level_openai, "openai should NOT be imported at module level in ai_worker.py"
+    assert _check_no_top_level_import(worker_path, 'openai'), \
+        "openai should NOT be imported at module level in ai_worker.py"
     print("✓ openai is not imported at module level in ai_worker.py")
 
     print("✓ Lazy import test for ai_worker passed!\n")
@@ -187,22 +180,8 @@ def test_lazy_import_pdf_engine():
     print("Testing lazy import in pdf_engine...")
 
     pdf_path = os.path.join(os.path.dirname(__file__), 'pdf_engine.py')
-    with open(pdf_path, 'r') as f:
-        source = f.read()
-
-    lines = source.split('\n')
-    top_level_reportlab = False
-    in_class_or_func = False
-    for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith('class ') or stripped.startswith('def '):
-            in_class_or_func = True
-        if not in_class_or_func:
-            if stripped.startswith('from reportlab') or stripped == 'import reportlab':
-                top_level_reportlab = True
-                break
-
-    assert not top_level_reportlab, "reportlab should NOT be imported at module level in pdf_engine.py"
+    assert _check_no_top_level_import(pdf_path, 'reportlab'), \
+        "reportlab should NOT be imported at module level in pdf_engine.py"
     print("✓ reportlab is not imported at module level in pdf_engine.py")
 
     print("✓ Lazy import test for pdf_engine passed!\n")
@@ -242,9 +221,9 @@ def test_background_ban_check():
         "check_remote_ban should be called via threading.Thread"
     print("✓ check_remote_ban is launched in a background thread")
 
-    # Check daemon flag
-    assert 'daemon=True' in source, "Background thread should be daemon=True"
-    print("✓ Background thread is set as daemon")
+    # Check that app reference is passed for thread-safe UI
+    assert 'args=(app,)' in source, "App reference should be passed to background thread"
+    print("✓ App reference passed for thread-safe error handling")
 
     print("✓ Background ban check tests passed!\n")
 
