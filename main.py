@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 import customtkinter as ctk
 from tkinter import messagebox
 from dotenv import load_dotenv
-from supabase import create_client, Client
 
 # Import HWID and license utilities from utils module
 from utils import get_hwid, parse_hwids_array, check_license, add_context_menu, patch_ctk_scrollbar
@@ -72,8 +71,29 @@ PACKAGING_DELAY_SECONDS = 1.0  # Delay for packaging simulation
 EMAIL_LOG_DELAY_MS = 500  # Delay before showing email log message
 COMPLETION_DELAY_MS = 1000  # Delay before completion
 
+# Path for the environment readiness flag file
+_READY_STATE_PATH = os.path.join(
+    os.environ.get('APPDATA', os.path.expanduser('~')),
+    'CourseSmithAI', '.ready_state'
+)
 
-def check_remote_ban():
+
+def _is_env_ready() -> bool:
+    """Check if the environment readiness flag file exists."""
+    return os.path.exists(_READY_STATE_PATH)
+
+
+def _mark_env_ready():
+    """Create the environment readiness flag file after first successful startup."""
+    try:
+        os.makedirs(os.path.dirname(_READY_STATE_PATH), exist_ok=True)
+        with open(_READY_STATE_PATH, 'w') as f:
+            f.write(datetime.now(timezone.utc).isoformat())
+    except OSError:
+        pass
+
+
+def check_remote_ban(app_ref=None):
     """
     Check if the current HWID is authorized for license activation.
     Implements device binding support:
@@ -82,15 +102,34 @@ def check_remote_ban():
     - Validates device HWID matches stored HWID
     - Uses single 'hwid' column instead of 'used_hwids' array
     
-    If banned, expired, or HWID mismatch, shows error and exits.
+    If banned, expired, or HWID mismatch, schedules error display and exit
+    on the main thread via app_ref.after() for thread safety.
     Allows offline usage by catching connection errors.
+    Uses .ready_state cache to skip dependency checks on subsequent launches.
+
+    Args:
+        app_ref: Optional reference to the CTk app instance for thread-safe UI updates.
     """
+    def _show_error_and_exit(title, message):
+        """Show error dialog and exit, thread-safe via app.after() if available."""
+        if app_ref is not None:
+            app_ref.after(0, lambda: _do_exit(title, message))
+        else:
+            messagebox.showerror(title, message)
+            sys.exit()
+
+    def _do_exit(title, message):
+        messagebox.showerror(title, message)
+        sys.exit()
+
     try:
+        from supabase import create_client, Client
         # Get current hardware ID
         current_hwid = get_hwid()
         
         if not current_hwid or current_hwid == "UNKNOWN_ID":
             # Cannot validate without valid HWID - allow offline use
+            _mark_env_ready()
             return
         
         # Connect to Supabase
@@ -102,17 +141,18 @@ def check_remote_ban():
         # If no license found with this HWID, allow app to continue
         # (First-time activation handled during login)
         if not response.data or len(response.data) == 0:
+            _mark_env_ready()
             return
         
         license_record = response.data[0]
         
         # Check if license is banned
         if license_record.get("is_banned") is True:
-            messagebox.showerror(
+            _show_error_and_exit(
                 "Access Denied",
                 "Access Denied. License Revoked."
             )
-            sys.exit()
+            return
         
         # Check if license has expired
         valid_until = license_record.get("valid_until")
@@ -122,21 +162,22 @@ def check_remote_ban():
                 current_date = datetime.now(timezone.utc)
                 
                 if current_date > expiration_date:
-                    messagebox.showerror(
+                    _show_error_and_exit(
                         "Subscription Expired",
                         "Your subscription for CourseSmith AI has expired. Please renew to continue."
                     )
-                    sys.exit()
+                    return
             except Exception as e:
                 # If date parsing fails, fail closed for security
                 print(f"Error: Invalid expiration date format: {e}")
-                messagebox.showerror(
+                _show_error_and_exit(
                     "License Error",
                     "Invalid license expiration date. Please contact support."
                 )
-                sys.exit()
+                return
         
         # If we reach here, license is valid and HWID is authorized
+        _mark_env_ready()
         
     except Exception:
         # Allow offline usage - if connection fails, don't block the app
@@ -156,7 +197,6 @@ def validate_license_key(license_key: str, email: str) -> dict:
         dict: License information with status
             {'valid': bool, 'message': str, 'license_data': dict or None}
     """
-    # Use the check_license function from utils module
     return check_license(license_key, email, SUPABASE_URL, SUPABASE_KEY)
 
 
@@ -222,6 +262,8 @@ class EnterpriseApp(ctk.CTk):
             if not current_hwid or current_hwid == "UNKNOWN_ID":
                 return False
             
+            # Lazy import: supabase is heavy, load only when needed
+            from supabase import create_client, Client
             # Connect to Supabase
             supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
             
@@ -1881,9 +1923,6 @@ class EnterpriseApp(ctk.CTk):
 
 def main():
     """Initialize and run the CourseSmith ENTERPRISE application."""
-    # Check for remote ban before starting the application
-    check_remote_ban()
-    
     # Load environment variables with PyInstaller support
     # Try to find .env in the executable directory (works for both dev and EXE)
     try:
@@ -1908,12 +1947,14 @@ def main():
     # Create custom theme with enterprise colors
     ctk.set_default_color_theme("blue")
     
-    # Import app here after environment is loaded
-    # Note: The EnterpriseApp is the new main UI
-    # The original App class is still available via: from app import App
-    
     # Create and run the enterprise application
     app = EnterpriseApp()
+
+    # Run remote ban check in a background thread so the GUI is not blocked.
+    # Pass app reference so error dialogs are scheduled on the main thread.
+    ban_thread = threading.Thread(target=check_remote_ban, args=(app,), daemon=True)
+    ban_thread.start()
+
     app.mainloop()
 
 
